@@ -54,8 +54,8 @@ The app makes no claims about actions taken. It reports what the data knows. Thi
 ### Current Implementation Status
 
 - [x] Phase 0: Core reconciliation engine (parsing, matching, allocation)
-- [ ] Phase 1: Dashboard upgrade ("The Pulse") — in progress
-- [ ] Phase 2: Monthly report generation ("The Ledger") — in progress
+- [x] Phase 1: Dashboard upgrade ("The Pulse") — COMPLETE
+- [x] Phase 2: Monthly report generation ("The Ledger") — COMPLETE
 - [ ] Phase 3: Weekly digest ("The Signal") — requires email/WhatsApp delivery
 - [ ] Phase 4: Yearly view ("The Investment View") — requires 12+ months of data
 
@@ -84,7 +84,7 @@ Flask web app for rental management agencies to:
 
 ```
 rent-reconciliation/
-├── app.py                    # Main Flask app, admin routes
+├── app.py                    # Main Flask app, admin routes, blueprint registration
 ├── src/
 │   ├── parsers/
 │   │   ├── router.py         # Input auto-detection & routing
@@ -94,9 +94,13 @@ rent-reconciliation/
 │   │   └── water_parser.py   # Water readings Excel parser
 │   ├── routes/
 │   │   ├── test_routes.py    # /test/* - parser & CRUD testing
-│   │   ├── viewer_routes.py  # /view/* - stakeholder view-only
+│   │   ├── viewer_routes.py  # /view/* - owner view-only portal
 │   │   ├── tenant_routes.py  # /tenant/<token> - tenant portal (token auth)
-│   │   └── messaging_routes.py  # /messages/* - admin messaging (broadcasts, templates, reminders)
+│   │   ├── messaging_routes.py  # /messages/* - admin messaging
+│   │   ├── report_routes.py  # /reports/* - admin report generation & viewer
+│   │   └── caretaker_routes.py  # /caretaker/* - caretaker live portal
+│   ├── reports/
+│   │   └── landlord_report.py   # Report generation + enrich_report_data()
 │   ├── messaging/
 │   │   └── reminders.py      # Automatic due-date reminder generation
 │   ├── database/
@@ -106,14 +110,20 @@ rent-reconciliation/
 │       ├── matcher.py        # Match claims to transactions
 │       └── state_machine.py  # Payment lifecycle
 ├── templates/
-│   ├── base.html
-│   ├── viewer/               # View-only stakeholder templates
+│   ├── base.html             # Admin base (sidebar nav, property selector)
+│   ├── viewer/               # Owner portal (base_viewer, dashboard, arrears, payments, report_detail, reports)
 │   ├── tenant/               # Tenant portal (base_tenant, portal, charges, payments, messages, invalid_token)
 │   ├── messaging/            # Admin messaging (dashboard, broadcast, templates, edit_template, reminders)
-│   └── ...
+│   ├── reports/              # Admin report pages (history, preview, caretaker_preview)
+│   ├── caretaker/            # Caretaker live portal (login, base_caretaker, dashboard, arrears, tenants)
+│   └── owners.html           # Owners management page
+├── scripts/
+│   ├── run_dev.sh            # Start local dev server (uses data/dev.db, no passwords)
+│   ├── download_prod_db.sh   # Pull production DB from Fly.io to backups/
+│   └── reset_dev_db.sh       # Reset data/dev.db from latest backup
 └── data/
-    ├── rent.db
-    └── statements/
+    ├── rent.db               # Production DB (local copy; actual prod on Fly volume)
+    └── dev.db                # Local dev DB (copy of prod; safe to modify)
 ```
 
 ## Database Tables
@@ -179,14 +189,34 @@ from src.database.db import migrate_add_charge_type, migrate_add_apartment_size,
 ## User Roles
 
 - **Agency Admin**: Full CRUD via main routes (/, /onboard, /units, etc.); Messages dropdown for broadcasts, templates, reminders
-- **Property Owner**: View-only via `/view/*` (no admin nav; share-link or password-protected)
+- **Property Owner**: View-only via `/view/*` (no admin nav; share-link or password-protected); Reports tab shows saved monthly reports
+- **Caretaker**: Live operational view via `/caretaker/<property_id>` (CARETAKER_PASSWORD auth); arrears follow-up, tenant directory, occupancy
 - **Tenant**: Read-only portal via `/tenant/<token>` (no login; token in URL; generate/revoke from admin Tenants page)
 
 ## Owner Viewer (/view/*)
 
-- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/view/<property_id>/payments`.
-- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html` (no admin navbar). Child templates set `active_tab` (overview | arrears | payments) for pill nav; the view passes `active_tab` in context. Do not add a second `container` in child templates—the base provides `<main class="container py-4">`.
-- **Auth:** Viewer can be protected by a shared password (env `VIEWER_PASSWORD`); login at `/view/login`, logout at `/view/logout`. If no auth is implemented, access is share-link only.
+- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/view/<property_id>/payments`, `/view/<property_id>/reports` = saved monthly reports list, `/view/<property_id>/reports/<report_id>` = full report detail.
+- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html` (no admin navbar). Child templates set `active_tab` (overview | arrears | payments | reports) for pill nav; the view passes `active_tab` in context. Do not add a second `container` in child templates—the base provides `<main class="container py-4">`.
+- **Auth:** Protected by shared password (env `VIEWER_PASSWORD`); login at `/view/login`, logout at `/view/logout`.
+- **Reports tab:** Shows list of admin-generated monthly reports; clicking opens `viewer/report_detail.html` which uses `enrich_report_data()` to back-fill fields for old reports.
+- **Link sharing:** Admin copies owner portal URL from Owners page (clipboard API button). One owner can have multiple properties.
+
+## Caretaker Portal (/caretaker/*)
+
+- **URLs:** `/caretaker/<property_id>` = overview dashboard; `/caretaker/<property_id>/arrears` = full arrears list; `/caretaker/<property_id>/tenants` = tenant directory.
+- **Auth:** `CARETAKER_PASSWORD` env var; session key `caretaker_authenticated`. Login at `/caretaker/login`, logout at `/caretaker/logout`. If env var is unset, portal is open (dev mode).
+- **Templates:** Extend `templates/caretaker/base_caretaker.html` (sticky header, 3 nav tabs, logout link). `@media print` hides header for printable views.
+- **Data shown:** Occupancy KPIs, vacant unit pills, top arrears (unit + tenant + phone + KES balance + months badge), full tenant directory with phone. KES amounts ARE visible to caretakers.
+- **Print buttons:** Each tab has a "Print" button. Caretaker can print any tab as a PDF via browser.
+- **Blueprint:** `caretaker_bp` in `src/routes/caretaker_routes.py`, registered in `app.py`. Auth bypass added: paths starting with `/caretaker` are exempt from admin auth.
+
+## Monthly Reports Admin (/reports/*)
+
+- **Routes:** `GET /reports` = list saved reports; `GET/POST /reports/generate` = generate new report; `GET /reports/<id>` = preview report (admin view); `GET /reports/<id>/caretaker` = caretaker-formatted printable report.
+- **Report module:** `src/reports/landlord_report.py` — `generate_report()` computes all metrics and saves JSON to `landlord_reports` table; `enrich_report_data()` back-fills new fields for old saved reports (always call before rendering).
+- **Collection metric:** `vs_expected_income_pct = total_verified / expected_monthly_income * 100` — verified payments vs. what the property should collect per month. NOT verified ÷ period charges (that metric is misleadingly low for mid-month snapshots).
+- **PDF export:** "Export PDF" button calls `window.print()`; `@media print` CSS in `preview.html` hides sidebar/topbar. No server-side PDF generation needed.
+- **Caretaker report:** `GET /reports/<id>/caretaker` renders `caretaker_preview.html` — same data but formatted for caretaker use; includes KES amounts in arrears table.
 
 ## Charge Types & Monthly Workflow
 
@@ -225,7 +255,7 @@ Monthly charges have THREE components per tenant:
 - [x] Water readings Excel parser (`water_parser.py`)
 - [x] Input router layer
 - [x] Test routes (/test/*)
-- [x] Viewer routes (/view/*) — property list, dashboard (occupancy, expected income, arrears), arrears tab (months behind, tel links), payments tab
+- [x] Viewer routes (/view/*) — property list, dashboard (occupancy, expected income, arrears), arrears tab (months behind, tel links), payments tab, reports tab
 - [x] Property onboarding flow (includes `apartment_size`, `charge_type` for ARREARS)
 - [x] Water charges upload (`/charges/water`)
 - [x] Charge generation (rent + service separately, `/charges/generate`)
@@ -237,6 +267,12 @@ Monthly charges have THREE components per tenant:
 - [x] Database migrations (charge_type, apartment_size, payment_allocations) - auto-run at startup
 - [ ] User authentication (admin routes)
 - [x] Multi-property support (session-based property selection; selector in nav)
+- [x] Monthly report generator (`src/reports/landlord_report.py`) — 6-section report saved to DB
+- [x] Caretaker live portal (`/caretaker/*`) — 3-tab operational view with CARETAKER_PASSWORD auth
+- [x] PDF export for reports (browser print with `@media print` CSS)
+- [x] Owners multi-property — assign multiple properties per owner; copy-link button in UI
+- [x] Mobile-friendly — sidebar backdrop, report columns collapse ≤600px, tables scroll horizontally
+- [x] Dev scripts — `scripts/run_dev.sh`, `scripts/download_prod_db.sh`, `scripts/reset_dev_db.sh`
 
 CLAUDE.md is the canonical context for AI agents working on this repo.
 See `ROADMAP.md` for product vision, design rules, phase status, and update protocol.
@@ -285,6 +321,12 @@ Admin uses **session-based** property selection. The currently selected property
 **Property selection:**
 - `GET /properties` - List properties to select; auto-selects and redirects if only one exists
 - `GET /properties/select/<property_id>` - Set active property in session, redirect to dashboard
+
+**Monthly Reports:**
+- `GET /reports` - List saved reports for current property
+- `GET/POST /reports/generate` - Generate and save a new monthly report
+- `GET /reports/<report_id>` - Preview saved report (admin view with all financials)
+- `GET /reports/<report_id>/caretaker` - Caretaker-formatted printable view of report
 
 **Charges:**
 - `GET/POST /charges/water` - Upload water readings Excel (creates `charge_type='water'` records)
@@ -361,17 +403,34 @@ Admin uses **session-based** property selection. The currently selected property
 - Column normalization handles variations: "House No", "Unit No", "Water Charge", "Water", etc.
 - Skips rows with water_charge = 0 (warns but doesn't error)
 
+## Local Development
+
+Run against a safe copy of production data — live system is never touched.
+
+```bash
+# First time: pull production DB
+./scripts/download_prod_db.sh     # saves to backups/ and copies to data/dev.db
+
+# Start app (no passwords, uses data/dev.db)
+./scripts/run_dev.sh              # → http://localhost:5000
+
+# Reset dev DB back to latest production snapshot
+./scripts/reset_dev_db.sh
+```
+
+Key: `run_dev.sh` sets `DATABASE_PATH` to `data/dev.db` and unsets all password env vars so no auth is required locally.
+
 ## Deployment
 
 - **Platform:** Fly.io, Johannesburg region (`jnb`)
 - **URL:** https://rent-reconciliation.fly.dev/
 - **Config:** `fly.toml` with persistent volume `data_vol` mounted at `/data`
-- **Database:** SQLite at `/data/rent.db` (production) or `data/rent.db` (local dev)
+- **Database:** SQLite at `/data/rent.db` (production) or `data/dev.db` (local dev)
 - **Workers:** Single gunicorn worker (required for SQLite write safety)
-- **Secrets:** `ADMIN_PASSWORD`, `VIEWER_PASSWORD`, `SECRET_KEY` set via `fly secrets set`
+- **Secrets:** `ADMIN_PASSWORD`, `VIEWER_PASSWORD`, `CARETAKER_PASSWORD`, `SECRET_KEY` set via `fly secrets set`
 - **Deploy:** `fly deploy` from project root (uses Dockerfile)
 - **Auto-stop:** Machine auto-stops when idle, wakes on request
-- **Fly CLI:** `/Users/lincksmorara/.fly/bin/flyctl` (not in PATH by default)
+- **Fly CLI:** `/Users/lincksmorara/.fly/bin/flyctl` (not in PATH by default; `export PATH="$HOME/.fly/bin:$PATH"`)
 
 ## Business Context
 

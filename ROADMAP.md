@@ -64,7 +64,7 @@ Period-bounded data only. Does NOT duplicate the live dashboard.
 - **Vacancy cost calculation** — For each unit vacant during the month: days × daily rent = foregone income.
 
 **Format:** Admin generates it, stored in DB, landlord views in "Reports" tab.
-**Status:** COMPLETE — report generator, admin routes, viewer Reports tab all implemented.
+**Status:** COMPLETE — report generator, admin routes, viewer Reports tab, owner + caretaker report views, PDF export via browser print, collection rate fixed to use vs-expected-income metric.
 
 ### Layer 3: The Signal (Weekly Digest)
 **Question it answers:** "What changed?"
@@ -136,11 +136,38 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [x] Admin generate/preview templates
 - [x] Viewer report list + detail templates
 - [x] Report detail with all 6 sections (collections, occupancy, arrears, tenant movement, claims, charges)
+- [x] Caretaker report view (same data, no financial amounts in print version; KES visible in live portal)
+- [x] PDF export via browser print (`@media print` hides nav/sidebar)
+- [x] Collection metric fixed: uses verified ÷ expected monthly income (not verified ÷ period charges)
+- [x] `enrich_report_data()` back-fills new fields for old saved reports
 
 ### Tenant Portal & Messaging
 - [x] Tenant portal: read-only via `/tenant/<token>` (balance, charges, payments, messages); token generate/revoke from Tenants page; data-descriptive language
 - [x] Messaging: admin dashboard, broadcast (one row per recipient, batch_id), templates list/edit, reminder settings (days_before_due per type)
 - [x] Automatic reminders: run on dashboard load; idempotent per day per template; only active tenants with unit and balance > 0; due_date = 5th of next month for new charges
+
+### Caretaker Portal
+- [x] Live operational view at `/caretaker/<property_id>` (separate from owner viewer)
+- [x] Auth: `CARETAKER_PASSWORD` env var; session-based
+- [x] 3 tabs: Overview (occupancy + vacant units + top arrears), Arrears (full list with KES + phone), Tenants (directory)
+- [x] Printable (each tab has Print button, nav hides in `@media print`)
+
+### Owners & Multi-Property
+- [x] `owners` table, token + password portal auth
+- [x] One owner can have multiple properties (`properties.owner_id` one-to-many)
+- [x] Owners page: shows assigned property chips, copy-link button (clipboard API), assign property on creation
+
+### Mobile & UX
+- [x] Admin sidebar: backdrop overlay on mobile, closes on tap-outside
+- [x] Report two-column sections collapse to single column ≤600px
+- [x] Report tables scroll horizontally on mobile
+- [x] Topbar "Export Data" hidden on mobile
+
+### Developer Tooling
+- [x] Git repository initialized, `.gitignore` (excludes DBs, venv, screenshots)
+- [x] `scripts/download_prod_db.sh` — pull production DB from Fly.io
+- [x] `scripts/run_dev.sh` — local dev server (uses `data/dev.db`, no passwords)
+- [x] `scripts/reset_dev_db.sh` — reset dev DB from latest backup
 
 ### Phase 3: The Signal (Weekly Digest)
 - [ ] Email delivery infrastructure (smtplib or Resend)

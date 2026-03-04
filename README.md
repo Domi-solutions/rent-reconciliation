@@ -1,145 +1,52 @@
-# Rent Reconciliation System
+# Rent Reconciliation
 
-A Flask web application for rental management agencies. Features deterministic PDF parsing for bank statements, SMS parsing for M-Pesa claims, Excel import for property onboarding, water charge uploads, FIFO payment allocation across charges (rent/service/water), and comprehensive export reports.
+Financial intelligence layer for rental property management. Built for a Kenyan property agency — surfaces what the data shows, makes no claims about actions taken.
 
-## Setup
+## What it does
 
-```bash
-# Create virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+- Parse M-Pesa bank statement PDFs → extract transactions
+- Match tenant SMS payment claims → verify against bank records
+- FIFO allocation of payments across rent / service / water charges
+- Live dashboard: collection gap, arrears concentration, vacancy cost
+- Monthly report generator: collections, occupancy, tenant movement, arrears
+- Owner portal: share-link + password, view-only financial dashboard
+- Caretaker portal: live arrears follow-up, tenant directory, occupancy
+- Tenant portal: token-based read-only view of own balance and charges
+- Messaging: broadcasts, reminder templates, auto due-date reminders
+- Excel exports: current state, activity log, payment audit trail
 
-# Install dependencies
-pip install -r requirements.txt
+## Tech stack
 
-# Run the Flask app
-python app.py
+Python 3.13, Flask 3.0+, SQLite, Jinja2, Bootstrap 5, pdfplumber, openpyxl. No ORM — raw SQL throughout.
 
-# Access at http://localhost:5000
-# Admin dashboard: http://localhost:5000/
-# Owner viewer: http://localhost:5000/view/
-```
+## Deployed
 
-**Environment Variables (optional):**
-- `VIEWER_PASSWORD` - Password for owner viewer access (if not set, viewer is open)
-- `SECRET_KEY` - Flask secret key (defaults to dev key if not set)
+[https://rent-reconciliation.fly.dev](https://rent-reconciliation.fly.dev) — Fly.io, Johannesburg region, persistent SQLite volume.
 
-## Usage
-
-### Web Application
-
-1. **Onboard Property:** Upload Excel with units/tenants at `/onboard`
-2. **Monthly Charges:**
-   - Upload water readings Excel at `/charges/water` (Step 1)
-   - Generate rent + service charges at `/charges/generate` (Step 2)
-3. **Process Payments:**
-   - Tenants report payments via SMS (creates claims)
-   - Upload bank statement PDF at `/statements`
-   - Auto-verify claims at `/verify` (payments allocate FIFO automatically)
-4. **Exports:**
-   - Current State: `/export/current-state`
-   - Activity Log: `/export/activity?from=YYYY-MM-DD&to=YYYY-MM-DD`
-   - Payment Verification: `/export/payments?from=YYYY-MM-DD&to=YYYY-MM-DD`
-
-### Command Line Parsers (for testing)
+## Local development
 
 ```bash
-# Parse bank statement
-python src/parsers/pdf_parser.py data/input/statement.pdf
+# First time: pull production data
+./scripts/download_prod_db.sh
 
-# Parse water readings Excel
-python -c "from src.parsers.water_parser import parse_water_excel; print(parse_water_excel('water_readings.xlsx'))"
+# Start app (uses local copy, production untouched)
+./scripts/run_dev.sh
+# → http://localhost:5000  (no password in dev mode)
+
+# Reset test database back to latest production snapshot
+./scripts/reset_dev_db.sh
 ```
 
-### Run Tests
+## Deploy
 
 ```bash
-python tests/test_parser.py
+export PATH="$HOME/.fly/bin:$PATH"
+fly deploy
 ```
 
-## Project Structure
+See `DEPLOY_GUIDE.md` for first-time setup.
 
-```
-rent-reconciliation/
-├── app.py                     # Main Flask app, all admin routes
-├── src/
-│   ├── parsers/
-│   │   ├── pdf_parser.py      # Bank statement extraction
-│   │   ├── sms_parser.py      # M-Pesa SMS parsing
-│   │   ├── excel_parser.py    # Tenant Excel import
-│   │   └── water_parser.py   # Water readings Excel parser
-│   ├── routes/
-│   │   ├── test_routes.py    # /test/* - parser & CRUD testing
-│   │   └── viewer_routes.py # /view/* - owner view-only routes
-│   ├── database/
-│   │   ├── db.py             # Connection, migrations, allocation
-│   │   └── schema.sql        # Canonical table definitions
-│   └── reconciliation/
-│       └── matcher.py        # SMS-to-bank matching
-├── templates/
-│   ├── base.html             # Admin base template
-│   ├── viewer/               # Owner viewer templates
-│   └── ...
-├── data/
-│   ├── rent.db              # SQLite database
-│   └── statements/          # Uploaded PDFs
-└── requirements.txt
-```
+## For AI agents
 
-## Features
-
-### Core Functionality
-- **Property Onboarding**: Excel upload creates units, tenants, and arrears charges
-- **Monthly Charges**: Three types (rent, service, water) tracked separately per unit per period
-- **Payment Processing**: Auto-verification of SMS claims against bank transactions
-- **FIFO Allocation**: Payments automatically allocate to oldest charges first (regardless of type)
-- **Owner Viewer**: View-only dashboard at `/view/<property_id>` (password-protected)
-- **Exports**: Current state, activity logs, and payment verification reports (Excel)
-
-### PDF Parser
-- **Deterministic parsing**: Rule-based extraction, no ML/LLM
-- **Balance checksum**: Validates parsing accuracy
-- **Transaction classification**: Uses 3-digit codes (014 = Paybill credits/rent)
-- **Split amount handling**: Reconstructs amounts split across PDF lines
-- **Reference extraction**: Extracts M-Pesa reference codes for matching
-- **Edge case handling**: Missing senders, reversals, settlements
-
-### SMS Parser
-- **Multiple format support**: Handles full messages, partial messages, and reference-code-only
-- **Flexible input**: Works with just a reference code (e.g., `TLU9G289GY`)
-- **Amount extraction**: Handles various formats (KES, Ksh, with/without commas)
-- **Timestamp parsing**: Multiple date/time formats
-- **Reconciliation**: Matches SMS claims to bank transactions by reference code
-
-### Water Parser
-- **Excel import**: Parses water meter readings with flexible column names
-- **Auto-header detection**: Finds header row automatically (rows 0-2)
-- **Unit matching**: Case-insensitive matching against database units
-- **Duplicate prevention**: Skips existing water charges for same period
-
-## Validation
-
-The parser validates against known totals:
-- Opening Balance: KES 676,851.41
-- Closing Balance: KES 399,581.32
-- Rent Transactions: ~58
-- Total Rent: ~KES 946,000
-
-## Core Principles
-
-```
-Bank Statement = SOURCE OF TRUTH
-M-Pesa SMS = CLAIM TO BE VERIFIED
-
-No tenant balance is ever updated unless a matching bank credit exists.
-Payments allocate FIFO (oldest charges first, regardless of type).
-```
-
-## Database Schema
-
-- **rent_charges**: `charge_type` ('rent' | 'service' | 'water'), UNIQUE(unit_id, period, charge_type)
-- **payment_allocations**: Links payments to specific charges (FIFO allocation trail)
-- **units**: `apartment_size` field for export reports
-- **unit_balances** (VIEW): Aggregates all charge types and payments for balance calculation
-
-See `CLAUDE.md` for comprehensive AI agent context and implementation details.
+Read `CLAUDE.md` for technical reference (routes, schema, patterns, conventions).
+Read `ROADMAP.md` for product vision, phase status, and language rules.
