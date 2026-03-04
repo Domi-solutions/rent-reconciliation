@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Tenants - {{ property.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">Tenants</div>
+    <div class="page-meta">Active tenants and the unit each occupies.</div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if show_inactive %}
+    <a href="{{ url_for('manage_tenants') }}" class="topbar-btn-ghost">Active only</a>
+    {% else %}
+    <a href="{{ url_for('manage_tenants', show_inactive=1) }}" class="topbar-btn-ghost">Show moved out</a>
+    {% endif %}
+    <a href="{{ url_for('add_tenant') }}" class="btn btn-primary">Add Tenant</a>
+  </div>
+</div>
+<div class="surface-card">
+  <table class="table table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Unit</th>
+        <th>Phone</th>
+        <th>Move-in</th>
+        <th>Portal link</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tenants %}
+      <tr {% if t.status == 'inactive' %}style="opacity: 0.5;"{% endif %}>
+        <td>
+          {{ t.name }}
+          {% if t.status == 'inactive' %}
+          <span class="status-vacant ms-1">Moved out</span>
+          {% endif %}
+        </td>
+        <td>{{ t.unit_number or '-' }}</td>
+        <td>{{ t.phone or '-' }}</td>
+        <td>{{ t.move_in_date or '-' }}</td>
+        <td>
+          {% if t.status == 'active' %}
+            {% if t.access_token %}
+            <button type="button" class="btn btn-sm btn-outline-secondary copy-portal-link" data-url="{{ request.host_url.rstrip('/') }}/tenant/{{ t.access_token }}">Copy link</button>
+            {% else %}
+            <form method="post" action="{{ url_for('generate_tenant_token', tenant_id=t.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Generate link</button>
+            </form>
+            {% endif %}
+          {% else %}
+          <span class="data-row-meta">{{ t.move_out_date or '—' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.status == 'active' %}
+          <form method="post" action="{{ url_for('move_out_tenant', tenant_id=t.id) }}" class="d-inline move-out-form">
+            <button type="submit" class="btn btn-sm btn-outline-secondary" style="color: var(--red); border-color: rgba(255,59,48,0.3);">Move out</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted" style="padding: 32px 16px; text-align: center;">No tenants yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('.copy-portal-link').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var url = this.getAttribute('data-url');
+    navigator.clipboard.writeText(url).then(function() { btn.textContent = 'Copied'; setTimeout(function() { btn.textContent = 'Copy link'; }, 1500); });
+  });
+});
+document.querySelectorAll('.move-out-form').forEach(function(form) {
+  form.addEventListener('submit', function(e) {
+    var name = this.closest('tr').querySelector('td').textContent.trim();
+    if (!confirm('Mark ' + name + ' as moved out? Their unit will become vacant.')) {
+      e.preventDefault();
+    }
+  });
+});
+</script>
+{% endblock %}

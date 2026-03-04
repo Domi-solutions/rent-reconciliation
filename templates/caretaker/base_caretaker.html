@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Caretaker{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .ct-header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .ct-prop-name { font-size: 16px; font-weight: 700; color: var(--ink-1); }
+    .ct-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; background: #fef9c3; color: #854d0e; margin-left: 6px; vertical-align: middle; }
+    .ct-nav-tab { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--ink-2); text-decoration: none; }
+    .ct-nav-tab:hover { background: var(--border); color: var(--ink-1); }
+    .ct-nav-tab.active { background: var(--ink-1); color: #fff; }
+    @media print {
+      .ct-header, .ct-no-print { display: none !important; }
+      body { font-size: 12px; }
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<header class="ct-header">
+  <div style="max-width: 860px; margin: 0 auto; padding: 0 20px;">
+    <div class="d-flex justify-content-between align-items-center" style="padding: 10px 0 4px;">
+      <div>
+        <span class="ct-prop-name">
+          {% if property is defined and property %}{{ property.name }}{% else %}Caretaker Portal{% endif %}
+        </span>
+        <span class="ct-badge">Caretaker</span>
+      </div>
+      <a href="{{ url_for('caretaker.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
+    </div>
+
+    {% if property is defined and property %}
+    <nav style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
+      <a class="ct-nav-tab {% if active_tab == 'overview' %}active{% endif %}"
+         href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
+      <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"
+         href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Arrears</a>
+      <a class="ct-nav-tab {% if active_tab == 'tenants' %}active{% endif %}"
+         href="{{ url_for('caretaker.tenants', property_id=property.id) }}">Tenants</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main style="max-width: 860px; margin: 0 auto; padding: 24px 20px 48px;">
+  {% block content %}{% endblock %}
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

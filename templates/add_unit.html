@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Add Unit{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Add Unit</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>Unit Details</h6></div>
+  <div style="padding: 20px;">
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">New unit number and monthly rent. Unit numbers are used in arrears and when assigning payments.</p>
+    <form method="post" action="{{ url_for('add_unit') }}">
+      <div class="mb-3">
+        <label for="unit_number" class="form-label">Unit Number *</label>
+        <input type="text" class="form-control" id="unit_number" name="unit_number" placeholder="e.g. 1A" required>
+      </div>
+      <div class="mb-3">
+        <label for="monthly_rent" class="form-label">Monthly Rent (KES) *</label>
+        <input type="number" class="form-control" id="monthly_rent" name="monthly_rent" step="0.01" min="0" required>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Add Unit</button>
+        <a href="{{ url_for('manage_units') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Assign Payment{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Assign Bank Payment</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>Manual Assignment</h6></div>
+  <div style="padding: 20px;">
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 12px;">This bank credit wasn't reported via SMS. Choose which unit it belongs to and give a short reason (e.g. who paid or how you know).</p>
+    <div class="stat-row mb-3" style="padding: 12px 0;">
+      <div class="stat-item">
+        <div class="stat-label">Ref</div>
+        <div class="stat-value" style="font-size: 13.5px;">{{ txn.mpesa_ref or '—' }}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Amount</div>
+        <div class="stat-value" style="font-size: 13.5px;">KES {{ "%.2f"|format(txn.amount) }}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Date</div>
+        <div class="stat-value" style="font-size: 13.5px;">{{ txn.txn_date or '—' }}</div>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('assign_payment', txn_id=txn.id) }}">
+      <div class="mb-3">
+        <label for="unit_id" class="form-label">Assign to Unit *</label>
+        <select class="form-select" id="unit_id" name="unit_id" required>
+          <option value="">Select unit</option>
+          {% for u in units %}
+          <option value="{{ u.id }}" {% if suggested_unit_id and suggested_unit_id == u.id %}selected{% endif %}>
+            {{ u.unit_number }}{% if u.tenant_name %} ({{ u.tenant_name }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="reason" class="form-label">Reason for manual assignment * (min 5 characters)</label>
+        {% if suggestion_source == 'name_match' and suggested_tenant_name %}
+        <textarea class="form-control" id="reason" name="reason" rows="2" required minlength="5">Sender name matched tenant: {{ suggested_tenant_name }}</textarea>
+        <div class="form-text text-warning">Name match — verify this is correct before submitting.</div>
+        {% else %}
+        <textarea class="form-control" id="reason" name="reason" rows="2" required minlength="5" placeholder="e.g. Tenant confirmed by phone"></textarea>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Assign</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

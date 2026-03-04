@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Mowin{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+{% set active_nav =
+    'overview'  if request.endpoint == 'dashboard'
+    else 'units'    if request.endpoint in ('manage_units', 'add_unit')
+    else 'tenants'  if request.endpoint in ('manage_tenants', 'add_tenant', 'generate_tenant_token')
+    else 'owners'   if request.endpoint in ('manage_owners', 'create_owner', 'generate_owner_token', 'set_owner_password', 'assign_property_to_owner', 'delete_owner')
+    else 'payments' if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments')
+    else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
+    else 'reports'  if request.endpoint.startswith('reports.')
+    else 'messages' if request.endpoint.startswith('messaging.')
+    else 'tools'    if request.endpoint in ('tools_index', 'tools_test_pdf', 'tools_test_sms', 'tools_test_excel', 'activity', 'onboard', 'onboard_preview', 'export_page', 'generate_charges', 'upload_water_charges')
+    else '' %}
+
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+<div class="app-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-brand">
+        <div class="sidebar-mark"><span>M</span></div>
+        <span class="sidebar-name">Mowin</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+
+      <a class="sidebar-item {% if active_nav == 'overview' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h3a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h3a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        Overview
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'units' %}active{% endif %}" href="{{ url_for('manage_units') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+        Units
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'tenants' %}active{% endif %}" href="{{ url_for('manage_tenants') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zM1 16s0-4 8-4 8 4 8 4H1z"/></svg>
+        Tenants
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'owners' %}active{% endif %}" href="{{ url_for('manage_owners') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+        Owners
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'payments' %}active{% endif %}" href="{{ url_for('review') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"/></svg>
+        Payments
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'statements' %}active{% endif %}" href="{{ url_for('manage_statements') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        Statements
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'reports' %}active{% endif %}" href="{{ url_for('reports.report_history') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+        Reports
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'messages' %}active{% endif %}" href="{{ url_for('messaging.dashboard') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"/><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"/></svg>
+        Messages
+      </a>
+
+      <div class="sidebar-section-label">Properties</div>
+      {% if current_property %}
+      <div class="sidebar-property">
+        <div class="sidebar-property-name">{{ current_property.name }}</div>
+        <div class="sidebar-property-meta">{{ unit_count or '—' }} units</div>
+      </div>
+      {% endif %}
+      {% if property_count > 1 %}
+      <a class="sidebar-item" href="{{ url_for('property_list') }}" style="font-size: 12px; margin-top: 4px;">
+        Switch property →
+      </a>
+      {% endif %}
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <a class="sidebar-item {% if active_nav == 'tools' %}active{% endif %}" href="{{ url_for('tools_index') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        Tools &amp; Settings
+      </a>
+      <a class="sidebar-item" href="{{ url_for('admin_logout') }}" style="margin-top: 4px;">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+        Log out
+      </a>
+    </div>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-actions" style="gap: 8px;">
+        <button class="d-md-none topbar-btn-ghost" onclick="toggleSidebar()" style="padding: 7px 10px;">☰</button>
+        <form action="{{ url_for('search') }}" method="get" class="d-none d-md-block">
+          <input class="topbar-search" type="text" name="q" placeholder="Search units, tenants..." value="{{ request.args.get('q', '') }}" autocomplete="off">
+        </form>
+      </div>
+      <div class="topbar-actions">
+        <a href="{{ url_for('export_page') }}" class="topbar-btn-ghost topbar-hide-mobile">Export Data</a>
+        <a href="{{ url_for('report_payment') }}" class="topbar-btn-primary">Report Payment</a>
+      </div>
+    </header>
+
+    <!-- PAGE CONTENT -->
+    <main class="content-area">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show mb-3" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function toggleSidebar() {
+  var s = document.getElementById('sidebar');
+  var b = document.getElementById('sidebarBackdrop');
+  s.classList.toggle('open');
+  b.classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarBackdrop').classList.remove('open');
+}
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

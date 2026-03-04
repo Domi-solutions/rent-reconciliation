@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Test SMS Parser{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">Test SMS Parser</h5>
+    <a href="{{ url_for('tools_index') }}" class="btn btn-sm btn-outline-secondary">Back to Tools</a>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">Paste an M-Pesa message or reference code. No data is saved to the database.</p>
+
+    <form method="post" class="mb-4">
+      <div class="mb-2">
+        <textarea class="form-control" name="message" rows="5" placeholder="Paste M-Pesa message or reference code" required>{{ message or '' }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">Parse SMS</button>
+    </form>
+
+    {% if result %}
+    <hr>
+    <div class="mb-3">
+      <span class="badge {% if result.success %}bg-success{% else %}bg-danger{% endif %}">
+        {% if result.success %}Parse Successful{% else %}Parse Failed{% endif %}
+      </span>
+    </div>
+
+    {% if result.error %}
+    <div class="alert alert-danger">
+      {{ result.error }}
+    </div>
+    {% endif %}
+
+    {% if result.success %}
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Reference</dt>
+      <dd class="col-sm-9"><code>{{ result.reference }}</code></dd>
+
+      <dt class="col-sm-3">Amount</dt>
+      <dd class="col-sm-9">{% if result.amount %}KES {{ "{:,.2f}".format(result.amount|float) }}{% else %}N/A{% endif %}</dd>
+
+      <dt class="col-sm-3">Timestamp</dt>
+      <dd class="col-sm-9">{% if result.timestamp %}{{ result.timestamp.strftime('%Y-%m-%d %I:%M:%S %p') }}{% else %}N/A{% endif %}</dd>
+
+      <dt class="col-sm-3">Format Detected</dt>
+      <dd class="col-sm-9">{{ result.format_detected or 'unknown' }}</dd>
+
+      <dt class="col-sm-3">Sender Hint</dt>
+      <dd class="col-sm-9">{{ result.sender_hint or '-' }}</dd>
+    </dl>
+
+    {% if result.parse_warnings %}
+    <div class="alert alert-warning mt-3">
+      <strong>Warnings:</strong>
+      <ul class="mb-0">
+        {% for w in result.parse_warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

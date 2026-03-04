@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Bank Statements{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">Bank Statements</div>
+    <div class="page-meta">Uploaded PDFs parsed for Paybill credits.</div>
+  </div>
+  <a href="{{ url_for('upload_statement') }}" class="btn btn-primary">Upload Statement</a>
+</div>
+<div class="surface-card">
+  <table class="table table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Filename</th>
+        <th>Period</th>
+        <th>Rent Txns</th>
+        <th>Uploaded</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in statements %}
+      <tr>
+        <td>{{ s.filename }}</td>
+        <td>{{ s.period_start or '-' }} to {{ s.period_end or '-' }}</td>
+        <td>{{ s.rent_transactions }}</td>
+        <td>{{ s.uploaded_at }}</td>
+        <td class="d-flex gap-2 flex-wrap">
+          <a href="{{ url_for('verify_payments', statement_id=s.id) }}" class="btn btn-sm btn-outline-primary">Verify Claims</a>
+          <form method="post" action="{{ url_for('reparse_statement', statement_id=s.id) }}" onsubmit="return confirm('Re-parse this statement with the updated parser? Unassigned transactions will be replaced.')">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Re-parse</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted" style="padding: 32px 16px; text-align: center;">No statements yet. Upload one above.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

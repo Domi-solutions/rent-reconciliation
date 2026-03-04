@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Caretaker Report — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .rpt-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .rpt-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 20px 18px; }
+  .rpt-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .rpt-kpi-value { font-size: 28px; font-weight: 700; color: var(--ink-1); line-height: 1.1; margin-bottom: 4px; }
+  .rpt-kpi-value span { font-size: 15px; font-weight: 400; color: var(--ink-3); }
+  .rpt-kpi-sub { font-size: 12px; color: var(--ink-3); }
+  .rpt-kpi--vacant .rpt-kpi-value { color: #6366f1; }
+  .rpt-kpi--arrears .rpt-kpi-value { color: #dc3545; }
+  .rpt-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 20px; overflow: hidden; }
+  .rpt-section-header { padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+  .rpt-section-body { padding: 20px; }
+  .rpt-bar-wrap { background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; margin: 10px 0 6px; }
+  .rpt-bar { height: 8px; border-radius: 6px; background: #198754; }
+  .rpt-split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .rpt-stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
+  .rpt-stat-label { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .rpt-months-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .rpt-months-ok { background: #fff3cd; color: #856404; }
+  .rpt-months-bad { background: #f8d7da; color: #842029; }
+  .vacant-pill { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #ede9fe; color: #4f46e5; margin: 3px 3px 3px 0; }
+  .caretaker-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #854d0e; letter-spacing: 0.05em; text-transform: uppercase; margin-left: 8px; vertical-align: middle; }
+
+  @media print {
+    .sidebar, .topbar, .rpt-no-print { display: none !important; }
+    .app-layout { display: block !important; }
+    .main-area { margin: 0 !important; }
+    .content-area { padding: 16px !important; }
+    .rpt-hero { grid-template-columns: repeat(4, 1fr) !important; }
+    .rpt-kpi, .rpt-section { box-shadow: none !important; border: 1px solid #dee2e6 !important; break-inside: avoid; }
+    .rpt-split { grid-template-columns: 1fr 1fr !important; }
+    a[href]:after { content: none !important; }
+    body { font-size: 12px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set occupied      = report.occupancy.occupied_units or 0 %}
+{% set vacant_count  = report.occupancy.vacant_units or 0 %}
+{% set office        = report.occupancy.office_units or 0 %}
+{% set total_units   = report.occupancy.total_units or 0 %}
+{% set occ_rate      = report.occupancy.occupancy_rate or 0 %}
+{% set units_behind  = report.arrears.units_in_arrears or 0 %}
+{% set units_on_time = report.occupancy.units_on_time if report.occupancy.units_on_time is not none else (occupied - units_behind) %}
+
+{# HEADER #}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div class="page-title">
+      {{ property.name }}
+      <span class="caretaker-badge">Caretaker</span>
+    </div>
+    <div class="page-meta">{{ period_start }} → {{ period_end }} · Generated {{ (created_at or '')[:10] }}</div>
+  </div>
+  <div class="d-flex gap-2 rpt-no-print">
+    <a href="{{ url_for('reports.preview_report', report_id=report_id) }}" class="btn btn-sm btn-outline-secondary">← Owner Report</a>
+    <button onclick="window.print()" class="btn btn-sm btn-primary">Export PDF</button>
+  </div>
+</div>
+
+{# HERO KPIs — no financials #}
+<div class="rpt-hero">
+  <div class="rpt-kpi">
+    <div class="rpt-kpi-label">Occupied</div>
+    <div class="rpt-kpi-value">{{ occupied }}<span>/{{ total_units }}</span></div>
+    <div class="rpt-kpi-sub">{{ occ_rate }}% occupancy rate</div>
+  </div>
+  <div class="rpt-kpi rpt-kpi--vacant">
+    <div class="rpt-kpi-label">Vacant</div>
+    <div class="rpt-kpi-value">{{ vacant_count }}</div>
+    <div class="rpt-kpi-sub">unit{{ 's' if vacant_count != 1 }} available{% if office > 0 %} · {{ office }} office{% endif %}</div>
+  </div>
+  <div class="rpt-kpi">
+    <div class="rpt-kpi-label">Paying on Time</div>
+    <div class="rpt-kpi-value" style="color:#198754;">{{ units_on_time }}</div>
+    <div class="rpt-kpi-sub">of {{ occupied }} occupied unit{{ 's' if occupied != 1 }}</div>
+  </div>
+  <div class="rpt-kpi rpt-kpi--arrears">
+    <div class="rpt-kpi-label">Behind on Rent</div>
+    <div class="rpt-kpi-value">{{ units_behind }}</div>
+    <div class="rpt-kpi-sub">unit{{ 's' if units_behind != 1 }} with outstanding balance</div>
+  </div>
+</div>
+
+{# OCCUPANCY #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Occupancy — Snapshot at Report Date</div>
+  <div class="rpt-section-body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:16px;margin-bottom:14px;">
+      <div><div class="rpt-stat-num">{{ occupied }}</div><div class="rpt-stat-label">Occupied</div></div>
+      <div><div class="rpt-stat-num" style="color:#6366f1;">{{ vacant_count }}</div><div class="rpt-stat-label">Vacant</div></div>
+      {% if office > 0 %}<div><div class="rpt-stat-num">{{ office }}</div><div class="rpt-stat-label">Office / Other</div></div>{% endif %}
+      <div><div class="rpt-stat-num">{{ total_units }}</div><div class="rpt-stat-label">Total Units</div></div>
+    </div>
+    <div class="rpt-bar-wrap">
+      <div class="rpt-bar" style="width:{{ occ_rate }}%;"></div>
+    </div>
+    <small class="text-muted">{{ occ_rate }}% of rentable units occupied</small>
+  </div>
+</div>
+
+{# VACANT UNITS #}
+{% if vacant_units %}
+<div class="rpt-section">
+  <div class="rpt-section-header">Vacant Units — {{ vacant_units|length }} available</div>
+  <div class="rpt-section-body">
+    <div style="margin-bottom:8px;">
+      {% for u in vacant_units %}
+        <span class="vacant-pill">{{ u.unit_number }}{% if u.apartment_size %} · {{ u.apartment_size }}{% endif %}</span>
+      {% endfor %}
+    </div>
+    <small class="text-muted">Current live state — available for new tenants.</small>
+  </div>
+</div>
+{% endif %}
+
+{# ARREARS FOLLOW-UP #}
+{% if report.arrears.units_in_arrears > 0 %}
+<div class="rpt-section">
+  <div class="rpt-section-header">
+    Rent Follow-up — {{ units_behind }} unit{{ 's' if units_behind != 1 }} behind
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr>
+          <th style="padding:10px 20px;">Unit</th>
+          <th>Tenant</th>
+          <th>Contact</th>
+          <th class="text-end">Balance (KES)</th>
+          <th class="text-end" style="padding-right:20px;">How Far Behind</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for unit in report.arrears.units %}
+        <tr>
+          <td style="padding:10px 20px;font-weight:600;">{{ unit.unit_number }}</td>
+          <td>{{ unit.tenant_name }}</td>
+          <td>
+            {% if unit.tenant_phone %}
+            <a href="tel:{{ unit.tenant_phone }}" style="color:var(--ink-2);text-decoration:none;font-weight:500;">{{ unit.tenant_phone }}</a>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end" style="color:#dc3545;font-weight:600;">{{ "{:,.0f}".format(unit.balance or 0) }}</td>
+          <td class="text-end" style="padding-right:20px;">
+            {% if unit.months_behind %}
+            <span class="rpt-months-badge {% if (unit.months_behind or 0) >= 2 %}rpt-months-bad{% else %}rpt-months-ok{% endif %}">
+              {{ unit.months_behind }}mo
+            </span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-3);">
+    Sorted by largest outstanding balance. Contact tenant directly for follow-up.
+  </div>
+</div>
+{% else %}
+<div class="rpt-section">
+  <div class="rpt-section-header">Rent Follow-up</div>
+  <div class="rpt-section-body">
+    <span class="text-muted" style="font-size:13px;">All occupied units are current — no follow-up needed.</span>
+  </div>
+</div>
+{% endif %}
+
+{# TENANT MOVEMENT #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Tenant Movement — {{ period_start }} to {{ period_end }}</div>
+  <div class="rpt-section-body">
+    <div class="rpt-split">
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+          Move-ins — {{ report.tenant_movement.move_ins|length }}
+        </div>
+        {% if report.tenant_movement.move_ins %}
+          {% for t in report.tenant_movement.move_ins %}
+          <div style="font-size:13px;margin-bottom:8px;">
+            <strong>{{ t.unit_number }}</strong> — {{ t.name }}
+            <br><small class="text-muted">{{ t.date }}</small>
+          </div>
+          {% endfor %}
+        {% else %}
+          <span class="text-muted" style="font-size:13px;">None this period</span>
+        {% endif %}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+          Departures — {{ report.tenant_movement.move_outs|length }}
+        </div>
+        {% if report.tenant_movement.move_outs %}
+          {% for t in report.tenant_movement.move_outs %}
+          <div style="font-size:13px;margin-bottom:8px;">
+            <strong>{{ t.unit_number }}</strong> — {{ t.name }}
+            <br><small class="text-muted">{{ t.date }}</small>
+          </div>
+          {% endfor %}
+        {% else %}
+          <span class="text-muted" style="font-size:13px;">None this period</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# FOOTER NOTE #}
+<div style="padding:12px 0;text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px;">
+  Operational report — {{ property.name }} · {{ period_start }} to {{ period_end }} · Financial details excluded
+</div>
+
+{% endblock %}

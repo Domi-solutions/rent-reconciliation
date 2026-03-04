@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Review - Rent Reconciliation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">Payments</div>
+    <div class="page-meta">Report, verify, and review all payment activity.</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('report_payment') }}" class="topbar-btn-ghost">Report Payment</a>
+    <a href="{{ url_for('manage_statements') }}" class="topbar-btn-ghost">Statements</a>
+    <a href="{{ url_for('upload_statement') }}" class="topbar-btn-primary">Upload Statement</a>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab == 'confirmed' }}" href="{{ url_for('review', tab='confirmed') }}">Confirmed</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab == 'unreported' }}" href="{{ url_for('review', tab='unreported') }}">Unreported</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab == 'unconfirmed' }}" href="{{ url_for('review', tab='unconfirmed') }}">Unconfirmed</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab == 'reversals' }}" href="{{ url_for('review', tab='reversals') }}">Reversals</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab == 'parse_errors' }}" href="{{ url_for('review', tab='parse_errors') }}">Parse Errors</a>
+  </li>
+</ul>
+
+<div class="surface-card">
+  <div style="padding: 20px;">
+    {% if tab == 'confirmed' %}
+    <div class="page-meta mb-3">Payments verified from a claim and bank transaction; ready for ledger.</div>
+    {% if confirmed %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>Ref</th><th>Amount</th><th>Date</th><th>Unit</th><th>Tenant</th><th>Type</th></tr></thead>
+        <tbody>
+          {% for r in confirmed %}
+          <tr>
+            <td>{{ r.mpesa_ref or '-' }}</td>
+            <td>KES {{ "%.2f"|format(r.amount) }}</td>
+            <td>{{ r.payment_date or r.txn_date or '-' }}</td>
+            <td>{{ r.unit_number }}</td>
+            <td>{{ r.tenant_name or '-' }}</td>
+            <td>{{ r.assignment_type or 'auto' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No confirmed payments yet</div>
+      <div class="empty-state-sub">Report payments and upload statements, then run verification.</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'unreported' %}
+    <div class="page-meta mb-3">Paybill credits on the statement with no matching claim. Assign to a unit manually.</div>
+    {% if unreported %}
+    {% if unreported_groups %}
+    <h6 class="mb-2">Senders with multiple payments</h6>
+    <div class="table-responsive mb-4">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Sender</th>
+            <th>Payments</th>
+            <th>Total Amount</th>
+            <th>Date Range</th>
+            <th>Assign All</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in unreported_groups %}
+          <tr>
+            <td>{{ g.sender_name }}</td>
+            <td>{{ g.count }}</td>
+            <td>KES {{ "%.2f"|format(g.total_amount) }}</td>
+            <td>
+              {% if g.date_min and g.date_max %}
+                {{ g.date_min }} – {{ g.date_max }}
+              {% else %}
+                <span class="text-muted">n/a</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('assign_group') }}" class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="hidden" name="txn_ids" value="{{ g.transactions | map(attribute='id') | join(',') }}">
+                <input type="hidden" name="sender_name" value="{{ g.sender_name }}">
+                <select class="form-select form-select-sm" name="unit_id" required style="min-width: 140px;">
+                  <option value="">Select unit</option>
+                  {% for u in group_units %}
+                  <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} ({{ u.tenant_name }}){% endif %}</option>
+                  {% endfor %}
+                </select>
+                <input type="text" class="form-control form-control-sm" name="reason" required minlength="5" placeholder="Reason (min 5 chars)" style="min-width: 200px;">
+                <button type="submit" class="btn btn-sm btn-primary">Assign all</button>
+              </form>
+              <details class="mt-2">
+                <summary class="text-muted" style="cursor: pointer; font-size: 12px;">View individual payments</summary>
+                <div class="table-responsive mt-2">
+                  <table class="table table-sm mb-0">
+                    <thead>
+                      <tr>
+                        <th>Ref</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Sender</th>
+                        <th>Suggested Unit</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for t in g.transactions %}
+                      <tr>
+                        <td>{{ t.mpesa_ref or '-' }}</td>
+                        <td>KES {{ "%.2f"|format(t.amount) }}</td>
+                        <td>{{ t.txn_date or '-' }}</td>
+                        <td>{{ t.sender_name or '-' }}</td>
+                        <td>
+                          {% if t.suggested_unit_number %}
+                            {% if t.suggestion_source == 'unit_hint' %}
+                              <span class="badge bg-success">Unit {{ t.suggested_unit_number }} · Hint</span>
+                            {% elif t.suggestion_source == 'name_match' %}
+                              <span class="badge bg-warning text-dark">
+                                Unit {{ t.suggested_unit_number }} · Name match
+                                {% if t.suggested_tenant_name %} ({{ t.suggested_tenant_name }}){% endif %}
+                              </span>
+                            {% else %}
+                              <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
+                            {% endif %}
+                          {% else %}
+                            <span class="text-muted">None</span>
+                          {% endif %}
+                        </td>
+                        <td>
+                          {% if t.suggested_unit_id and t.suggestion_source == 'unit_hint' %}
+                          <form method="post" action="{{ url_for('auto_assign_payment', txn_id=t.id) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-sm btn-success">Use suggestion</button>
+                          </form>
+                          {% elif t.suggested_unit_id and t.suggestion_source == 'name_match' %}
+                          <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source='name_match', suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
+                          {% endif %}
+                          <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-secondary ms-1">Assign single</a>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if unreported_single %}
+    <h6 class="mb-2">Single payments</h6>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Amount</th>
+            <th>Date</th>
+            <th>Sender</th>
+            <th>Suggested Unit</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in unreported_single %}
+          <tr>
+            <td>{{ t.mpesa_ref or '-' }}</td>
+            <td>KES {{ "%.2f"|format(t.amount) }}</td>
+            <td>{{ t.txn_date or '-' }}</td>
+            <td>{{ t.sender_name or '-' }}</td>
+            <td>
+              {% if t.suggested_unit_number %}
+                {% if t.suggestion_source == 'unit_hint' %}
+                  <span class="badge bg-success">Unit {{ t.suggested_unit_number }} · Hint</span>
+                {% elif t.suggestion_source == 'name_match' %}
+                  <span class="badge bg-warning text-dark">
+                    Unit {{ t.suggested_unit_number }} · Name match
+                    {% if t.suggested_tenant_name %} ({{ t.suggested_tenant_name }}){% endif %}
+                  </span>
+                {% else %}
+                  <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">None</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if t.suggested_unit_id and t.suggestion_source == 'unit_hint' %}
+              <form method="post" action="{{ url_for('auto_assign_payment', txn_id=t.id) }}" style="display:inline;">
+                <button type="submit" class="btn btn-sm btn-success">Use suggestion</button>
+              </form>
+              {% elif t.suggested_unit_id and t.suggestion_source == 'name_match' %}
+              <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source='name_match', suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
+              {% endif %}
+              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-outline-secondary ms-1">Assign</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No unreported bank payments</div>
+      <div class="empty-state-sub">All Paybill credits are either verified or assigned.</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'unconfirmed' %}
+    <div class="page-meta mb-3">Claims reported by caretaker; waiting for a matching transaction on an uploaded statement.</div>
+    {% if unconfirmed %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>Ref</th><th>Unit</th><th>Amount</th><th>Reported</th></tr></thead>
+        <tbody>
+          {% for c in unconfirmed %}
+          <tr>
+            <td>{{ c.mpesa_ref }}</td>
+            <td>{{ c.unit_number }}</td>
+            <td>{{ "%.2f"|format(c.claimed_amount) if c.claimed_amount else '-' }}</td>
+            <td>{{ c.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-3">
+      <a href="{{ url_for('report_payment') }}" class="btn btn-outline-primary btn-sm">Report another payment</a>
+      <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-secondary btn-sm ms-2">Upload statement</a>
+    </p>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No pending claims</div>
+      <div class="empty-state-sub"><a href="{{ url_for('report_payment') }}">Report a payment</a></div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'reversals' %}
+    <div class="page-meta mb-3">Bank reversals (e.g. clawbacks). Require human review before balance adjustment.</div>
+    {% if reversals %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>Ref</th><th>Amount</th><th>Date</th><th>Sender</th></tr></thead>
+        <tbody>
+          {% for r in reversals %}
+          <tr>
+            <td>{{ r.mpesa_ref or '-' }}</td>
+            <td>KES {{ "%.2f"|format(r.amount) }}</td>
+            <td>{{ r.txn_date or '-' }}</td>
+            <td>{{ r.sender_name or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No reversals found</div>
+      <div class="empty-state-sub">No reversals on uploaded statements.</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'parse_errors' %}
+    <div class="empty-state">
+      <div class="empty-state-title">No parse-error log yet</div>
+      <div class="empty-state-sub">When report-payment fails to parse, the error is shown on the form only.</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

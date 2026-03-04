@@ -1,0 +1,33 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Messages — {{ property.name }}{% endblock %}
+{% set active_tab = 'messages' %}
+{% block content %}
+<h6 class="text-muted mb-3">Message inbox</h6>
+{% if messages %}
+<div class="surface-card">
+  {% for m in messages %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="data-row-unit">{{ m.subject }}</div>
+        <div class="data-row-meta">
+          {{ m.created_at }}{% if m.message_type %} — {{ m.message_type }}{% endif %}
+        </div>
+        <div class="mt-2">
+          {{ m.body | replace('\n', '<br>') | safe }}
+        </div>
+      </div>
+      {% if not m.read_at %}
+      <div class="status-pending">New</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No messages</div>
+  <div class="empty-state-sub">Messages from the property management team will appear here.</div>
+  </div>
+{% endif %}
+{% endblock %}

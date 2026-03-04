@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Upload Bank Statement{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Upload Bank Statement</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>PDF Upload</h6></div>
+  <div style="padding: 20px;">
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Upload a Co-operative Bank statement PDF. Balance checksum will be validated. After upload you'll be taken to verify pending payment claims against this statement.</p>
+    <form method="post" action="{{ url_for('upload_statement') }}" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="file" class="form-label">PDF File *</label>
+        <input type="file" class="form-control" id="file" name="file" accept=".pdf" required>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Upload & Process</button>
+        <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

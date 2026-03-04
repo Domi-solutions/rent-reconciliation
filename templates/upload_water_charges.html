@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Upload Water Charges{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Upload Water Charges</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>Water Meter Readings</h6></div>
+  <div style="padding: 20px;">
+    <div class="banner-warning mb-3" style="font-size: 13px;">
+      <strong>Step 1 of 2</strong> — Upload water charges before generating rent + service charges for the month.
+    </div>
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">The Excel file should have columns: <strong>House No</strong> (or Unit Number) and <strong>Water Charge</strong> (amount). Tenant Name column is optional.</p>
+    <form method="post" action="{{ url_for('upload_water_charges') }}" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="period" class="form-label">Period (YYYY-MM) *</label>
+        <input type="month" class="form-control" id="period" name="period" required>
+      </div>
+      <div class="mb-3">
+        <label for="file" class="form-label">Water Readings Excel File *</label>
+        <input type="file" class="form-control" id="file" name="file" accept=".xlsx,.xls" required>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Upload Water Charges</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

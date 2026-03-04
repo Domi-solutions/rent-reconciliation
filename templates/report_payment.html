@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Report Payment{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Report a Payment</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>M-Pesa Reference</h6></div>
+  <div style="padding: 20px;">
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Paste the full M-Pesa message or just the reference code (e.g. TLU9G289GY). The caretaker forwards M-Pesa SMS; you paste it here and choose the unit. After you upload a statement that contains this ref, run Verify to confirm the payment.</p>
+    <form method="post" action="{{ url_for('report_payment') }}">
+      <div class="mb-3">
+        <label for="message" class="form-label">M-Pesa Message or Reference *</label>
+        <textarea class="form-control" id="message" name="message" rows="4" required placeholder="Dear NAME, Mpesa transaction of KES 21000.00... Mpesa Ref: TLU9G289GY"></textarea>
+      </div>
+      <div class="mb-3">
+        <label for="unit_id" class="form-label">Unit *</label>
+        <select class="form-select" id="unit_id" name="unit_id" required>
+          <option value="">Select unit</option>
+          {% for u in units %}
+          <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} ({{ u.tenant_name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Report Payment</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

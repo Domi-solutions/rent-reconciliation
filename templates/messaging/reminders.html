@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Reminder settings — {{ property.name }}{% endblock %}
+{% block content %}
+<h1 class="mb-2">Reminder settings</h1>
+<p class="text-muted mb-4">Configure when automatic rent-due reminders are sent. Reminders run when you load the admin dashboard.</p>
+<form method="post" action="{{ url_for('messaging.reminders') }}">
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Reminder type</th><th>Days before due</th><th>Enabled</th></tr></thead>
+        <tbody>
+          {% for s in settings %}
+          <tr>
+            <td>{{ s.template_key }}</td>
+            <td><input type="number" class="form-control form-control-sm" name="days_{{ s.template_key }}" value="{{ s.days_before_due }}" min="0" style="width:80px"></td>
+            <td><input type="checkbox" name="enabled_{{ s.template_key }}" value="1" {% if s.enabled %}checked{% endif %}></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <button type="submit" class="btn btn-primary mt-3">Save settings</button>
+  <a href="{{ url_for('messaging.dashboard') }}" class="btn btn-outline-secondary mt-3">Back to messaging</a>
+</form>
+{% endblock %}

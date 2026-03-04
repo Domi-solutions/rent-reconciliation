@@ -1,0 +1,23 @@
+app = "rent-reconciliation"
+primary_region = "jnb"
+
+[build]
+
+[env]
+  PORT = "8080"
+  FLASK_DEBUG = "0"
+  FLASK_ENV = "production"
+  DATABASE_PATH = "/data/rent.db"
+  UPLOAD_FOLDER = "/data/statements"
+  PYTHONUNBUFFERED = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "data_vol"
+  destination = "/data"

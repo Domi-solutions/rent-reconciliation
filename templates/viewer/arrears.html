@@ -1,0 +1,59 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block active_tab %}arrears{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Arrears</div>
+  <div class="page-meta">Units with outstanding balances.</div>
+</div>
+{% if arrears_count > 0 %}
+  <div class="banner-danger mb-2">
+    <strong>{{ arrears_count }} tenant(s) owe a total of KES {{ "{:,.0f}".format(total_arrears or 0) }}</strong>
+  </div>
+  {% if pending_total > 0 %}
+  <div class="banner-warning mb-3">
+    <strong>KES {{ "{:,.0f}".format(pending_total or 0) }}</strong> in pending payments reported.
+    If verified, arrears would be <strong>KES {{ "{:,.0f}".format(projected_arrears or 0) }}</strong>.
+  </div>
+  {% endif %}
+
+  <div class="surface-card">
+    {% for a in arrears %}
+    <div class="data-row">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="data-row-unit">{{ a.unit_number }}</div>
+          <div class="data-row-meta">
+            {{ a.tenant_name or 'No tenant' }}
+            {% if a.tenant_phone %}
+              · <a href="tel:{{ a.tenant_phone }}" class="data-row-meta">{{ a.tenant_phone }}</a>
+            {% endif %}
+          </div>
+        </div>
+        <div class="text-end">
+          <div class="data-row-amount amount-danger">
+            KES {{ "{:,.0f}".format(a.balance or 0) }}
+          </div>
+          <div class="data-row-meta">
+            ~{{ a.months_behind }} month(s) behind · Rent {{ "{:,.0f}".format(a.monthly_rent or 0) }}/mo
+          </div>
+          {% if a.pending_amount > 0 %}
+          <div class="mt-1">
+            <span class="status-pending">KES {{ "{:,.0f}".format(a.pending_amount or 0) }} pending</span>
+          </div>
+          <div class="data-row-meta">
+            If verified → KES {{ "{:,.0f}".format(a.projected_balance or 0) }}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">No arrears</div>
+    <div class="empty-state-sub">No arrears recorded. All tenants are up to date.</div>
+  </div>
+{% endif %}
+{% endblock %}

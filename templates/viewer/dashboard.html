@@ -1,0 +1,190 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block active_tab %}overview{% endblock %}
+{% block content %}
+
+{# 1. THREE HERO NUMBERS #}
+<div class="row g-4 mb-0" style="padding-bottom: 24px;">
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Expected Monthly Income</div>
+    <div class="kpi-hero-value">KES {{ "{:,.0f}".format(stats.total_expected or 0) }}</div>
+    <div class="kpi-hero-sub">rent + service charge, occupied units</div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Collected</div>
+    <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
+    <div class="kpi-hero-sub">
+      {% if stats.pending_total > 0 %}
+        + KES {{ "{:,.0f}".format(stats.pending_total) }} pending verification
+      {% else %}
+        verified against bank records
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Outstanding Arrears</div>
+    <div class="kpi-hero-value {% if stats.total_arrears > 0 %}kpi-hero-value--danger{% endif %}">
+      KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}
+    </div>
+    <div class="kpi-hero-sub">
+      {% if stats.total_arrears > 0 and stats.total_expected > 0 %}
+        {% set arrears_ratio = (stats.total_arrears / stats.total_expected) | round(1) %}
+        {{ arrears_ratio }}× monthly to clear · {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}
+      {% elif stats.total_arrears > 0 %}
+        {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }} in arrears
+      {% else %}
+        all tenants up to date
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# 2. SECONDARY STAT STRIP #}
+<div class="stat-row mb-4">
+  <div class="stat-item">
+    <div class="stat-label">Occupancy</div>
+    <div class="stat-value">{{ stats.occupancy_rate }}%</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-label">Occupied</div>
+    <div class="stat-value">{{ stats.occupied_units }}/{{ stats.rentable_units }}</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-label">In Arrears</div>
+    <div class="stat-value">{{ stats.units_in_arrears }}</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-label">Pending Claims</div>
+    <div class="stat-value">KES {{ "{:,.0f}".format(stats.pending_total or 0) }}</div>
+  </div>
+</div>
+
+{# 3. ALERT BANNER (conditional on arrears) #}
+{% if stats.units_in_arrears > 0 %}
+<div class="alert-banner mb-4">
+  <div class="alert-banner-icon">!</div>
+  <div class="alert-banner-body">
+    <div class="alert-banner-title">{{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }} in arrears</div>
+    <div class="alert-banner-sub">
+      KES {{ "{:,.0f}".format(stats.total_arrears or 0) }} outstanding.
+      {% if stats.pending_total > 0 %}
+        If KES {{ "{:,.0f}".format(stats.pending_total) }} in pending claims verify, arrears would reduce to KES {{ "{:,.0f}".format(stats.projected_arrears or 0) }}.
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# 4. ARREARS BREAKDOWN #}
+{% if arrears_breakdown %}
+<div class="surface-card mb-4">
+  <div class="surface-card-header">
+    <h6>Arrears Breakdown</h6>
+  </div>
+  {% for unit in arrears_breakdown %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start mb-1">
+      <div>
+        <div class="data-row-unit">{{ unit.unit_number }}</div>
+        {% if unit.pending_amount > 0 %}
+        <div class="data-row-meta">KES {{ "{:,.0f}".format(unit.pending_amount) }} pending verification</div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <div class="data-row-amount amount-danger">KES {{ "{:,.0f}".format(unit.balance) }}</div>
+        {% if unit.pending_amount > 0 %}
+        <div class="data-row-meta">If verified → KES {{ "{:,.0f}".format(unit.projected_balance) }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="mini-bar">
+      <div class="mini-bar-fill" style="width: {{ unit.pct }}%; background: var(--red);"></div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if arrears_others_count > 0 %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start mb-1">
+      <div>
+        <div class="data-row-unit">{{ arrears_others_count }} other unit{{ 's' if arrears_others_count > 1 }}</div>
+        {% if arrears_others_pending > 0 %}
+        <div class="data-row-meta">KES {{ "{:,.0f}".format(arrears_others_pending) }} pending across these units</div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <div class="data-row-amount amount-danger">KES {{ "{:,.0f}".format(arrears_others_amount) }}</div>
+        {% if arrears_others_pending > 0 %}
+        <div class="data-row-meta">If verified → KES {{ "{:,.0f}".format(arrears_others_projected) }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="mini-bar">
+      <div class="mini-bar-fill" style="width: {{ arrears_others_pct }}%; background: var(--ink-3);"></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# 5. ALL UNITS #}
+<div class="surface-card">
+  <div class="surface-card-header">
+    <h6>All Units</h6>
+  </div>
+  <table class="table table-hover mb-0 viewer-table d-none d-md-table">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Tenant</th>
+        <th class="text-end">Rent/mo</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for unit in units %}
+      {% set balance = unit.balance or 0 %}
+      <tr>
+        <td><strong>{{ unit.unit_number }}</strong></td>
+        <td>
+          {% if unit.status == 'vacant' %}<span class="data-row-meta">Vacant</span>
+          {% elif unit.status == 'office' %}<span class="data-row-meta">Office</span>
+          {% else %}{{ unit.tenant_name or '—' }}{% endif %}
+        </td>
+        <td class="currency">KES {{ "{:,.0f}".format(unit.monthly_rent or 0) }}</td>
+        <td>
+          {% if balance > 0 %}<span class="status-arrears">KES {{ "{:,.0f}".format(balance) }}</span>
+          {% elif unit.status == 'vacant' %}<span class="status-vacant">Vacant</span>
+          {% elif unit.status == 'office' %}<span class="status-vacant">Office</span>
+          {% else %}<span class="status-paid">Clear</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="d-md-none">
+    {% for unit in units %}
+    {% set balance = unit.balance or 0 %}
+    <div class="data-row">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="data-row-unit">{{ unit.unit_number }}</div>
+          <div class="data-row-meta">
+            {% if unit.status == 'vacant' %}Vacant
+            {% elif unit.status == 'office' %}Office
+            {% else %}{{ unit.tenant_name or '—' }}{% endif %}
+          </div>
+          <div class="data-row-meta">KES {{ "{:,.0f}".format(unit.monthly_rent or 0) }}/mo</div>
+        </div>
+        <div class="text-end">
+          {% if balance > 0 %}<div class="status-arrears">KES {{ "{:,.0f}".format(balance) }}</div>
+          {% elif unit.status == 'vacant' %}<div class="status-vacant">Vacant</div>
+          {% elif unit.status == 'office' %}<div class="status-vacant">Office</div>
+          {% else %}<div class="status-paid">Clear</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

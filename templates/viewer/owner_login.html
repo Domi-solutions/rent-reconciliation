@@ -1,0 +1,36 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}Owner Portal{% endblock %}
+{% block content %}
+
+<div style="max-width: 400px; margin: 60px auto;">
+  <div class="surface-card">
+    <div class="surface-card-header">
+      <h6>{% if owner_name %}{{ owner_name }} — Owner Portal{% else %}Owner Portal{% endif %}</h6>
+    </div>
+    <div style="padding: 24px;">
+      {% if error %}
+      <div class="alert alert-danger" role="alert">{{ error }}</div>
+      {% endif %}
+
+      {% if owner_name %}
+      <p style="font-size: 14px; color: var(--ink-2); margin-bottom: 20px;">
+        Enter your password to access the property dashboard.
+      </p>
+      <form method="POST" action="{{ url_for('viewer.owner_login', token=token) }}">
+        <div class="mb-3">
+          <label for="password" style="font-size: 13px; font-weight: 600; color: var(--ink-2);">Password</label>
+          <input type="password" id="password" name="password" class="form-control mt-1"
+                 placeholder="Enter your password" autofocus required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Access Dashboard</button>
+      </form>
+      {% else %}
+      <p style="font-size: 14px; color: var(--ink-2);">
+        This link is invalid or has been revoked. Please contact your property manager for a new access link.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

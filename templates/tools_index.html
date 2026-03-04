@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Tools & Settings{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Tools &amp; Settings</div>
+  <div class="page-meta">Property setup, data management, and parser utilities.</div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <div class="col-12">
+    <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow</h6>
+    </div>
+    <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
+      <div class="row g-0">
+        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Upload Water Charges</div>
+          <div class="data-row-meta mb-3">Step 1 — Upload meter readings for the month before generating charges.</div>
+          <a href="{{ url_for('upload_water_charges') }}" class="btn btn-outline-primary btn-sm">Upload Readings</a>
+        </div>
+        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Generate Charges</div>
+          <div class="data-row-meta mb-3">Step 2 — Create rent + service charge records for all occupied units.</div>
+          <a href="{{ url_for('generate_charges') }}" class="btn btn-outline-primary btn-sm">Generate Charges</a>
+        </div>
+        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Upload Bank Statement</div>
+          <div class="data-row-meta mb-3">Step 3 — Upload a PDF bank statement to scan and verify M-Pesa payments.</div>
+          <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-primary btn-sm">Upload Statement</a>
+        </div>
+        <div class="col-md-3" style="padding: 20px;">
+          <div class="data-row-unit mb-1">Export Data</div>
+          <div class="data-row-meta mb-3">Download unit balances, payment history, and charge records as Excel.</div>
+          <a href="{{ url_for('export_page') }}" class="btn btn-outline-primary btn-sm">Export</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Property</h6>
+    </div>
+    <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
+      <div class="row g-0">
+        <div class="col-md-4" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Onboard New Property</div>
+          <div class="data-row-meta mb-3">Upload an Excel file to set up a new property with units and tenants.</div>
+          <a href="{{ url_for('onboard') }}" class="btn btn-outline-primary btn-sm">Onboard Property</a>
+        </div>
+        <div class="col-md-4" style="padding: 20px;">
+          <div class="data-row-unit mb-1">Activity Log</div>
+          <div class="data-row-meta mb-3">Full audit trail — who did what and when across all property data.</div>
+          <a href="{{ url_for('activity') }}" class="btn btn-outline-primary btn-sm">View Activity</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Parser Test Tools</h6>
+    </div>
+    <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
+      <div class="data-row-meta" style="padding: 12px 20px 4px; font-size: 12px;">These tools run parsers only — no data is saved to the database.</div>
+      <div class="row g-0">
+        <div class="col-md-4" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Test PDF Parser</div>
+          <div class="data-row-meta mb-3">Upload a bank statement PDF to see parsed transactions and validation.</div>
+          <a href="{{ url_for('tools_test_pdf') }}" class="btn btn-outline-secondary btn-sm">Open</a>
+        </div>
+        <div class="col-md-4" style="padding: 20px; border-right: 1px solid var(--border);">
+          <div class="data-row-unit mb-1">Test SMS Parser</div>
+          <div class="data-row-meta mb-3">Paste an M-Pesa message or reference code to see the parsed result.</div>
+          <a href="{{ url_for('tools_test_sms') }}" class="btn btn-outline-secondary btn-sm">Open</a>
+        </div>
+        <div class="col-md-4" style="padding: 20px;">
+          <div class="data-row-unit mb-1">Test Excel Parser</div>
+          <div class="data-row-meta mb-3">Upload tenant/unit Excel to see parsed rows and total arrears.</div>
+          <a href="{{ url_for('tools_test_excel') }}" class="btn btn-outline-secondary btn-sm">Open</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

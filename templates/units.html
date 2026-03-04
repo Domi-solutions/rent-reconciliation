@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Units - {{ property.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">Units</div>
+    <div class="page-meta">Rental units, monthly rent, and current balances.</div>
+  </div>
+  <a href="{{ url_for('add_unit') }}" class="btn btn-primary">Add Unit</a>
+</div>
+{% if filter_status == 'occupied' or filter_pending_claims %}
+<div class="banner-warning mb-3" style="font-size: 13px;">
+  Showing:
+  {% if filter_status == 'occupied' and filter_pending_claims %}Occupied units with pending claims
+  {% elif filter_status == 'occupied' %}Occupied units only
+  {% else %}Units with pending claims
+  {% endif %}
+  — <a href="{{ url_for('manage_units') }}" style="color: inherit; font-weight: 600;">Show all units</a>
+</div>
+{% endif %}
+<div class="surface-card">
+  <table class="table table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Status</th>
+        <th>Monthly Rent</th>
+        <th>Tenant</th>
+        <th>Phone</th>
+        <th class="text-end">Balance</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in units %}
+      <tr>
+        <td>{{ u.unit_number }}</td>
+        <td>
+          {% if u.status == 'occupied' %}
+          <span class="status-paid">Occupied</span>
+          {% elif u.status == 'vacant' %}
+          <span class="status-vacant">Vacant</span>
+          {% else %}
+          <span class="status-pending">Office</span>
+          {% endif %}
+        </td>
+        <td>KES {{ "%.2f"|format(u.monthly_rent) }}</td>
+        <td>{{ u.tenant_name or '-' }}</td>
+        <td>{{ u.tenant_phone or '-' }}</td>
+        <td class="text-end">
+          {% set bal = u.balance if u.balance is not none else 0 %}
+          {% if bal > 0 %}
+          <span class="amount-danger">{{ "%.2f"|format(bal) }}</span>
+          {% else %}
+          {{ "%.2f"|format(bal) }}
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('set_unit_status', unit_id=u.id) }}" class="d-flex gap-1 align-items-center status-change-form">
+            <select name="status" class="form-select form-select-sm" style="width: auto; font-size: 12px; padding: 3px 8px;">
+              <option value="occupied" {% if u.status == 'occupied' %}selected{% endif %}>Occupied</option>
+              <option value="vacant" {% if u.status == 'vacant' %}selected{% endif %}>Vacant</option>
+              <option value="office" {% if u.status == 'office' %}selected{% endif %}>Office</option>
+            </select>
+            <button type="submit" class="btn btn-sm btn-outline-secondary" style="font-size: 11px; padding: 3px 8px;">Set</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted" style="padding: 32px 16px; text-align: center;">No units yet. Add one above.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('.status-change-form').forEach(function(form) {
+  form.addEventListener('submit', function(e) {
+    var unit = this.closest('tr').querySelector('td').textContent.trim();
+    var newStatus = this.querySelector('select').value;
+    var current = this.closest('tr').querySelector('.status-paid, .status-vacant, .status-pending');
+    var currentStatus = current ? current.textContent.trim().toLowerCase() : '';
+    if (newStatus === currentStatus) { e.preventDefault(); return; }
+    if (!confirm('Change unit ' + unit + ' to ' + newStatus + '?')) {
+      e.preventDefault();
+    }
+  });
+});
+</script>
+{% endblock %}

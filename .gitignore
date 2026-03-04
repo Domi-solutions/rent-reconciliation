@@ -1,0 +1,47 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database files — never commit live data
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-*
+data/*.backup*
+data/statements/
+data/output/
+data/input/
+data/state/
+
+# Backups directory (downloaded prod copies)
+backups/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Large personal files in root (bank statements, screenshots)
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# IDE / editors
+.vscode/
+.cursor/
+.idea/
+
+# Claude Code session data
+.claude/
+
+# Test artifacts
+*.log

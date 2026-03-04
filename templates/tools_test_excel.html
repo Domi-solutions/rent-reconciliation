@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Test Excel Parser{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">Test Excel Parser</h5>
+    <a href="{{ url_for('tools_index') }}" class="btn btn-sm btn-outline-secondary">Back to Tools</a>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">Upload tenant/unit Excel. Preview only. Use Onboard Property to import. No data is saved to the database.</p>
+
+    <form method="post" enctype="multipart/form-data" class="mb-4">
+      <div class="mb-2">
+        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Parse Excel</button>
+    </form>
+
+    {% if result %}
+    <hr>
+    <div class="mb-3">
+      <span class="badge {% if result.success %}bg-success{% else %}bg-danger{% endif %}">
+        {% if result.success %}Parse Successful{% else %}Parse Failed{% endif %}
+      </span>
+      {% if result.rows %}
+      <span class="badge bg-secondary ms-2">{{ result.rows|length }} rows</span>
+      {% endif %}
+    </div>
+
+    {% if result.errors %}
+    <div class="alert alert-danger">
+      <strong>Errors:</strong>
+      <ul class="mb-0">
+        {% for e in result.errors %}
+        <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if result.warnings %}
+    <div class="alert alert-warning">
+      <strong>Warnings:</strong>
+      <ul class="mb-0">
+        {% for w in result.warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if result.rows %}
+    <div class="table-responsive">
+      <table class="table table-striped table-sm">
+        <thead>
+          <tr>
+            <th>Unit</th>
+            <th>Tenant</th>
+            <th>Size</th>
+            <th class="text-end">Monthly Rent</th>
+            <th>Contact</th>
+            <th class="text-end">Arrears</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in result.rows %}
+          <tr>
+            <td><strong>{{ row.unit_number }}</strong></td>
+            <td>{{ row.tenant_name or '-' }}</td>
+            <td>{{ row.apartment_size or '-' }}</td>
+            <td class="text-end">{{ "{:,.0f}".format(row.monthly_rent) }}</td>
+            <td>{{ row.contact or '-' }}</td>
+            <td class="text-end {% if row.pending_rent > 0 %}text-danger fw-bold{% endif %}">
+              {{ "{:,.0f}".format(row.pending_rent) if row.pending_rent > 0 else '-' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-dark">
+            <th colspan="5" class="text-end">Total Arrears:</th>
+            <th class="text-end">KES {{ "{:,.0f}".format(result.total_arrears) }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

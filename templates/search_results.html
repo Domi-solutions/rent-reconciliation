@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Search — {{ q }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Search results</div>
+  <div class="page-meta">{{ (units|length) + (tenants|length) }} result{{ 's' if (units|length + tenants|length) != 1 }} for "{{ q }}"</div>
+</div>
+
+{% if not q %}
+<div class="empty-state">
+  <div class="empty-state-title">Enter a search term</div>
+  <div class="empty-state-sub">Search by unit number, tenant name, or phone number.</div>
+</div>
+{% elif units or tenants %}
+
+  {% if units %}
+  <div class="surface-card mb-4">
+    <div class="surface-card-header">
+      <h6>Units <span class="badge bg-secondary ms-1">{{ units|length }}</span></h6>
+    </div>
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Unit</th>
+          <th>Status</th>
+          <th>Tenant</th>
+          <th class="text-end">Balance</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in units %}
+        <tr>
+          <td>{{ u.unit_number }}</td>
+          <td>
+            {% if u.status == 'occupied' %}<span class="status-paid">Occupied</span>
+            {% elif u.status == 'vacant' %}<span class="status-vacant">Vacant</span>
+            {% else %}<span class="status-pending">Office</span>{% endif %}
+          </td>
+          <td>{{ u.tenant_name or '—' }}</td>
+          <td class="text-end">
+            {% set bal = u.balance if u.balance is not none else 0 %}
+            {% if bal > 0 %}<span class="amount-danger">KES {{ "%.2f"|format(bal) }}</span>
+            {% else %}KES {{ "%.2f"|format(bal) }}{% endif %}
+          </td>
+          <td><a href="{{ url_for('manage_units') }}" class="report-view-btn">View all units →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if tenants %}
+  <div class="surface-card">
+    <div class="surface-card-header">
+      <h6>Tenants <span class="badge bg-secondary ms-1">{{ tenants|length }}</span></h6>
+    </div>
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Unit</th>
+          <th>Phone</th>
+          <th>Move-in</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tenants %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td>{{ t.unit_number or '—' }}</td>
+          <td>{{ t.phone or '—' }}</td>
+          <td>{{ t.move_in_date or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No results for "{{ q }}"</div>
+  <div class="empty-state-sub">Try a different unit number, tenant name, or phone number.</div>
+</div>
+{% endif %}
+{% endblock %}

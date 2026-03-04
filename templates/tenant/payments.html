@@ -1,0 +1,64 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Payments — {{ property.name }}{% endblock %}
+{% set active_tab = 'payments' %}
+{% block content %}
+<h6 class="text-muted mb-3">Payment activity</h6>
+{% if payments_with_allocations %}
+  {% for item in payments_with_allocations %}
+  <div class="surface-card mb-3">
+    <div class="surface-card-header d-flex justify-content-between align-items-center"
+         role="button" data-bs-toggle="collapse" data-bs-target="#pay-{{ loop.index }}">
+      <div>
+        <div class="data-row-unit">{{ item.date }}</div>
+        <div class="data-row-meta">KES {{ "{:,.0f}".format(item.amount) }}</div>
+      </div>
+      <div class="status-paid">
+        {{ item.mpesa_ref }}
+      </div>
+    </div>
+    <div id="pay-{{ loop.index }}" class="collapse">
+      <div class="data-row">
+        <p class="data-row-meta mb-1">{{ property.name }} — Unit {{ unit.unit_number }} — {{ tenant.name }}</p>
+        <h6 class="mb-3">Payment record</h6>
+        <div class="row mb-2">
+          <div class="col-6"><span class="data-row-meta">Reference</span><br>{{ item.mpesa_ref }}</div>
+          <div class="col-6"><span class="data-row-meta">Date</span><br>{{ item.date }}</div>
+        </div>
+        <div class="row mb-3">
+          <div class="col-12">
+            <span class="data-row-meta">Amount</span><br>
+            <span class="data-row-amount amount-success">KES {{ "{:,.0f}".format(item.amount) }}</span>
+          </div>
+        </div>
+        {% if item.allocations %}
+        <h6 class="small text-muted">Applied to:</h6>
+        <table class="table table-sm mb-0 viewer-table">
+          <thead>
+            <tr>
+              <th>Charge</th>
+              <th>Period</th>
+              <th class="text-end">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in item.allocations %}
+            <tr>
+              <td>{{ a.charge_type|capitalize }}</td>
+              <td>{{ a.period }}</td>
+              <td class="text-end">KES {{ "{:,.0f}".format(a.alloc_amount) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No payment activity</div>
+  <div class="empty-state-sub">Payments will appear here once they have been recorded.</div>
+  </div>
+{% endif %}
+{% endblock %}

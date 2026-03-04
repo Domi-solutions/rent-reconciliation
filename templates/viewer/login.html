@@ -1,0 +1,25 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}Viewer Login{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Property Viewer</h5>
+        <p class="text-muted small mb-3">Enter the viewer password to continue.</p>
+        {% if error %}
+        <div class="alert alert-danger py-2">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="{{ url_for('viewer.login') }}">
+          {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" class="form-control" id="password" name="password" required autofocus>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

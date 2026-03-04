@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Add Tenant{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Add Tenant</div>
+</div>
+<div class="surface-card form-card-wrap">
+  <div class="surface-card-header"><h6>Tenant Details</h6></div>
+  <div style="padding: 20px;">
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Assign a tenant to a unit. Only units without an active tenant are listed. The tenant name can help when matching payments.</p>
+    <form method="post" action="{{ url_for('add_tenant') }}">
+      <div class="mb-3">
+        <label for="name" class="form-label">Tenant Name *</label>
+        <input type="text" class="form-control" id="name" name="name" required>
+      </div>
+      <div class="mb-3">
+        <label for="phone" class="form-label">Phone</label>
+        <input type="text" class="form-control" id="phone" name="phone">
+      </div>
+      <div class="mb-3">
+        <label for="unit_id" class="form-label">Unit *</label>
+        <select class="form-select" id="unit_id" name="unit_id" required>
+          <option value="">Select unit</option>
+          {% for u in units %}
+          <option value="{{ u.id }}">{{ u.unit_number }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Add Tenant</button>
+        <a href="{{ url_for('manage_tenants') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

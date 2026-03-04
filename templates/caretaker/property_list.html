@@ -1,0 +1,30 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Select Property — Caretaker{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <div style="font-size: 20px; font-weight: 700; color: var(--ink-1);">Select Property</div>
+  <div style="font-size: 13px; color: var(--ink-3);">Choose which building you want to view as caretaker.</div>
+</div>
+
+{% if properties %}
+<div class="row g-3">
+  {% for p in properties %}
+  <div class="col-12 col-md-6">
+    <a href="{{ url_for('caretaker.dashboard', property_id=p.id) }}"
+       class="surface-card"
+       style="display:block; padding:16px 18px; text-decoration:none; border-radius:var(--r-card); border:1px solid var(--border);">
+      <div style="font-size:15px; font-weight:600; color:var(--ink-1);">{{ p.name }}</div>
+      <div style="font-size:12px; color:var(--ink-3); margin-top:4px;">Caretaker view →</div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="font-size:13px; color:var(--ink-3);">
+  No active properties found.
+</div>
+{% endif %}
+
+{% endblock %}
+

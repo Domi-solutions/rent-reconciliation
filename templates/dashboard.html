@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block content %}
+{# Precompute pending totals #}
+{% set rentable_units = stats.total_units - stats.office_units %}
+{% set pending_ns = namespace(total=0) %}
+{% for c in pending %}
+  {% if c.claimed_amount %}
+    {% set pending_ns.total = pending_ns.total + (c.claimed_amount | float) %}
+  {% endif %}
+{% endfor %}
+{% set pending_count = pending|length %}
+
+{# PAGE HEADER #}
+<div class="mb-4">
+  <div class="page-title--hero">{{ property.name }}</div>
+  <div class="page-meta">{{ rentable_units }} units · {{ stats.occupancy_rate }}% occupied</div>
+</div>
+
+{# GENERATE CHARGES HINT #}
+{% if show_generate_charges_hint %}
+<div class="alert-banner mb-4">
+  <div class="alert-banner-icon">!</div>
+  <div class="alert-banner-body">
+    <div class="alert-banner-title">No charges for {{ current_month }} yet</div>
+    <div class="alert-banner-sub">Upload water charges first, then generate rent + service charges.</div>
+  </div>
+  <a href="{{ url_for('generate_charges') }}" class="alert-banner-action">Generate charges →</a>
+</div>
+{% endif %}
+
+{# ARREARS BANNER #}
+{% if stats.arrears_ratio > 0.5 %}
+<div class="alert-banner mb-4">
+  <div class="alert-banner-icon">!</div>
+  <div class="alert-banner-body">
+    <div class="alert-banner-title">{{ stats.arrears_ratio }} months of arrears outstanding</div>
+    <div class="alert-banner-sub">KES {{ "{:,.0f}".format(stats.total_arrears) }} across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}.</div>
+  </div>
+  <a href="{{ url_for('manage_units') }}" class="alert-banner-action">View details →</a>
+</div>
+{% endif %}
+
+{# UNASSIGNED PAYMENTS BANNER #}
+{% if unassigned_stats and unassigned_stats.total_count > 0 %}
+<div class="alert-banner mb-4" style="border-color: #6366f1;">
+  <div class="alert-banner-icon" style="background: #6366f1;">↑</div>
+  <div class="alert-banner-body">
+    <div class="alert-banner-title">{{ unassigned_stats.total_count }} unassigned bank payment{{ 's' if unassigned_stats.total_count != 1 }} · KES {{ "{:,.0f}".format(unassigned_stats.total_amount) }}</div>
+    <div class="alert-banner-sub">
+      {% if unassigned_stats.hint_count > 0 %}
+        {{ unassigned_stats.hint_count }} with suggested unit{{ 's' if unassigned_stats.hint_count != 1 }} (KES {{ "{:,.0f}".format(unassigned_stats.hint_amount) }}) — ready to assign in one click
+      {% else %}
+        No automatic suggestions — manual assignment required
+      {% endif %}
+    </div>
+  </div>
+  <a href="{{ url_for('review', tab='unreported') }}" class="alert-banner-action">Review →</a>
+</div>
+{% endif %}
+
+{# PRIMARY KPI ROW — 3 naked hero numbers #}
+<div class="row g-4 mb-0" style="padding-bottom: 24px;">
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Expected Income</div>
+    <div class="kpi-hero-value">KES {{ "{:,.0f}".format(stats.expected_monthly or 0) }}</div>
+    <div class="kpi-hero-sub">per month</div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Total Arrears</div>
+    <div class="kpi-hero-value kpi-hero-value--danger">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
+    <div class="kpi-hero-sub">
+      across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}
+      {% if stats.arrears_ratio and stats.arrears_ratio > 0 %} · {{ stats.arrears_ratio }}× monthly to clear{% endif %}
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="kpi-hero-label">Collected This Month</div>
+    <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
+    <div class="kpi-hero-sub">
+      {% if stats.total_charged and stats.total_charged > 0 %}
+        {{ ((stats.total_collected or 0) / stats.total_charged * 100)|round|int }}% of charges collected
+      {% else %}
+        Verified against bank records
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# SECONDARY STATS ROW #}
+<div class="stat-row mb-4">
+  <div class="stat-item">
+    <div class="stat-label">Charged</div>
+    <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_charged or 0) }}</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-label">Outstanding</div>
+    <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
+  </div>
+  <div class="stat-item">
+    <a href="{{ url_for('manage_units', pending_claims='1') }}" class="text-decoration-none" style="display:block;">
+      <div class="stat-label">Pending Claims</div>
+      <div class="stat-value">{{ pending_count }}</div>
+    </a>
+  </div>
+  <div class="stat-item">
+    <div class="stat-label">Occupancy</div>
+    <div class="stat-value">{{ stats.occupancy_rate }}%</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6 mb-4">
+    <div class="surface-card">
+      <div class="surface-card-header">
+        <h6>Units in Arrears</h6>
+      </div>
+      {% if arrears %}
+      <table class="table table-sm mb-0 viewer-table">
+        <thead>
+          <tr>
+            <th>Unit</th>
+            <th>Tenant</th>
+            <th class="text-end">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in arrears %}
+          <tr>
+            <td>{{ row.unit_number }}</td>
+            <td>{{ row.tenant_name or '-' }}</td>
+            <td class="text-end">KES {{ "%.2f"|format(row.balance) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No arrears</div>
+        <div class="empty-state-sub">No units currently have outstanding balances.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-6 mb-4">
+    <div class="surface-card">
+      <div class="surface-card-header">
+        <h6>Pending Payment Claims</h6>
+      </div>
+      {% if pending %}
+      <table class="table table-sm mb-0 viewer-table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Unit</th>
+            <th class="text-end">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in pending %}
+          <tr>
+            <td>{{ c.mpesa_ref }}</td>
+            <td>{{ c.unit_number }}</td>
+            <td class="text-end">
+              {{ "%.2f"|format(c.claimed_amount) if c.claimed_amount else '-' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No pending claims</div>
+        <div class="empty-state-sub">No payment references are awaiting verification.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6 mb-4">
+    <div class="surface-card">
+      <div class="surface-card-header">
+        <h6>Unassigned Bank Payments</h6>
+      </div>
+      {% if unassigned %}
+      <table class="table table-sm mb-0 viewer-table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th class="text-end">Amount</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in unassigned %}
+          <tr>
+            <td>{{ t.mpesa_ref or '-' }}</td>
+            <td class="text-end">KES {{ "%.2f"|format(t.amount) }}</td>
+            <td>{{ t.txn_date or '-' }}</td>
+            <td>
+              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="topbar-btn-ghost" style="padding: 4px 10px; font-size: 12px;">
+                Assign
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No unassigned payments</div>
+        <div class="empty-state-sub">All bank payments have been matched to units.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-6 mb-4">
+    <div class="surface-card">
+      <div class="surface-card-header">
+        <h6>Recent Activity</h6>
+      </div>
+      {% if recent %}
+      {% for r in recent %}
+      <a href="{{ url_for('activity', action=r.action) }}" class="text-decoration-none">
+        <div class="data-row">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="data-row-unit">{{ r.action.replace('_', ' ')|title }}</div>
+              <div class="data-row-meta">{{ r.user_id or 'System' }}</div>
+              {% if r.details %}
+              <div class="data-row-meta mt-1">{{ r.details }}</div>
+              {% endif %}
+            </div>
+            <div class="data-row-meta">{{ r.timestamp }}</div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No recent activity</div>
+        <div class="empty-state-sub">New changes will appear here as they are recorded.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block active_tab %}payments{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Payments</div>
+  <div class="page-meta">Collections and pending confirmations.</div>
+</div>
+
+<div class="row g-4 mb-0" style="padding-bottom: 24px;">
+  <div class="col-12 col-md-6">
+    <div class="kpi-hero-label">Collected</div>
+    <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(verified_total or 0) }}</div>
+    <div class="kpi-hero-sub">verified against bank records</div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="kpi-hero-label">Pending</div>
+    <div class="kpi-hero-value">KES {{ "{:,.0f}".format(pending_total or 0) }}</div>
+    <div class="kpi-hero-sub">awaiting bank statement verification</div>
+  </div>
+</div>
+
+{% if pending_total > 0 %}
+<div class="stat-row mb-4">
+  <div class="stat-item">
+    <div class="stat-label">Total if confirmed</div>
+    <div class="stat-value">KES {{ "{:,.0f}".format((verified_total or 0) + (pending_total or 0)) }}</div>
+  </div>
+</div>
+{% else %}
+<div style="padding-bottom: 24px;"></div>
+{% endif %}
+
+{% if payments %}
+<div class="surface-card">
+  {% for p in payments %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="data-row-amount {% if p.status == 'pending' %}amount-muted{% else %}amount-success{% endif %}">
+          KES {{ "{:,.0f}".format(p.amount or 0) }}
+        </div>
+        <div class="data-row-meta">
+          {{ p.unit_number }} — {{ p.tenant_name or 'Unknown' }}
+        </div>
+        {% if p.mpesa_ref %}
+        <div class="data-row-meta">
+          Ref {{ p.mpesa_ref }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <div class="data-row-meta mb-1">{{ p.date }}</div>
+        {% if p.status == 'pending' %}
+          <span class="status-pending">Pending</span>
+        {% else %}
+          <span class="status-paid">Verified</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No payments recorded</div>
+  <div class="empty-state-sub">No payments have been captured for this property yet.</div>
+</div>
+{% endif %}
+{% endblock %}

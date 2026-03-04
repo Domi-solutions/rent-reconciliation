@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Exports{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Activity Log Export</div>
+      <div class="card-body">
+        <p class="text-muted small">Export all admin actions for a date range.</p>
+        <form method="get" action="{{ url_for('export_activity') }}">
+          <div class="mb-2">
+            <label class="form-label">From</label>
+            <input type="date" class="form-control" name="from" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">To</label>
+            <input type="date" class="form-control" name="to" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Download Activity Log</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Payment Verification Export</div>
+      <div class="card-body">
+        <p class="text-muted small">Legal audit trail showing how each payment was allocated across charges.</p>
+        <form method="get" action="{{ url_for('export_payments') }}">
+          <div class="mb-2">
+            <label class="form-label">From</label>
+            <input type="date" class="form-control" name="from" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">To</label>
+            <input type="date" class="form-control" name="to" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Download Payment Report</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

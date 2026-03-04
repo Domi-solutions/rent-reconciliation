@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Report History - {{ property.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">Report History</div>
+    <div class="page-meta">Generated monthly collection reports.</div>
+  </div>
+  <a href="{{ url_for('reports.generate_report') }}" class="btn btn-primary">Generate Report</a>
+</div>
+
+{% if reports %}
+<div class="row g-3">
+  {% for r in reports %}
+  <div class="col-12">
+    <div class="surface-card" style="padding: 20px;">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="report-period">{{ r.period_start }} — {{ r.period_end }}</div>
+          <div class="report-meta">Generated {{ r.created_at }}</div>
+          <div class="d-flex gap-2 mt-2 flex-wrap">
+            <span class="status-paid">{{ r.collection_rate }}% collected</span>
+            <span class="status-vacant" style="font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 9999px; background: var(--blue-soft); color: var(--blue);">KES {{ "{:,.0f}".format(r.total_collected) }}</span>
+            {% if r.total_arrears > 0 %}
+            <span class="status-arrears">KES {{ "{:,.0f}".format(r.total_arrears) }} arrears</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <a href="{{ url_for('reports.caretaker_report', report_id=r.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank">Caretaker</a>
+          <a href="{{ url_for('reports.preview_report', report_id=r.id) }}" class="report-view-btn">View →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No reports yet</div>
+  <div class="empty-state-sub"><a href="{{ url_for('reports.generate_report') }}">Generate your first report</a></div>
+</div>
+{% endif %}
+{% endblock %}

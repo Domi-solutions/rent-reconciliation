@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{% if filter_action %}Activity: {{ filter_action.replace('_', ' ')|title }}{% else %}Activity{% endblock %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">{% if filter_action %}{{ filter_action.replace('_', ' ')|title }}{% else %}Activity{% endif %}</div>
+    <div class="page-meta">{% if filter_action %}Entries of this type.{% else %}Audit log — last 200 entries.{% endif %}</div>
+  </div>
+  {% if filter_action %}
+  <a href="{{ url_for('activity') }}" class="btn btn-outline-secondary btn-sm">Show all</a>
+  {% endif %}
+</div>
+<div class="surface-card">
+  {% if activity_list %}
+  {% for r in activity_list %}
+  <a href="{{ url_for('activity', action=r.action) }}" class="text-decoration-none">
+    <div class="data-row">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="data-row-unit">{{ r.action.replace('_', ' ')|title }}</div>
+          <div class="data-row-meta">{{ r.user_id or 'System' }}</div>
+          {% if r.details %}<div class="data-row-meta mt-1">{{ r.details }}</div>{% endif %}
+        </div>
+        <div class="data-row-meta">{{ r.timestamp }}</div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">No activity recorded</div>
+    <div class="empty-state-sub">{% if filter_action %}<a href="{{ url_for('activity') }}">Show all activity</a>{% else %}Changes will appear here as they are recorded.{% endif %}</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

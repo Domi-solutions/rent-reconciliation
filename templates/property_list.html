@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Select Property{% endblock %}
+{% block content %}
+<h2 class="mb-3">Select Property</h2>
+<p class="text-muted">Choose a property to manage.</p>
+<div class="row g-3">
+  {% for p in properties %}
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <a href="{{ url_for('select_property', property_id=p.id) }}" class="text-decoration-none text-dark flex-grow-1">
+          <h5 class="card-title mb-1">{{ p.name }}</h5>
+          <p class="card-text text-muted small mb-0">{{ p.address or 'No address' }}</p>
+        </a>
+        <div class="mt-2">
+          <form method="POST" action="{{ url_for('delete_property', property_id=p.id) }}" class="d-inline"
+                onsubmit="return confirm('Deactivate this property? All data will be preserved but it will be hidden.');">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Deactivate</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

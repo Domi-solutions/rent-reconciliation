@@ -1,0 +1,54 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block active_tab %}reports{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <div class="page-title">Monthly Reports</div>
+  <div class="page-meta">Period summaries verified against bank records.</div>
+</div>
+
+{% if reports %}
+  <div class="row g-3">
+    {% for r in reports %}
+    <div class="col-12">
+      <div class="report-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="report-period">
+              {{ r.period_start }} to {{ r.period_end }}
+            </div>
+            <div class="report-meta">
+              Generated {{ r.created_at }}
+            </div>
+            <div class="mt-2" style="display: flex; flex-wrap: wrap; gap: 6px;">
+              <span class="report-badge">
+                {{ r.collection_rate }}% collection rate
+              </span>
+              <span class="report-badge">
+                KES {{ "{:,.0f}".format(r.total_collected or 0) }} verified
+              </span>
+              {% if r.total_arrears > 0 %}
+              <span class="report-badge report-badge-warn">
+                KES {{ "{:,.0f}".format(r.total_arrears or 0) }} outstanding
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <a href="{{ url_for('viewer.viewer_report_detail', property_id=property.id, report_id=r.id) }}"
+               class="report-view-btn">View full report</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">No reports available</div>
+    <div class="empty-state-sub">
+      No reports have been generated yet. Reports are created by the property management team.
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

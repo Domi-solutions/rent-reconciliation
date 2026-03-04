@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% block title %}Report Preview — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .rpt-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  @media print {
+    .sidebar, .topbar, .rpt-no-print { display: none !important; }
+    .app-layout { display: block !important; }
+    .main-area { margin: 0 !important; }
+    .content-area { padding: 16px !important; }
+    .rpt-hero { grid-template-columns: repeat(4, 1fr) !important; }
+    .rpt-kpi, .rpt-section { box-shadow: none !important; border: 1px solid #dee2e6 !important; break-inside: avoid; }
+    .rpt-split { grid-template-columns: 1fr 1fr !important; }
+    a[href]:after { content: none !important; }
+    body { font-size: 12px; }
+  }
+  .rpt-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 20px 18px; }
+  .rpt-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .rpt-kpi-value { font-size: 26px; font-weight: 700; color: var(--ink-1); line-height: 1.1; margin-bottom: 4px; }
+  .rpt-kpi-value span { font-size: 15px; font-weight: 400; color: var(--ink-3); }
+  .rpt-kpi-sub { font-size: 12px; color: var(--ink-3); }
+  .rpt-kpi--success .rpt-kpi-value { color: #198754; }
+  .rpt-kpi--danger .rpt-kpi-value { color: #dc3545; }
+  .rpt-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 20px; overflow: hidden; }
+  .rpt-section-header { padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+  .rpt-section-body { padding: 20px; }
+  .rpt-bar-wrap { background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; margin: 8px 0; }
+  .rpt-bar { height: 8px; border-radius: 6px; }
+  .rpt-bar--success { background: #198754; }
+  .rpt-bar--warning { background: #f59e0b; }
+  .rpt-bar--danger { background: #dc3545; }
+  .rpt-status-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; margin: 12px 0 6px; }
+  .rpt-status-ok { background: #198754; }
+  .rpt-status-behind { background: #dc3545; }
+  .rpt-split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .rpt-stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
+  .rpt-stat-label { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  @media (max-width: 600px) {
+    .rpt-split { grid-template-columns: 1fr !important; gap: 16px !important; }
+    .rpt-hero { grid-template-columns: 1fr 1fr !important; }
+    .rpt-kpi-value { font-size: 22px !important; }
+    .rpt-stat-num { font-size: 22px !important; }
+    .rpt-section-body { padding: 14px !important; }
+  }
+  .rpt-occ-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 16px; margin-bottom: 14px; }
+  .rpt-months-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .rpt-months-ok { background: #fff3cd; color: #856404; }
+  .rpt-months-bad { background: #f8d7da; color: #842029; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set occupied   = report.occupancy.occupied_units or 0 %}
+{% set rentable   = report.occupancy.rentable_units if report.occupancy.rentable_units else 1 %}
+{% set vacant     = report.occupancy.vacant_units or 0 %}
+{% set office     = report.occupancy.office_units or 0 %}
+{% set verified   = report.collections.total_verified or 0 %}
+{% set expected   = report.collections.expected_income or 0 %}
+{% set charged    = report.total_charged_in_period or 0 %}
+{% set arrears_total  = report.arrears.total_arrears or 0 %}
+{% set units_behind   = report.arrears.units_in_arrears or 0 %}
+{% set units_on_time  = report.occupancy.units_on_time if report.occupancy.units_on_time is not none else (occupied - units_behind) %}
+{% set collection_rate = report.collection_rate or 0 %}
+{% set vs_expected_pct = report.collections.vs_expected_income_pct or 0 %}
+{% set water_total    = report.charges.water_total or 0 %}
+
+{# HEADER #}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div class="page-title">Report Preview</div>
+    <div class="page-meta">{{ property.name }} · {{ period_start }} → {{ period_end }}</div>
+  </div>
+  <div class="d-flex gap-2 rpt-no-print">
+    <a href="{{ url_for('reports.report_history') }}" class="btn btn-sm btn-outline-secondary">← History</a>
+    <a href="{{ url_for('reports.caretaker_report', report_id=report_id) }}"
+       class="btn btn-sm btn-outline-secondary" target="_blank">Caretaker View ↗</a>
+    <a href="{{ url_for('viewer.viewer_report_detail', property_id=property.id, report_id=report_id) }}"
+       class="btn btn-sm btn-outline-primary" target="_blank">Owner View ↗</a>
+    <button onclick="window.print()" class="btn btn-sm btn-primary">Export PDF</button>
+  </div>
+</div>
+
+{# HERO KPIs #}
+<div class="rpt-hero">
+  <div class="rpt-kpi">
+    <div class="rpt-kpi-label">Occupied</div>
+    <div class="rpt-kpi-value">{{ occupied }}<span>/{{ report.occupancy.total_units or 0 }}</span></div>
+    <div class="rpt-kpi-sub">{{ report.occupancy.occupancy_rate or 0 }}% occupancy · {{ vacant }} vacant{% if office > 0 %} · {{ office }} office{% endif %}</div>
+  </div>
+  <div class="rpt-kpi">
+    <div class="rpt-kpi-label">Expected Income</div>
+    <div class="rpt-kpi-value">{{ "{:,.0f}".format(expected) if expected else "—" }}</div>
+    <div class="rpt-kpi-sub">KES per month (rent + service)</div>
+  </div>
+  <div class="rpt-kpi rpt-kpi--success">
+    <div class="rpt-kpi-label">Verified Collected</div>
+    <div class="rpt-kpi-value">{{ "{:,.0f}".format(verified) }}</div>
+    <div class="rpt-kpi-sub">
+      KES · {{ vs_expected_pct }}% of expected monthly income
+      · {{ report.collections.payment_count or 0 }} payments
+    </div>
+  </div>
+  <div class="rpt-kpi rpt-kpi--danger">
+    <div class="rpt-kpi-label">Total Arrears</div>
+    <div class="rpt-kpi-value">{{ "{:,.0f}".format(arrears_total) }}</div>
+    <div class="rpt-kpi-sub">KES across {{ units_behind }} unit{{ 's' if units_behind != 1 }}</div>
+  </div>
+</div>
+
+{# COLLECTION PROGRESS #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Collection — {{ period_start }} to {{ period_end }}</div>
+  <div class="rpt-section-body">
+    <div class="d-flex justify-content-between mb-1">
+      <span style="font-size:13px;color:var(--ink-2);">
+        KES {{ "{:,.0f}".format(verified) }} received in period
+      </span>
+      <span style="font-size:13px;font-weight:700;">
+        {{ vs_expected_pct }}% of expected monthly income
+      </span>
+    </div>
+    <div class="rpt-bar-wrap">
+      <div class="rpt-bar {% if vs_expected_pct >= 80 %}rpt-bar--success{% elif vs_expected_pct >= 50 %}rpt-bar--warning{% else %}rpt-bar--danger{% endif %}"
+           style="width:{{ [vs_expected_pct|float, 100]|min }}%;"></div>
+    </div>
+    <small class="text-muted">
+      {{ report.collections.payment_count or 0 }} payment{{ 's' if (report.collections.payment_count or 0) != 1 }} received in period
+    </small>
+  </div>
+</div>
+
+{# PAYMENT STATUS #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Tenant Payment Status</div>
+  <div class="rpt-section-body">
+    <div class="rpt-split mb-2">
+      <div>
+        <div class="rpt-stat-num" style="color:#198754;">{{ units_on_time }}</div>
+        <div class="rpt-stat-label">Current — balance fully settled</div>
+      </div>
+      <div>
+        <div class="rpt-stat-num" style="color:#dc3545;">{{ units_behind }}</div>
+        <div class="rpt-stat-label">Behind — outstanding balance</div>
+      </div>
+    </div>
+    {% if occupied > 0 %}
+    {% set pct_ok = ((units_on_time / occupied) * 100)|round|int %}
+    <div class="rpt-status-bar">
+      <div class="rpt-status-ok" style="width:{{ pct_ok }}%;"></div>
+      <div class="rpt-status-behind" style="width:{{ 100 - pct_ok }}%;"></div>
+    </div>
+    <small class="text-muted">{{ pct_ok }}% of occupied units fully current</small>
+    {% endif %}
+  </div>
+</div>
+
+{# OCCUPANCY #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Occupancy</div>
+  <div class="rpt-section-body">
+    <div class="rpt-occ-grid">
+      <div><div class="rpt-stat-num">{{ occupied }}</div><div class="rpt-stat-label">Occupied</div></div>
+      <div><div class="rpt-stat-num">{{ vacant }}</div><div class="rpt-stat-label">Vacant</div></div>
+      {% if office > 0 %}<div><div class="rpt-stat-num">{{ office }}</div><div class="rpt-stat-label">Office / Other</div></div>{% endif %}
+      <div><div class="rpt-stat-num">{{ report.occupancy.total_units or 0 }}</div><div class="rpt-stat-label">Total Units</div></div>
+    </div>
+    <div class="rpt-bar-wrap">
+      <div class="rpt-bar rpt-bar--success" style="width:{{ report.occupancy.occupancy_rate or 0 }}%;"></div>
+    </div>
+    <small class="text-muted">{{ report.occupancy.occupancy_rate or 0 }}% of rentable units occupied</small>
+
+    {% set vacant_details = report.occupancy.vacant_unit_details or [] %}
+    {% if vacant_details %}
+    <div style="margin-top:14px;">
+      <strong style="font-size:13px;">Vacant Units</strong>
+      <table class="table table-sm mb-0 mt-1" style="font-size:12px;">
+        <thead><tr>
+          <th style="padding:6px 16px;">Unit</th>
+          <th>Size</th>
+          <th class="text-end">Rent (KES)</th>
+          <th class="text-end" style="padding-right:16px;">Service (KES)</th>
+        </tr></thead>
+        <tbody>
+        {% for vu in vacant_details %}
+          <tr>
+            <td style="padding:5px 16px;">{{ vu.unit_number }}</td>
+            <td>{{ vu.apartment_size }}</td>
+            <td class="text-end">{{ "{:,.0f}".format(vu.monthly_rent) }}</td>
+            <td class="text-end" style="padding-right:16px;">{{ "{:,.0f}".format(vu.service_charge) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# CHARGES BREAKDOWN #}
+{% if report.charges.by_type %}
+<div class="rpt-section">
+  <div class="rpt-section-header">Monthly Charges</div>
+  {% set collected_map = report.charges.collected_by_type if report.charges.collected_by_type is defined else {} %}
+  {% set collected_total = report.charges.total_collected_on_period_charges if report.charges.total_collected_on_period_charges is defined else 0 %}
+  <div style="overflow-x:auto;">
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr>
+          <th style="padding:10px 20px;">Type</th>
+          <th>Units</th>
+          <th class="text-end">Billed (KES)</th>
+          <th class="text-end">Collected (KES)</th>
+          <th class="text-end" style="padding-right:20px;">Remaining (KES)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for charge_type, data in report.charges.by_type.items() %}
+        {% set billed = data.total or 0 %}
+        {% set collected = collected_map.get(charge_type, 0) if collected_map else 0 %}
+        {% set remaining = billed - collected %}
+        <tr>
+          <td style="padding:9px 20px;text-transform:capitalize;">{{ charge_type }}</td>
+          <td>{{ data.count }}</td>
+          <td class="text-end">KES {{ "{:,.0f}".format(billed) }}</td>
+          <td class="text-end">KES {{ "{:,.0f}".format(collected) }}</td>
+          <td class="text-end" style="padding-right:20px;">KES {{ "{:,.0f}".format(remaining) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        {% set remaining_total = charged - collected_total %}
+        <tr style="font-weight:600;border-top:2px solid var(--border);">
+          <td style="padding:10px 20px;">Total</td>
+          <td></td>
+          <td class="text-end">KES {{ "{:,.0f}".format(charged) }}</td>
+          <td class="text-end">KES {{ "{:,.0f}".format(collected_total) }}</td>
+          <td class="text-end" style="padding-right:20px;">KES {{ "{:,.0f}".format(remaining_total) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% if water_total > 0 %}
+    <div style="padding:12px 20px;border-top:1px solid var(--border);font-size:13px;">
+      Building water charges this period: <strong>KES {{ "{:,.0f}".format(water_total) }}</strong>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# TENANT MOVEMENT #}
+<div class="rpt-section">
+  <div class="rpt-section-header">Tenant Movement</div>
+  <div class="rpt-section-body">
+    <div class="rpt-split">
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+          Move-ins — {{ report.tenant_movement.move_ins|length }}
+        </div>
+        {% if report.tenant_movement.move_ins %}
+          {% for t in report.tenant_movement.move_ins %}
+          <div style="font-size:13px;margin-bottom:6px;"><strong>{{ t.unit_number }}</strong> — {{ t.name }}<br><small class="text-muted">{{ t.date }}</small></div>
+          {% endfor %}
+        {% else %}
+          <span class="text-muted" style="font-size:13px;">None this period</span>
+        {% endif %}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+          Departures — {{ report.tenant_movement.move_outs|length }}
+        </div>
+        {% if report.tenant_movement.move_outs %}
+          {% for t in report.tenant_movement.move_outs %}
+          <div style="font-size:13px;margin-bottom:6px;"><strong>{{ t.unit_number }}</strong> — {{ t.name }}<br><small class="text-muted">{{ t.date }}</small></div>
+          {% endfor %}
+        {% else %}
+          <span class="text-muted" style="font-size:13px;">None this period</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ARREARS DETAIL #}
+{% if report.arrears.units_in_arrears > 0 %}
+<div class="rpt-section">
+  <div class="rpt-section-header">
+    Arrears — {{ units_behind }} unit{{ 's' if units_behind != 1 }} · KES {{ "{:,.0f}".format(arrears_total) }} outstanding
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr>
+          <th style="padding:10px 20px;">Unit</th>
+          <th>Tenant</th>
+          <th>Contact</th>
+          <th class="text-end">Balance (KES)</th>
+          <th class="text-end" style="padding-right:20px;">Months Behind</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for unit in report.arrears.units %}
+        <tr>
+          <td style="padding:10px 20px;font-weight:600;">{{ unit.unit_number }}</td>
+          <td>{{ unit.tenant_name }}</td>
+          <td>
+            {% if unit.tenant_phone %}<a href="tel:{{ unit.tenant_phone }}" style="color:var(--ink-2);text-decoration:none;">{{ unit.tenant_phone }}</a>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-end" style="color:#dc3545;font-weight:600;">{{ "{:,.0f}".format(unit.balance or 0) }}</td>
+          <td class="text-end" style="padding-right:20px;">
+            {% if unit.months_behind %}
+            <span class="rpt-months-badge {% if (unit.months_behind or 0) >= 2 %}rpt-months-bad{% else %}rpt-months-ok{% endif %}">{{ unit.months_behind }}mo</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

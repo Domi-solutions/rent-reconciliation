@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Setup Property{% endblock %}
+{% block content %}
+<p class="text-muted mb-3">Set up your property name and address. You only need to do this once. After this you can add units and tenants.</p>
+<div class="card mx-auto" style="max-width: 32rem;">
+  <div class="card-header">Create Property</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('setup_property') }}">
+      <div class="mb-3">
+        <label for="name" class="form-label">Property Name *</label>
+        <input type="text" class="form-control" id="name" name="name" required>
+      </div>
+      <div class="mb-3">
+        <label for="address" class="form-label">Address</label>
+        <input type="text" class="form-control" id="address" name="address">
+      </div>
+      <button type="submit" class="btn btn-primary">Create Property</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
