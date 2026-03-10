@@ -13,7 +13,8 @@
     'overview'  if request.endpoint == 'dashboard'
     else 'units'    if request.endpoint in ('manage_units', 'add_unit')
     else 'tenants'  if request.endpoint in ('manage_tenants', 'add_tenant', 'generate_tenant_token')
-    else 'owners'   if request.endpoint in ('manage_owners', 'create_owner', 'generate_owner_token', 'set_owner_password', 'assign_property_to_owner', 'delete_owner')
+    else 'owners'   if request.endpoint in ('manage_owners', 'create_owner', 'generate_owner_token', 'set_owner_password', 'assign_property_to_owner', 'remove_property_from_owner', 'delete_owner')
+    else 'caretakers' if request.endpoint in ('manage_caretakers', 'create_caretaker', 'set_caretaker_password', 'edit_caretaker', 'delete_caretaker')
     else 'payments' if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments')
     else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
     else 'reports'  if request.endpoint.startswith('reports.')
@@ -53,6 +54,11 @@
       <a class="sidebar-item {% if active_nav == 'owners' %}active{% endif %}" href="{{ url_for('manage_owners') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
         Owners
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'caretakers' %}active{% endif %}" href="{{ url_for('manage_caretakers') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM2 8a2 2 0 114 0A2 2 0 012 8zM16.5 14.5c0-1.657-2.239-3-5-3s-5 1.343-5 3M19 13.5c0-1.105-1.343-2-3-2-.21 0-.415.02-.612.055M1 13.5c0-1.105 1.343-2 3-2 .21 0 .415.02.612.055"/></svg>
+        Caretakers
       </a>
 
       <a class="sidebar-item {% if active_nav == 'payments' %}active{% endif %}" href="{{ url_for('review') }}">

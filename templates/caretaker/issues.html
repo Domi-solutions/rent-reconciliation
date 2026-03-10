@@ -1,0 +1,152 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Maintenance Issues — {{ property.name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+  <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Maintenance Issues</div>
+  <div style="font-size: 13px; color: var(--ink-3);">
+    {{ open_issues|length }} open · {{ resolved_issues|length }} resolved (last 30 days)
+  </div>
+</div>
+
+<div class="ct-section mb-4">
+  <div class="ct-section-header">Log new issue</div>
+  <div class="ct-section-body">
+    <form method="post" action="{{ url_for('caretaker.new_issue', property_id=property.id) }}">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+        <select name="unit_id" style="flex: 0 0 120px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+          <option value="">Unit…</option>
+          {% for u in units %}
+          <option value="{{ u.id }}">{{ u.unit_number }}</option>
+          {% endfor %}
+          <option value="common">Common area</option>
+        </select>
+        <select name="category" style="flex: 0 0 130px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+          <option value="general" selected>General</option>
+          <option value="plumbing">Plumbing</option>
+          <option value="electrical">Electrical</option>
+          <option value="structural">Structural</option>
+          <option value="pest">Pest</option>
+          <option value="appliance">Appliance</option>
+          <option value="common_area">Common area</option>
+        </select>
+        <input name="title" type="text" required placeholder="Short description — e.g. Blocked drain in B3"
+               style="flex: 1 1 220px; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+      </div>
+      <div style="display: flex; gap: 8px; align-items: flex-start;">
+        <textarea name="description" rows="2" placeholder="Extra details (optional)"
+                  style="flex: 1; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink); resize: vertical;"></textarea>
+        <button type="submit" style="flex: 0 0 auto; padding: 7px 16px; background: var(--ink); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">Log issue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="ct-section mb-4">
+  <div class="ct-section-header">
+    <span>Open Issues</span>
+  </div>
+  <div class="ct-section-body">
+    {% if open_issues %}
+    <div style="overflow-x: auto;">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Unit</th>
+            <th>Category</th>
+            <th>Title</th>
+            <th>Source</th>
+            <th>Opened</th>
+            <th style="width: 260px;" class="ct-no-print">Resolve</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for issue in open_issues %}
+          <tr>
+            <td>{{ issue.unit_number or 'Common area' }}</td>
+            <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
+              {{ issue.category or 'general' }}
+            </td>
+            <td>{{ issue.title }}</td>
+            <td>
+              {% if issue.source == 'tenant' %}
+              <span class="badge bg-light text-dark" style="font-size: 11px;">Tenant</span>
+              {% else %}
+              <span class="badge bg-secondary" style="font-size: 11px;">Caretaker</span>
+              {% endif %}
+            </td>
+            <td>{{ issue.created_at }}</td>
+            <td class="ct-no-print">
+              <form method="post"
+                    action="{{ url_for('caretaker.resolve_issue', property_id=property.id, issue_id=issue.id) }}"
+                    class="d-flex gap-2">
+                <input type="text" name="resolved_note" class="form-control form-control-sm"
+                       placeholder="Optional note (what was done)">
+                <button type="submit" class="btn btn-success btn-sm">Mark resolved</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <span class="text-muted" style="font-size: 13px;">No open issues recorded.</span>
+    {% endif %}
+  </div>
+  </div>
+
+<div class="ct-section">
+  <div class="ct-section-header">
+    <span>Resolved (last 30 days)</span>
+  </div>
+  <div class="ct-section-body">
+    {% if resolved_issues %}
+    <div style="overflow-x: auto;">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Unit</th>
+            <th>Category</th>
+            <th>Title</th>
+            <th>Source</th>
+            <th>Opened</th>
+            <th>Resolved</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for issue in resolved_issues %}
+          <tr>
+            <td>{{ issue.unit_number or 'Common area' }}</td>
+            <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
+              {{ issue.category or 'general' }}
+            </td>
+            <td>{{ issue.title }}</td>
+            <td>
+              {% if issue.source == 'tenant' %}
+              <span class="badge bg-light text-dark" style="font-size: 11px;">Tenant</span>
+              {% else %}
+              <span class="badge bg-secondary" style="font-size: 11px;">Caretaker</span>
+              {% endif %}
+            </td>
+            <td>{{ issue.created_at }}</td>
+            <td>{{ issue.resolved_at or '—' }}</td>
+            <td style="max-width: 260px;">
+              <span style="font-size: 12px; color: var(--ink-3);">
+                {{ issue.resolved_note or '—' }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <span class="text-muted" style="font-size: 13px;">No issues resolved in the last 30 days.</span>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+

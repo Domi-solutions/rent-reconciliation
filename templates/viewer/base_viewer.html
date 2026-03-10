@@ -36,6 +36,12 @@
          href="{{ url_for('viewer.property_payments', property_id=property.id) }}">Payments</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'reports' %}active{% endif %}"
          href="{{ url_for('viewer.property_reports', property_id=property.id) }}">Reports</a>
+      <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'maintenance' %}active{% endif %}"
+         href="{{ url_for('viewer.property_maintenance', property_id=property.id) }}">Maintenance</a>
+      <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'notifications' %}active{% endif %}"
+         href="{{ url_for('viewer.property_notifications', property_id=property.id) }}">Messages</a>
+      <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'activity' %}active{% endif %}"
+         href="{{ url_for('viewer.property_activity', property_id=property.id) }}">Activity</a>
     </nav>
     {% endif %}
   </div>

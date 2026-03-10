@@ -42,6 +42,14 @@
         <label class="form-label">Body</label>
         <textarea class="form-control" name="body" rows="5" id="body"></textarea>
       </div>
+      <div class="mb-3">
+        <label class="form-label">Delivery channel</label>
+        <select class="form-select" name="channel" style="max-width: 240px;">
+          <option value="portal">In-app portal only</option>
+          <option value="sms">SMS to phone number</option>
+        </select>
+        <div class="form-text">SMS uses Africa's Talking. Tenants receive the message on their phone regardless of portal login.</div>
+      </div>
     </div>
   </div>
   <button type="submit" class="btn btn-primary">Send broadcast</button>

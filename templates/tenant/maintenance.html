@@ -1,0 +1,84 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Maintenance — {{ property.name }}{% endblock %}
+{% set active_tab = 'maintenance' %}
+{% block content %}
+<div class="surface-card mb-4">
+  <div class="surface-card-header">
+    <h6>Log a maintenance issue</h6>
+  </div>
+  <div class="data-row">
+    <form method="post" action="{{ url_for('tenant.new_maintenance', token=token) }}" class="w-100">
+      <div class="mb-3">
+        <label for="category" class="form-label">Category</label>
+        <select id="category" name="category" class="form-select form-select-sm">
+          <option value="plumbing">Plumbing</option>
+          <option value="electrical">Electrical</option>
+          <option value="structural">Structural</option>
+          <option value="pest">Pest</option>
+          <option value="appliance">Appliance</option>
+          <option value="common_area">Common area</option>
+          <option value="general" selected>General</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label for="title" class="form-label">Title</label>
+        <input id="title" name="title" type="text" class="form-control form-control-sm" required
+               placeholder="Short description (e.g. Kitchen sink leaking)">
+      </div>
+      <div class="mb-3">
+        <label for="description" class="form-label">Details (optional)</label>
+        <textarea id="description" name="description" rows="3" class="form-control form-control-sm"
+                  placeholder="Add any extra details that help describe the issue."></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Submit issue</button>
+    </form>
+  </div>
+</div>
+
+<h6 class="text-muted mb-2">Your maintenance issues</h6>
+{% if issues %}
+<div class="surface-card">
+  {% for issue in issues %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="badge bg-light text-dark mb-1" style="font-size: 11px; text-transform: uppercase;">
+          {{ issue.category or 'general' }}
+        </div>
+        <div class="data-row-unit">{{ issue.title }}</div>
+        <div class="data-row-meta">
+          Logged on {{ issue.created_at }}
+        </div>
+        {% if issue.description %}
+        <div class="mt-2 data-row-meta">
+          {{ issue.description }}
+        </div>
+        {% endif %}
+        {% if issue.status == 'resolved' and issue.resolved_note %}
+        <div class="mt-2 data-row-meta">
+          Note from caretaker: {{ issue.resolved_note }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        {% if issue.status == 'open' %}
+          <span class="status-pending">Open</span>
+        {% else %}
+          <span class="status-paid">Resolved</span>
+          {% if issue.resolved_at %}
+          <div class="data-row-meta">{{ issue.resolved_at }}</div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No maintenance issues logged yet.</div>
+  <div class="empty-state-sub">Use the form above to log an issue with your unit.</div>
+</div>
+{% endif %}
+{% endblock %}
+

@@ -4,6 +4,20 @@
 <div class="mb-4">
   <div class="page-title">Generate Charges</div>
 </div>
+
+<div class="surface-card mb-4">
+  <div class="surface-card-header"><h6>Rent Due Day</h6></div>
+  <div style="padding: 14px 18px;">
+    <form method="post" action="{{ url_for('update_rent_due_day') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <label style="font-size:13px; color:var(--ink-2);">Charges are due on day</label>
+      <input type="number" name="rent_due_day" value="{{ property.rent_due_day or 5 }}"
+             min="0" max="31" style="width:65px; font-size:13px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; background:var(--bg); color:var(--ink);">
+      <span style="font-size:12px; color:var(--ink-3);">of the following month &nbsp;(enter 0 for last day of month)</span>
+      <button type="submit" style="padding:5px 14px; background:var(--ink); color:#fff; border:none; border-radius:5px; font-size:13px; cursor:pointer;">Save</button>
+    </form>
+  </div>
+</div>
+
 <div class="surface-card form-card-wrap">
   <div class="surface-card-header"><h6>Monthly Rent + Service Charges</h6></div>
   <div style="padding: 20px;">

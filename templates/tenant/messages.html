@@ -2,32 +2,37 @@
 {% block title %}Messages — {{ property.name }}{% endblock %}
 {% set active_tab = 'messages' %}
 {% block content %}
-<h6 class="text-muted mb-3">Message inbox</h6>
 {% if messages %}
 <div class="surface-card">
+  <div class="surface-card-header">
+    <h6>Messages</h6>
+  </div>
   {% for m in messages %}
-  <div class="data-row">
-    <div class="d-flex justify-content-between align-items-start">
-      <div>
-        <div class="data-row-unit">{{ m.subject }}</div>
-        <div class="data-row-meta">
-          {{ m.created_at }}{% if m.message_type %} — {{ m.message_type }}{% endif %}
-        </div>
-        <div class="mt-2">
-          {{ m.body | replace('\n', '<br>') | safe }}
-        </div>
-      </div>
+  <div class="data-row" style="{% if not m.read_at %}background: var(--bg);{% endif %}">
+    <div class="d-flex justify-content-between align-items-start mb-1">
+      <div class="data-row-unit" style="{% if not m.read_at %}font-weight: 700;{% endif %}">{{ m.subject }}</div>
       {% if not m.read_at %}
-      <div class="status-pending">New</div>
+      <span class="status-pending" style="flex-shrink: 0; margin-left: 12px;">New</span>
       {% endif %}
     </div>
+    <div class="data-row-meta mb-2">
+      {{ m.created_at[:10] if m.created_at else '' }}
+      {% if m.message_type == 'reminder' %} · Reminder
+      {% elif m.message_type == 'maintenance_status' or m.message_type == 'notice' %} · Notice
+      {% endif %}
+    </div>
+    <div style="font-size: 13px; color: var(--ink-2); line-height: 1.55; white-space: pre-wrap;">{{ m.body }}</div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<div class="empty-state">
-  <div class="empty-state-title">No messages</div>
-  <div class="empty-state-sub">Messages from the property management team will appear here.</div>
+<div class="surface-card">
+  <div class="surface-card-header">
+    <h6>Messages</h6>
   </div>
+  <div class="data-row">
+    <span style="font-size: 13px; color: var(--ink-3);">No messages from the property management team yet.</span>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

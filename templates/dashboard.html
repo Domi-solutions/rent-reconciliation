@@ -59,6 +59,23 @@
 </div>
 {% endif %}
 
+{% if days_to_due is not none %}
+<div style="padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; font-weight: 600;
+  background: {% if days_to_due <= 3 %}#fef3c7{% elif days_to_due <= 7 %}#eff6ff{% else %}#f0fdf4{% endif %};
+  border: 1px solid {% if days_to_due <= 3 %}#fbbf24{% elif days_to_due <= 7 %}#93c5fd{% else %}#86efac{% endif %};
+  color: {% if days_to_due <= 3 %}#92400e{% else %}var(--ink){% endif %};">
+  {% if days_to_due == 0 %}Rent due today — {{ next_due_date }}
+  {% elif days_to_due < 0 %}Rent was due {{ (-days_to_due) }} day{{ 's' if days_to_due != -1 }} ago — {{ next_due_date }}
+  {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due — {{ next_due_date }}{% endif %}
+</div>
+{% endif %}
+{% if recent_reminder %}
+<div style="padding: 8px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12px;
+  background: #f0fdf4; border: 1px solid #86efac; color: #166534;">
+  Reminder SMS sent today — {{ recent_reminder.details }}
+</div>
+{% endif %}
+
 {# PRIMARY KPI ROW — 3 naked hero numbers #}
 <div class="row g-4 mb-0" style="padding-bottom: 24px;">
   <div class="col-12 col-md-4">
@@ -78,10 +95,10 @@
     <div class="kpi-hero-label">Collected This Month</div>
     <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
     <div class="kpi-hero-sub">
-      {% if stats.total_charged and stats.total_charged > 0 %}
-        {{ ((stats.total_collected or 0) / stats.total_charged * 100)|round|int }}% of charges collected
+      {% if stats.collection_rate is defined and stats.collection_rate > 0 %}
+        {{ stats.collection_rate }}% of expected monthly income
       {% else %}
-        Verified against bank records
+        verified against bank records
       {% endif %}
     </div>
   </div>
@@ -90,7 +107,7 @@
 {# SECONDARY STATS ROW #}
 <div class="stat-row mb-4">
   <div class="stat-item">
-    <div class="stat-label">Charged</div>
+    <div class="stat-label">Charged This Month</div>
     <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_charged or 0) }}</div>
   </div>
   <div class="stat-item">

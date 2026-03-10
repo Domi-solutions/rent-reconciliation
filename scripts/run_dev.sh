@@ -6,7 +6,7 @@
 #   ./scripts/download_prod_db.sh   ← pulls a fresh copy from Fly.io
 #
 # Subsequent runs:
-#   ./scripts/run_dev.sh            ← starts the app on localhost:5000
+#   ./scripts/run_dev.sh            ← starts the app on localhost:5001
 
 set -e
 
@@ -32,11 +32,20 @@ unset CARETAKER_PASSWORD
 export FLASK_ENV=development
 export SECRET_KEY=dev-local-secret-not-for-production
 
+# Load .env for third-party credentials (AT_API_KEY, etc.) — never committed
+ENV_FILE="$(dirname "$0")/../.env"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+fi
+
 echo "========================================"
 echo "  LOCAL DEV — using data/dev.db"
 echo "  Production database is NOT affected"
 echo "  Admin password: disabled (dev mode)"
-echo "  URL: http://localhost:5000"
+echo "  URL: http://localhost:5001"
 echo "========================================"
 echo ""
 

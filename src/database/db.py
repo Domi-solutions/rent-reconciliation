@@ -558,3 +558,174 @@ def migrate_add_unit_hint():
             return
         conn.execute("ALTER TABLE bank_transactions ADD COLUMN unit_hint TEXT")
         print("Migration complete: unit_hint added to bank_transactions.")
+
+
+def migrate_add_maintenance():
+    """Create maintenance_issues table for tracking property/unit issues. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_issues (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL,
+                unit_id TEXT,
+                source TEXT NOT NULL,
+                raised_by_tenant_id TEXT,
+                category TEXT NOT NULL DEFAULT 'general',
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                resolved_at TIMESTAMP,
+                resolved_note TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (property_id) REFERENCES properties(id),
+                FOREIGN KEY (unit_id) REFERENCES units(id),
+                FOREIGN KEY (raised_by_tenant_id) REFERENCES tenants(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_maint_property ON maintenance_issues(property_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_maint_status ON maintenance_issues(status)")
+        print("Migration complete: maintenance_issues table ready.")
+
+
+def migrate_add_property_owners():
+    """Create property_owners M:M junction table and migrate existing properties.owner_id. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS property_owners (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                owner_id TEXT NOT NULL REFERENCES owners(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (property_id, owner_id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pown_property ON property_owners(property_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pown_owner ON property_owners(owner_id)")
+
+        rows = conn.execute(
+            "SELECT id AS property_id, owner_id FROM properties WHERE owner_id IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            exists = conn.execute(
+                "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+                (row['property_id'], row['owner_id'])
+            ).fetchone()
+            if not exists:
+                jid = generate_id('POWN')
+                conn.execute(
+                    "INSERT INTO property_owners (id, property_id, owner_id) VALUES (?, ?, ?)",
+                    (jid, row['property_id'], row['owner_id'])
+                )
+        print("Migration complete: property_owners junction table ready.")
+
+
+def migrate_add_rent_due_day():
+    """Add rent_due_day (day of month for rent due) to properties. Default 5. Idempotent."""
+    with get_connection() as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if 'rent_due_day' not in columns:
+            conn.execute("ALTER TABLE properties ADD COLUMN rent_due_day INTEGER DEFAULT 5")
+            print("Migration complete: rent_due_day added to properties.")
+        else:
+            print("Migration complete: rent_due_day already present.")
+
+
+def migrate_add_reminder_schedules():
+    """Add reminder_schedules table (flexible multi-trigger reminders) + rent_due_reminder template. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reminder_schedules (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                label TEXT NOT NULL DEFAULT 'Rent reminder',
+                template_key TEXT NOT NULL DEFAULT 'rent_due_reminder',
+                days_before_due INTEGER NOT NULL,
+                send_to TEXT NOT NULL DEFAULT 'arrears',
+                enabled INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rsch_property ON reminder_schedules(property_id)")
+
+        exists = conn.execute(
+            "SELECT 1 FROM message_templates WHERE property_id IS NULL AND template_key = 'rent_due_reminder'"
+        ).fetchone()
+        if not exists:
+            from datetime import datetime as _dt
+            tmpl_id = generate_id('MTPL')
+            now_iso = _dt.utcnow().isoformat()
+            conn.execute("""
+                INSERT INTO message_templates
+                    (id, property_id, template_key, subject, body, enabled, created_at, updated_at)
+                VALUES (?, NULL, 'rent_due_reminder',
+                    'Rent reminder — due on {due_date}',
+                    'Hi {tenant_name}, this is a reminder that your rent is due on {due_date}.\n\nMonthly rent: KES {monthly_rent}\nPaid to date: KES {total_paid}\nOutstanding: KES {balance}\n\nKindly settle the outstanding balance before {due_date}.\n\nKind regards.',
+                    1, ?, ?)
+            """, (tmpl_id, now_iso, now_iso))
+        print("Migration complete: reminder_schedules table and rent_due_reminder template ready.")
+
+
+def migrate_add_sms_delivery():
+    """Add delivered_at column to messages table for SMS/WhatsApp delivery tracking. Idempotent."""
+    with get_connection() as conn:
+        try:
+            conn.execute("ALTER TABLE messages ADD COLUMN delivered_at TEXT")
+            print("Migration complete: messages.delivered_at column added.")
+        except Exception:
+            pass  # Column already exists
+
+
+def migrate_add_template_body():
+    """Add template_body column to messages — stores original unsubstituted broadcast template. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
+        if 'template_body' not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN template_body TEXT")
+            print("Migration complete: messages.template_body column added.")
+        else:
+            print("Migration complete: messages.template_body already present.")
+
+
+def migrate_add_owner_messages():
+    """Create owner_messages table for storing portal notifications sent to property owners. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS owner_messages (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                template_body TEXT,
+                message_type TEXT NOT NULL DEFAULT 'notification',
+                channel TEXT,
+                recipient_count INTEGER,
+                read_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (property_id) REFERENCES properties(id),
+                FOREIGN KEY (owner_id) REFERENCES owners(id)
+            )
+        """)
+        # Add columns to existing tables if missing (idempotent)
+        existing = [r[1] for r in conn.execute("PRAGMA table_info(owner_messages)").fetchall()]
+        for col, typedef in [('template_body', 'TEXT'), ('channel', 'TEXT'), ('recipient_count', 'INTEGER'), ('sent_by', 'TEXT')]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE owner_messages ADD COLUMN {col} {typedef}")
+        print("Migration complete: owner_messages table ready.")
+
+
+def migrate_add_caretakers():
+    """Create caretakers table for named caretaker accounts per property. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caretakers (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                name TEXT NOT NULL,
+                phone TEXT,
+                password_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caretakers_property ON caretakers(property_id)")
+        print("Migration complete: caretakers table ready.")

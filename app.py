@@ -51,7 +51,15 @@ from src.database.db import (
     migrate_set_rent_charge_due_dates,
     migrate_update_template_wording,
     migrate_add_owners,
+    migrate_add_property_owners,
+    migrate_add_rent_due_day,
+    migrate_add_reminder_schedules,
     migrate_add_unit_hint,
+    migrate_add_maintenance,
+    migrate_add_sms_delivery,
+    migrate_add_template_body,
+    migrate_add_owner_messages,
+    migrate_add_caretakers,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -64,7 +72,15 @@ migrate_add_messaging()
 migrate_set_rent_charge_due_dates()
 migrate_update_template_wording()
 migrate_add_owners()
+migrate_add_property_owners()
+migrate_add_rent_due_day()
+migrate_add_reminder_schedules()
 migrate_add_unit_hint()
+migrate_add_maintenance()
+migrate_add_sms_delivery()
+migrate_add_template_body()
+migrate_add_owner_messages()
+migrate_add_caretakers()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -318,6 +334,10 @@ def dashboard():
             ORDER BY balance DESC
         """, (property_id,)).fetchall()
 
+        _today = datetime.today()
+        _month_start = _today.replace(day=1).strftime('%Y-%m-%d')   # e.g. 2026-03-01
+        _month_period = _today.strftime('%Y-%m')                     # e.g. 2026-03
+
         stats = {
             'total_units': conn.execute(
                 "SELECT COUNT(*) FROM units WHERE property_id = ?", (property_id,)
@@ -329,17 +349,14 @@ def dashboard():
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'pending'", (property_id,)
             ).fetchone()[0],
             'total_collected': conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ?", (property_id,)
+                "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ? AND payment_date >= ?",
+                (property_id, _month_start)
             ).fetchone()[0],
             'total_charged': conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM rent_charges WHERE property_id = ?", (property_id,)
+                "SELECT COALESCE(SUM(amount), 0) FROM rent_charges WHERE property_id = ? AND period = ?",
+                (property_id, _month_period)
             ).fetchone()[0],
         }
-        stats['total_outstanding'] = float(stats['total_charged']) - float(stats['total_collected'])
-        stats['collection_rate'] = (
-            round(float(stats['total_collected']) / float(stats['total_charged']) * 100, 1)
-            if stats['total_charged'] and float(stats['total_charged']) > 0 else 0
-        )
 
         # Derived from existing arrears list (no extra query)
         stats['units_in_arrears'] = len(arrears)
@@ -362,6 +379,11 @@ def dashboard():
         rentable = stats['total_units'] - office_units
         stats['occupancy_rate'] = round(stats['occupied_units'] / rentable * 100, 1) if rentable > 0 else 0
         stats['expected_monthly'] = expected_monthly
+        # Collection rate: this month's verified vs expected monthly income (per CLAUDE.md)
+        stats['collection_rate'] = (
+            round(float(stats['total_collected']) / expected_monthly * 100, 1)
+            if expected_monthly > 0 else 0
+        )
         # Arrears health: <= 0.5 = Healthy, <= 1.0 = Watch, > 1.0 = Critical
         stats['arrears_ratio'] = round(stats['total_arrears'] / expected_monthly, 1) if expected_monthly > 0 else 0
 
@@ -407,6 +429,25 @@ def dashboard():
         ).fetchone()[0]
         show_generate_charges_hint = charges_this_month == 0
 
+        from datetime import date as _date
+        _today_str = _date.today().isoformat()
+        _due_row = conn.execute("""
+            SELECT MIN(rc.due_date) AS due_date
+            FROM rent_charges rc
+            JOIN units u ON rc.unit_id = u.id
+            WHERE u.property_id = ? AND rc.due_date >= ?
+        """, (property_id, _today_str)).fetchone()
+        next_due_date = _due_row['due_date'] if _due_row else None
+        days_to_due = (
+            (_date.fromisoformat(next_due_date) - _date.today()).days
+            if next_due_date else None
+        )
+        recent_reminder = conn.execute("""
+            SELECT details FROM audit_log
+            WHERE action = 'reminder_sent' AND date(timestamp) = date('now')
+            ORDER BY timestamp DESC LIMIT 1
+        """).fetchone()
+
         return render_template(
             'dashboard.html',
             property=property_row,
@@ -418,6 +459,9 @@ def dashboard():
             recent=recent,
             show_generate_charges_hint=show_generate_charges_hint,
             current_month=current_month,
+            next_due_date=next_due_date,
+            days_to_due=days_to_due,
+            recent_reminder=recent_reminder,
         )
 
 
@@ -575,15 +619,25 @@ def manage_tenants():
 
         show_inactive = request.args.get('show_inactive') == '1'
         status_filter = "IN ('active', 'inactive')" if show_inactive else "= 'active'"
+        sort = request.args.get('sort', 'unit')
+        only_arrears = request.args.get('arrears') == '1'
+
+        arrears_join = "LEFT JOIN unit_balances ub ON ub.unit_id = t.unit_id"
+        arrears_clause = "AND COALESCE(ub.balance, 0) > 0" if only_arrears else ""
+        order_clause = "CAST(REPLACE(u.unit_number, ' ', '') AS TEXT)" if sort == 'unit' else "t.name"
+
         tenants = conn.execute(f"""
-            SELECT t.*, u.unit_number
+            SELECT t.*, u.unit_number, COALESCE(ub.balance, 0) as balance
             FROM tenants t
             LEFT JOIN units u ON t.unit_id = u.id
+            {arrears_join}
             WHERE t.property_id = ? AND t.status {status_filter}
-            ORDER BY t.status, t.name
+            {arrears_clause}
+            ORDER BY {order_clause}
         """, (property_row['id'],)).fetchall()
 
-        return render_template('tenants.html', property=property_row, tenants=tenants, show_inactive=show_inactive)
+        return render_template('tenants.html', property=property_row, tenants=tenants, show_inactive=show_inactive,
+                               sort=sort, only_arrears=only_arrears)
 
 
 @app.route('/tenants/add', methods=['GET', 'POST'])
@@ -737,14 +791,23 @@ def manage_owners():
                    o.created_at,
                    COUNT(p.id) as property_count
             FROM owners o
-            LEFT JOIN properties p ON p.owner_id = o.id AND p.status = 'active'
+            LEFT JOIN property_owners po ON po.owner_id = o.id
+            LEFT JOIN properties p ON p.id = po.property_id AND p.status = 'active'
             GROUP BY o.id
             ORDER BY o.name
         """).fetchall()
+        owner_properties = {}
+        for o in owners:
+            props = conn.execute("""
+                SELECT p.id, p.name FROM properties p
+                JOIN property_owners po ON po.property_id = p.id
+                WHERE po.owner_id = ? AND p.status = 'active'
+            """, (o['id'],)).fetchall()
+            owner_properties[o['id']] = props
         all_properties = conn.execute(
-            "SELECT id, name, owner_id FROM properties WHERE status = 'active' ORDER BY name"
+            "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
         ).fetchall()
-    return render_template('owners.html', owners=owners, all_properties=all_properties)
+    return render_template('owners.html', owners=owners, all_properties=all_properties, owner_properties=owner_properties)
 
 
 @app.route('/owners/new', methods=['POST'])
@@ -768,7 +831,12 @@ def create_owner():
             (owner_id, name, phone or None, email or None, password_hash),
         )
         if property_id:
-            conn.execute("UPDATE properties SET owner_id = ? WHERE id = ?", (owner_id, property_id))
+            jid = generate_id('POWN')
+            conn.execute(
+                "INSERT OR IGNORE INTO property_owners (id, property_id, owner_id) VALUES (?, ?, ?)",
+                (jid, property_id, owner_id)
+            )
+            conn.execute("UPDATE properties SET owner_id = ? WHERE id = ? AND owner_id IS NULL", (owner_id, property_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('owner_created', 'owner', owner_id, f"Owner: {name}", 'admin'),
@@ -831,7 +899,12 @@ def assign_property_to_owner(owner_id):
         if not owner or not prop:
             flash('Owner or property not found.', 'error')
             return redirect(url_for('manage_owners'))
-        conn.execute("UPDATE properties SET owner_id = ? WHERE id = ?", (owner_id, property_id))
+        jid = generate_id('POWN')
+        conn.execute(
+            "INSERT OR IGNORE INTO property_owners (id, property_id, owner_id) VALUES (?, ?, ?)",
+            (jid, property_id, owner_id)
+        )
+        conn.execute("UPDATE properties SET owner_id = ? WHERE id = ? AND owner_id IS NULL", (owner_id, property_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('property_assigned', 'owner', owner_id,
@@ -849,6 +922,7 @@ def delete_owner(owner_id):
         if not owner:
             flash('Owner not found.', 'error')
             return redirect(url_for('manage_owners'))
+        conn.execute("DELETE FROM property_owners WHERE owner_id = ?", (owner_id,))
         conn.execute("UPDATE properties SET owner_id = NULL WHERE owner_id = ?", (owner_id,))
         conn.execute("DELETE FROM owners WHERE id = ?", (owner_id,))
         conn.execute(
@@ -857,6 +931,174 @@ def delete_owner(owner_id):
         )
     flash(f"Owner '{owner['name']}' deleted. Their properties are now unassigned.", 'success')
     return redirect(url_for('manage_owners'))
+
+
+@app.route('/owners/<owner_id>/remove-property/<property_id>', methods=['POST'])
+def remove_property_from_owner(owner_id, property_id):
+    """Remove a property from an owner's assignments."""
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM property_owners WHERE owner_id = ? AND property_id = ?",
+            (owner_id, property_id)
+        )
+        conn.execute(
+            "UPDATE properties SET owner_id = NULL WHERE id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('property_unassigned', 'owner', owner_id,
+             f"Property {property_id} removed from owner {owner_id}", 'admin'),
+        )
+    flash('Property removed from owner.', 'success')
+    return redirect(url_for('manage_owners'))
+
+
+@app.route('/caretakers')
+def manage_caretakers():
+    """List all caretakers across properties."""
+    with get_connection() as conn:
+        caretakers = conn.execute("""
+            SELECT c.id, c.name, c.phone, c.property_id, c.password_hash,
+                   p.name AS property_name
+            FROM caretakers c
+            JOIN properties p ON c.property_id = p.id
+            ORDER BY p.name, c.name
+        """).fetchall()
+        all_properties = conn.execute(
+            "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
+        ).fetchall()
+    caretakers_out = [
+        {**dict(c), 'has_password': bool(c['password_hash'])}
+        for c in caretakers
+    ]
+    return render_template('caretakers.html', caretakers=caretakers_out, all_properties=all_properties)
+
+
+@app.route('/caretakers/new', methods=['POST'])
+def create_caretaker():
+    """Create a new caretaker account."""
+    from werkzeug.security import generate_password_hash
+    name = (request.form.get('name') or '').strip()
+    phone = (request.form.get('phone') or '').strip()
+    property_id = (request.form.get('property_id') or '').strip()
+    password = (request.form.get('password') or '').strip()
+
+    if not name or not property_id:
+        flash('Name and property are required.', 'error')
+        return redirect(url_for('manage_caretakers'))
+
+    with get_connection() as conn:
+        prop = conn.execute("SELECT name FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            flash('Property not found.', 'error')
+            return redirect(url_for('manage_caretakers'))
+        caretaker_id = generate_id('CTKR')
+        password_hash = generate_password_hash(password) if password else None
+        conn.execute(
+            "INSERT INTO caretakers (id, property_id, name, phone, password_hash) VALUES (?, ?, ?, ?, ?)",
+            (caretaker_id, property_id, name, phone or None, password_hash),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('caretaker_created', 'caretaker', caretaker_id, f"Caretaker: {name} | Property: {prop['name']}", 'admin'),
+        )
+    flash(f"Caretaker '{name}' created.", 'success')
+    return redirect(url_for('manage_caretakers'))
+
+
+@app.route('/caretakers/<caretaker_id>/set-password', methods=['POST'])
+def set_caretaker_password(caretaker_id):
+    """Set or change a caretaker's password."""
+    from werkzeug.security import generate_password_hash
+    password = (request.form.get('password') or '').strip()
+    if not password:
+        flash('Password cannot be empty.', 'error')
+        return redirect(url_for('manage_caretakers'))
+    with get_connection() as conn:
+        c = conn.execute("SELECT name FROM caretakers WHERE id = ?", (caretaker_id,)).fetchone()
+        if not c:
+            flash('Caretaker not found.', 'error')
+            return redirect(url_for('manage_caretakers'))
+        conn.execute(
+            "UPDATE caretakers SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(password), caretaker_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('caretaker_password_set', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Password updated", 'admin'),
+        )
+    flash(f"Password updated for {c['name']}.", 'success')
+    return redirect(url_for('manage_caretakers'))
+
+
+@app.route('/caretakers/<caretaker_id>/edit', methods=['POST'])
+def edit_caretaker(caretaker_id):
+    """Edit caretaker name, phone, and property assignment."""
+    name = (request.form.get('name') or '').strip()
+    phone = (request.form.get('phone') or '').strip()
+    property_id = (request.form.get('property_id') or '').strip()
+
+    if not name or not property_id:
+        flash('Name and property are required.', 'error')
+        return redirect(url_for('manage_caretakers'))
+    with get_connection() as conn:
+        c = conn.execute("SELECT name FROM caretakers WHERE id = ?", (caretaker_id,)).fetchone()
+        if not c:
+            flash('Caretaker not found.', 'error')
+            return redirect(url_for('manage_caretakers'))
+        conn.execute(
+            "UPDATE caretakers SET name = ?, phone = ?, property_id = ? WHERE id = ?",
+            (name, phone or None, property_id, caretaker_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('caretaker_updated', 'caretaker', caretaker_id, f"Caretaker: {name} | Updated", 'admin'),
+        )
+    flash(f"Caretaker '{name}' updated.", 'success')
+    return redirect(url_for('manage_caretakers'))
+
+
+@app.route('/caretakers/<caretaker_id>/delete', methods=['POST'])
+def delete_caretaker(caretaker_id):
+    """Delete a caretaker account."""
+    with get_connection() as conn:
+        c = conn.execute("SELECT name FROM caretakers WHERE id = ?", (caretaker_id,)).fetchone()
+        if not c:
+            flash('Caretaker not found.', 'error')
+            return redirect(url_for('manage_caretakers'))
+        conn.execute("DELETE FROM caretakers WHERE id = ?", (caretaker_id,))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('caretaker_deleted', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Deleted", 'admin'),
+        )
+    flash(f"Caretaker '{c['name']}' deleted.", 'success')
+    return redirect(url_for('manage_caretakers'))
+
+
+@app.route('/properties/set-due-day', methods=['POST'])
+def update_rent_due_day():
+    """Set per-property rent due day."""
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('property_list'))
+        try:
+            day = int(request.form.get('rent_due_day', 5))
+            day = max(0, min(31, day))
+        except (TypeError, ValueError):
+            day = 5
+        conn.execute(
+            "UPDATE properties SET rent_due_day = ? WHERE id = ?", (day, property_row['id'])
+        )
+        label = 'last day of month' if day == 0 else f"the {day}{'st' if day == 1 else 'nd' if day == 2 else 'rd' if day == 3 else 'th'}"
+        flash(f"Rent due day set to {label}.", 'success')
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('rent_due_day_updated', 'property', property_row['id'],
+             f"rent_due_day set to {day}", 'admin'),
+        )
+    return redirect(url_for('generate_charges'))
 
 
 @app.route('/report-payment', methods=['GET', 'POST'])
@@ -1220,6 +1462,30 @@ def verify_payments(statement_id):
             )
             verified_count += 1
 
+            try:
+                _tenant = conn.execute(
+                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                    (claim['unit_id'],),
+                ).fetchone()
+                if _tenant and _tenant['phone']:
+                    _token = _tenant['access_token']
+                    if not _token:
+                        _token = secrets.token_urlsafe(32)
+                        conn.execute(
+                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                            (_token, claim['unit_id']),
+                        )
+                    _base = request.host_url.rstrip('/')
+                    _link = f"{_base}/tenant/{_token}"
+                    _sms = (
+                        f"Hi {_tenant['name']}, KES {float(bank_txn['amount']):,.0f} payment confirmed.\n"
+                        f"View your account: {_link}"
+                    )
+                    from src.messaging.delivery import send_sms
+                    send_sms([{'phone': _tenant['phone']}], _sms)
+            except Exception:
+                pass
+
         flash(f'Verification complete! {verified_count} payments verified.', 'success')
         return redirect(url_for('dashboard'))
 
@@ -1278,6 +1544,30 @@ def auto_assign_payment(txn_id):
             ('payment_auto_hint_assigned', 'payment', payment_id,
              f"Ref: {txn['mpesa_ref'] or '-'} | KES {amount:.2f} | Unit: {unit_number} | Hint: {unit_hint}", 'admin'),
         )
+
+        try:
+            _tenant = conn.execute(
+                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                (unit_id,),
+            ).fetchone()
+            if _tenant and _tenant['phone']:
+                _token = _tenant['access_token']
+                if not _token:
+                    _token = secrets.token_urlsafe(32)
+                    conn.execute(
+                        "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                        (_token, unit_id),
+                    )
+                _base = request.host_url.rstrip('/')
+                _link = f"{_base}/tenant/{_token}"
+                _sms = (
+                    f"Hi {_tenant['name']}, KES {amount:,.0f} payment confirmed.\n"
+                    f"View your account: {_link}"
+                )
+                from src.messaging.delivery import send_sms
+                send_sms([{'phone': _tenant['phone']}], _sms)
+        except Exception:
+            pass
 
     undo_url = url_for('delete_payment', payment_id=payment_id)
     flash(Markup(
@@ -1380,6 +1670,29 @@ def assign_payment(txn_id):
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('payment_manual_assigned', 'payment', payment_id, details, 'admin'),
             )
+            try:
+                _tenant = conn.execute(
+                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                    (unit_id,),
+                ).fetchone()
+                if _tenant and _tenant['phone']:
+                    _token = _tenant['access_token']
+                    if not _token:
+                        _token = secrets.token_urlsafe(32)
+                        conn.execute(
+                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                            (_token, unit_id),
+                        )
+                    _base = request.host_url.rstrip('/')
+                    _link = f"{_base}/tenant/{_token}"
+                    _sms = (
+                        f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
+                        f"View your account: {_link}"
+                    )
+                    from src.messaging.delivery import send_sms
+                    send_sms([{'phone': _tenant['phone']}], _sms)
+            except Exception:
+                pass
             flash('Payment assigned successfully!', 'success')
             return redirect(url_for('review', tab='unreported'))
 
@@ -1486,6 +1799,30 @@ def assign_group():
                 ('payment_manual_assigned', 'payment', payment_id, details, 'admin'),
             )
 
+            try:
+                _tenant = conn.execute(
+                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                    (unit_id,),
+                ).fetchone()
+                if _tenant and _tenant['phone']:
+                    _token = _tenant['access_token']
+                    if not _token:
+                        _token = secrets.token_urlsafe(32)
+                        conn.execute(
+                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                            (_token, unit_id),
+                        )
+                    _base = request.host_url.rstrip('/')
+                    _link = f"{_base}/tenant/{_token}"
+                    _sms = (
+                        f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
+                        f"View your account: {_link}"
+                    )
+                    from src.messaging.delivery import send_sms
+                    send_sms([{'phone': _tenant['phone']}], _sms)
+            except Exception:
+                pass
+
             total_amount += float(txn['amount'])
             assigned_count += 1
 
@@ -1521,12 +1858,19 @@ def generate_charges():
                 flash('Please enter a period (e.g. 2026-01).', 'error')
                 return redirect(url_for('generate_charges'))
 
+            import calendar as _cal
             try:
                 y, m = period.split('-')
                 y, m = int(y), int(m)
                 due_month = m + 1 if m < 12 else 1
                 due_year = y if m < 12 else y + 1
-                due_date = f"{due_year:04d}-{due_month:02d}-05"
+                due_day = int(property_row.get('rent_due_day') or 5)
+                if due_day == 0:
+                    last_day = _cal.monthrange(due_year, due_month)[1]
+                    due_date = f"{due_year:04d}-{due_month:02d}-{last_day:02d}"
+                else:
+                    safe_day = min(due_day, 28)
+                    due_date = f"{due_year:04d}-{due_month:02d}-{safe_day:02d}"
             except (ValueError, TypeError):
                 due_date = None
 
@@ -1568,6 +1912,17 @@ def generate_charges():
                 ('charges_generated', 'charge', period,
                  f'Period: {period} | {rent_created} rent + {svc_created} service charges created', 'admin'),
             )
+            try:
+                from src.messaging.owner_notify import notify_property_owners
+                _base = request.host_url.rstrip('/')
+                _owner_msg = (
+                    f"Charges generated: {property_row['name']} — {period}.\n"
+                    f"{rent_created} rent + {svc_created} service charges.\n"
+                    f"View: {_base}/view/{property_row['id']}"
+                )
+                notify_property_owners(conn, property_row['id'], _owner_msg, sent_by='Admin')
+            except Exception:
+                pass
             flash(f'Generated {rent_created} rent and {svc_created} service charges for {period}. Water charges should be uploaded separately.', 'success')
             return redirect(url_for('dashboard'))
 

@@ -62,6 +62,18 @@ def generate_report():
                 """, ('report_generated', 'report', report_id,
                       f"Generated report for {prop['name']}: {period_start} to {period_end}", 'admin'))
 
+                try:
+                    from src.messaging.owner_notify import notify_property_owners
+                    from flask import request
+                    _base = request.host_url.rstrip('/')
+                    _owner_msg = (
+                        f"Report generated: {prop['name']} ({period_start} to {period_end}).\n"
+                        f"View: {_base}/view/{property_id}/reports/{report_id}"
+                    )
+                    notify_property_owners(conn, property_id, _owner_msg, sent_by='Admin')
+                except Exception:
+                    pass
+
                 flash(f'Report generated successfully.', 'success')
                 return redirect(url_for('reports.preview_report', report_id=report_id))
             except Exception as e:

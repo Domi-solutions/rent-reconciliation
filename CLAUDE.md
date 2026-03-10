@@ -1,5 +1,26 @@
 # Rent Reconciliation System
 
+## AI Re-entry Overview (for agents)
+
+Flask + SQLite financial intelligence layer for a Kenya property management agency. Surfaces live rent data, arrears, and verified payments for landlords, caretakers, and tenants.
+
+**Status:** Core engine, dashboards (The Pulse), monthly reports (The Ledger), tenant/owner/caretaker portals, SMS delivery (Africa's Talking sandbox), and named caretaker accounts are all complete and in production. Phase 3 (Weekly Digest) and Phase 4 (Yearly View) not started.
+
+**Canonical docs — read in this order:**
+- `CLAUDE.md` (this file) — technical reference: schema, routes, auth models, patterns, conventions
+- `ROADMAP.md` — product vision, phase checklist, what's done vs not
+- `CURSOR_PLAN.md` — current work focus, next steps, implementation notes
+- `README.md` — how to run and deploy
+
+**Read both `CLAUDE.md` and `CURSOR_PLAN.md` before editing any code.**
+
+**Next 3 steps:**
+1. Switch Africa's Talking from sandbox → live credentials (`fly secrets set AT_USERNAME=... AT_API_KEY=...`)
+2. Build `balance_snapshots` table — daily per-unit snapshots, prerequisite for weekly digest
+3. Implement Weekly Digest (`src/reports/weekly_digest.py`) — payment velocity, arrears changes, claim aging
+
+---
+
 ## Vision: Financial Intelligence Layer
 
 This app is a **financial intelligence layer** on property data. It does not report what an agency did — it surfaces what the data shows. Think of it as a stock portfolio dashboard for rental property: it doesn't manage the stocks, it tells you exactly what's happening with your money at every level of zoom. **The insight is the product.**
@@ -89,7 +110,7 @@ rent-reconciliation/
 │   ├── parsers/
 │   │   ├── router.py         # Input auto-detection & routing
 │   │   ├── pdf_parser.py     # Bank statement parsing
-│   │   ├── sms_parser.py     # M-Pesa SMS parsing
+│   │   ├── sms_parser.py     # M-Pesa SMS parsing (also exports parse_mpesa_message)
 │   │   ├── excel_parser.py   # Tenant Excel import
 │   │   └── water_parser.py   # Water readings Excel parser
 │   ├── routes/
@@ -102,28 +123,36 @@ rent-reconciliation/
 │   ├── reports/
 │   │   └── landlord_report.py   # Report generation + enrich_report_data()
 │   ├── messaging/
+│   │   ├── delivery.py       # SMS delivery via Africa's Talking (send_sms, phone normalizer)
+│   │   ├── owner_notify.py   # notify_property_owners() — SMS + portal inbox storage
 │   │   └── reminders.py      # Automatic due-date reminder generation
 │   ├── database/
-│   │   ├── db.py             # Connection, generate_id()
+│   │   ├── db.py             # Connection, generate_id(), all migrations
 │   │   └── schema.sql        # Tables
 │   └── reconciliation/
 │       ├── matcher.py        # Match claims to transactions
 │       └── state_machine.py  # Payment lifecycle
 ├── templates/
 │   ├── base.html             # Admin base (sidebar nav, property selector)
-│   ├── viewer/               # Owner portal (base_viewer, dashboard, arrears, payments, report_detail, reports)
-│   ├── tenant/               # Tenant portal (base_tenant, portal, charges, payments, messages, invalid_token)
-│   ├── messaging/            # Admin messaging (dashboard, broadcast, templates, edit_template, reminders)
+│   ├── viewer/               # Owner portal (base_viewer, dashboard, arrears, payments,
+│   │                         #   report_detail, reports, activity, notifications,
+│   │                         #   message_detail, maintenance)
+│   ├── tenant/               # Tenant portal (base_tenant, portal, charges, payments,
+│   │                         #   messages, maintenance, invalid_token)
+│   ├── messaging/            # Admin messaging (dashboard, broadcast, templates,
+│   │                         #   edit_template, reminders, schedules)
 │   ├── reports/              # Admin report pages (history, preview, caretaker_preview)
-│   ├── caretaker/            # Caretaker live portal (login, base_caretaker, dashboard, arrears, tenants)
-│   └── owners.html           # Owners management page
+│   ├── caretaker/            # Caretaker live portal (login, base_caretaker, dashboard,
+│   │                         #   arrears, tenants, messages, issues, log_payment)
+│   ├── owners.html           # Owners management page
+│   └── caretakers.html       # Caretakers management page (named accounts, password, property)
 ├── scripts/
-│   ├── run_dev.sh            # Start local dev server (uses data/dev.db, no passwords)
-│   ├── download_prod_db.sh   # Pull production DB from Fly.io to backups/
+│   ├── run_dev.sh            # Start local dev server on :5001 (uses data/dev.db, no passwords)
+│   ├── download_prod_db.sh   # Pull production DB → backups/ + data/dev.db + data/rent.db
 │   └── reset_dev_db.sh       # Reset data/dev.db from latest backup
 └── data/
-    ├── rent.db               # Production DB (local copy; actual prod on Fly volume)
-    └── dev.db                # Local dev DB (copy of prod; safe to modify)
+    ├── rent.db               # Default DB (used by flask run directly)
+    └── dev.db                # Dev DB (used by run_dev.sh via DATABASE_PATH env var)
 ```
 
 ## Database Tables
@@ -137,10 +166,16 @@ rent-reconciliation/
 - `payments` - Verified payments (reduces balance via allocations)
 - `rent_charges` - Monthly charges with `charge_type` ('rent' | 'service' | 'water'), `period` (YYYY-MM or 'ARREARS'), `due_date` (DATE; for reminders; default 5th of next month when generating), UNIQUE(unit_id, period, charge_type)
 - `payment_allocations` - FIFO allocation records linking payments to specific charges (payment_id → charge_id, amount). Foreign key ON DELETE CASCADE on payment_id.
-- `audit_log` - All actions logged (including exports, tenant_token_generated, tenant_token_revoked, broadcast_sent)
-- `messages` - In-app messages to tenants (reminder | broadcast | notice); per-tenant rows; `batch_id` groups broadcasts; `read_at` for read tracking
+- `audit_log` - All actions logged (including exports, tenant_token_generated, tenant_token_revoked, broadcast_sent, reminder_sent)
+- `messages` - In-app messages to tenants (reminder | broadcast | notice); per-tenant rows; `batch_id` groups broadcasts; `read_at` for read tracking; `template_body` stores the original unsubstituted template for broadcasts (so owner inbox can show template rather than one tenant's personalized content)
 - `message_templates` - Subject/body templates; `property_id` NULL = system default; UNIQUE(property_id, template_key); keys e.g. rent_due_10d, rent_due_5d, rent_due_today, water_cutoff, custom_broadcast
-- `reminder_settings` - Per-property: template_key, days_before_due, enabled; UNIQUE(property_id, template_key)
+- `reminder_settings` - Per-property: template_key, days_before_due, enabled; UNIQUE(property_id, template_key). Handles legacy hardcoded keys (rent_due_10d, rent_due_5d, etc.); kept intact alongside reminder_schedules.
+- `reminder_schedules` - Flexible per-property schedules: id, property_id, label, template_key, days_before_due, send_to ('all' | 'arrears'), enabled. Fires at most once per day when dashboard is loaded; additive to reminder_settings.
+- `property_owners` - M:M junction: property_id, owner_id. Determines which properties an owner can see in the viewer; backfilled from properties.owner_id.
+- `properties.rent_due_day` - Integer 0–31; 0 = last day of month; used when generating charges and for reminder due-date logic.
+- `maintenance_issues` - Logged issues against a property/unit; `source` ('tenant' | 'caretaker'), `raised_by_tenant_id` when tenant-sourced, `category`, `status` ('open' | 'resolved'), `resolved_at`, `resolved_note`
+- `owner_messages` - Notifications + broadcast copies stored in owner portal inbox. Columns: id, property_id, owner_id, subject, body, template_body (unsubstituted for broadcasts), message_type ('notification' | 'broadcast' | 'reminder'), channel, recipient_count, sent_by (caretaker's actual name, 'Admin', or 'System'), read_at, created_at. Separate from `messages` table (which requires tenant_id NOT NULL). Populated by `notify_property_owners()`.
+- `caretakers` - Named caretaker accounts per property. Columns: id, property_id (FK), name, phone, password_hash, created_at. Migration: `migrate_add_caretakers()`. Name doubles as login username. One caretaker per property (can be expanded). Managed at `/caretakers` (admin).
 
 ## Key Patterns
 
@@ -188,27 +223,42 @@ from src.database.db import migrate_add_charge_type, migrate_add_apartment_size,
 
 ## User Roles
 
-- **Agency Admin**: Full CRUD via main routes (/, /onboard, /units, etc.); Messages dropdown for broadcasts, templates, reminders
-- **Property Owner**: View-only via `/view/*` (no admin nav; share-link or password-protected); Reports tab shows saved monthly reports
-- **Caretaker**: Live operational view via `/caretaker/<property_id>` (CARETAKER_PASSWORD auth); arrears follow-up, tenant directory, occupancy
+- **Agency Admin**: Full CRUD via main routes (/, /onboard, /units, etc.); Messages dropdown for broadcasts, templates, reminders; manages owners (`/owners`) and caretakers (`/caretakers`)
+- **Property Owner**: View-only via `/view/*` (no admin nav; share-link or password-protected); Reports tab shows saved monthly reports; Messages tab shows owner inbox with `sent_by` attribution
+- **Caretaker**: Live operational view via `/caretaker/<property_id>` (named account: login with name + password); arrears follow-up, tenant directory, occupancy, log payments, broadcast messages
 - **Tenant**: Read-only portal via `/tenant/<token>` (no login; token in URL; generate/revoke from admin Tenants page)
 
 ## Owner Viewer (/view/*)
 
-- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/view/<property_id>/payments`, `/view/<property_id>/reports` = saved monthly reports list, `/view/<property_id>/reports/<report_id>` = full report detail.
-- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html` (no admin navbar). Child templates set `active_tab` (overview | arrears | payments | reports) for pill nav; the view passes `active_tab` in context. Do not add a second `container` in child templates—the base provides `<main class="container py-4">`.
+- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/view/<property_id>/payments`, `/view/<property_id>/reports` = saved monthly reports list, `/view/<property_id>/reports/<report_id>` = full report detail; `/view/<property_id>/maintenance` = maintenance tab (open + last 30 days resolved); `/view/<property_id>/notifications` = owner messages inbox.
+- **Ownership:** Property list shows only properties in `property_owners` for the logged-in owner (`session['owner_id']`). If an owner has no properties, the list is empty with "No properties assigned" empty state (no redirect). For any `/view/<property_id>/...` route, after loading the property the app checks that `(property_id, owner_id)` exists in `property_owners`; if not, returns 403.
+- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html` (no admin navbar). Child templates set `active_tab` (overview | arrears | payments | reports | maintenance | notifications) for pill nav; the view passes `active_tab` in context. Do not add a second `container` in child templates—the base provides `<main class="container py-4">`. Empty state uses `.empty-state` / `.empty-state-title` / `.empty-state-sub`.
 - **Auth:** Protected by shared password (env `VIEWER_PASSWORD`); login at `/view/login`, logout at `/view/logout`.
 - **Reports tab:** Shows list of admin-generated monthly reports; clicking opens `viewer/report_detail.html` which uses `enrich_report_data()` to back-fill fields for old reports.
-- **Link sharing:** Admin copies owner portal URL from Owners page (clipboard API button). One owner can have multiple properties.
+- **Messages tab:** Owner inbox at `/view/<property_id>/notifications`; renders `notifications.html`; marks all as read on page load. Broadcasts show `template_body` (unsubstituted) in monospace box with personalisation note. Notifications show body. `sent_by` shown as a colored pill badge next to the subject: blue=Admin, amber=Caretaker name, gray outline=System. Records with NULL `sent_by` (old data before attribution was added) show no badge. Unread messages highlighted yellow. **Query must SELECT all columns:** `id, subject, body, template_body, message_type, channel, recipient_count, sent_by, read_at, created_at` — omitting any column silently hides that data in the template.
+- **Link sharing:** Admin copies owner portal URL from Owners page (clipboard API button). One owner can have multiple properties via `property_owners` M:M.
 
 ## Caretaker Portal (/caretaker/*)
 
-- **URLs:** `/caretaker/<property_id>` = overview dashboard; `/caretaker/<property_id>/arrears` = full arrears list; `/caretaker/<property_id>/tenants` = tenant directory.
-- **Auth:** `CARETAKER_PASSWORD` env var; session key `caretaker_authenticated`. Login at `/caretaker/login`, logout at `/caretaker/logout`. If env var is unset, portal is open (dev mode).
-- **Templates:** Extend `templates/caretaker/base_caretaker.html` (sticky header, 3 nav tabs, logout link). `@media print` hides header for printable views.
+- **URLs:** `/caretaker/<property_id>` = overview dashboard; `/caretaker/<property_id>/arrears` = full arrears list; `/caretaker/<property_id>/tenants` = tenant directory; `/caretaker/<property_id>/issues` = maintenance issues board; `POST /caretaker/<property_id>/issues/new` = log caretaker issue; `POST /caretaker/<property_id>/issues/<issue_id>/resolve` = mark issue resolved (optionally with note + in-app tenant notice); `GET/POST /caretaker/<property_id>/log-payment` = submit M-Pesa SMS claim for a tenant (creates payment_claims record with `source='caretaker'`).
+- **Auth (priority order):**
+  1. **DB accounts** (preferred): If any rows exist in `caretakers` table → login requires name + password. Session stores `caretaker_id`, `caretaker_name`, `caretaker_property_id`. On every request, `before_request` verifies `caretaker_id` still exists in DB — deleting the account immediately revokes access even for active sessions.
+  2. **Legacy shared password**: If no DB caretakers exist and `CARETAKER_PASSWORD` env var is set → single shared password, session key `caretaker_authenticated`.
+  3. **Dev mode**: If neither DB accounts nor env var → portal is open (no auth).
+  - Login at `/caretaker/login`, logout at `/caretaker/logout`. Login form shows name+password when DB accounts exist, password-only otherwise.
+- **`sent_by` attribution:** Broadcasts and notifications sent from caretaker portal use `session.get('caretaker_name', 'Caretaker')` as `sent_by` — so owner inbox shows the actual caretaker's name.
+- **Templates:** Extend `templates/caretaker/base_caretaker.html` (sticky header shows logged-in caretaker name + nav tabs + logout). `@media print` hides header for printable views.
 - **Data shown:** Occupancy KPIs, vacant unit pills, top arrears (unit + tenant + phone + KES balance + months badge), full tenant directory with phone. KES amounts ARE visible to caretakers.
+- **Log Payment tab:** Unit selector (occupied units only), M-Pesa SMS textarea, shows last 15 claims with Verified/Pending status. Parses SMS via `src/parsers/sms_parser.parse_mpesa_message`. Notifies property owners on submission.
 - **Print buttons:** Each tab has a "Print" button. Caretaker can print any tab as a PDF via browser.
 - **Blueprint:** `caretaker_bp` in `src/routes/caretaker_routes.py`, registered in `app.py`. Auth bypass added: paths starting with `/caretaker` are exempt from admin auth.
+
+## Caretaker Management (Admin — /caretakers)
+
+- **URL:** `GET /caretakers` = list all caretakers; `POST /caretakers/new` = create; `POST /caretakers/<id>/edit` = update name/phone/property; `POST /caretakers/<id>/set-password` = set/change password; `POST /caretakers/<id>/delete` = delete (immediately revokes all active sessions).
+- **Template:** `templates/caretakers.html` — mirrors `owners.html` pattern. "Manage" collapse per caretaker shows edit form, password form, portal URL with login name, delete button.
+- **Workflow to replace a caretaker:** Create new account → brief new person → delete old account. Deletion takes effect on next request (DB verification in `before_request`).
+- **Sidebar nav:** "Caretakers" item in admin sidebar, active for all caretaker management endpoints.
 
 ## Monthly Reports Admin (/reports/*)
 
@@ -268,11 +318,15 @@ Monthly charges have THREE components per tenant:
 - [ ] User authentication (admin routes)
 - [x] Multi-property support (session-based property selection; selector in nav)
 - [x] Monthly report generator (`src/reports/landlord_report.py`) — 6-section report saved to DB
-- [x] Caretaker live portal (`/caretaker/*`) — 3-tab operational view with CARETAKER_PASSWORD auth
+- [x] Caretaker live portal (`/caretaker/*`) — operational view with named DB accounts (name+password per caretaker); falls back to CARETAKER_PASSWORD env var if no DB accounts exist
+- [x] Caretaker account management (`/caretakers`) — admin creates/edits/deletes named caretaker accounts; deletion immediately revokes active sessions via per-request DB check
 - [x] PDF export for reports (browser print with `@media print` CSS)
 - [x] Owners multi-property — assign multiple properties per owner; copy-link button in UI
 - [x] Mobile-friendly — sidebar backdrop, report columns collapse ≤600px, tables scroll horizontally
-- [x] Dev scripts — `scripts/run_dev.sh`, `scripts/download_prod_db.sh`, `scripts/reset_dev_db.sh`
+- [x] Dev scripts — `scripts/run_dev.sh`, `scripts/download_prod_db.sh` (copies to both dev.db and rent.db), `scripts/reset_dev_db.sh`
+- [x] SMS delivery — Africa's Talking integration (`src/messaging/delivery.py`); broadcasts, reminders, and payment confirmations reach tenant phones
+- [x] Owner messages inbox — `owner_messages` table + `/view/<property_id>/notifications`; all SMS events (broadcasts, reminders, payment confirmations, reports) also stored in owner portal; `sent_by` attribution (Admin/Caretaker/System)
+- [x] Payment SMS wording — "payment confirmed" (no bank statement mechanics visible to tenants/caretakers)
 
 CLAUDE.md is the canonical context for AI agents working on this repo.
 See `ROADMAP.md` for product vision, design rules, phase status, and update protocol.
@@ -293,15 +347,18 @@ Admin uses **session-based** property selection. The currently selected property
 
 - **Auth:** URL contains the credential; no session or password. Token is `tenants.access_token` (generated via admin "Generate link", revoked via "Revoke").
 - **Bypass:** `require_admin_auth` exempts paths starting with `/tenant`.
-- **Routes:** `GET /tenant/<token>` = overview (balance + recent messages); `GET /tenant/<token>/charges` = charges by period with paid/unpaid; `GET /tenant/<token>/payments` = payments with allocation trail; `GET /tenant/<token>/messages` = inbox (marks unread as read on view).
+- **Routes:** `GET /tenant/<token>` = overview (balance + recent messages); `GET /tenant/<token>/charges` = charges by period with paid/unpaid; `GET /tenant/<token>/payments` = payments with allocation trail; `GET /tenant/<token>/messages` = inbox (marks unread as read on view); `GET /tenant/<token>/maintenance` = maintenance issues list + submission form; `POST /tenant/<token>/maintenance/new` = log new maintenance issue for the tenant’s unit.
 - **Helper:** `_get_tenant_by_token(conn, token)` in `tenant_routes.py` returns (tenant, unit, property) or None; invalid/revoked token renders `tenant/invalid_token.html`.
 - **Data-descriptive language:** All tenant-facing text uses data voice.
 
 ## Messaging (Admin)
 
-- **Scope:** Current property only; no property switcher inside Messages.
-- **Routes:** `GET /messages`, `GET/POST /messages/broadcast`, `GET /messages/templates`, `GET/POST /messages/templates/<id>/edit`, `GET/POST /messages/reminders`.
-- **Broadcast:** One `messages` row per recipient with shared `batch_id`; audit log `broadcast_sent`. Reminders run on dashboard load; idempotent per day per template_key; use `rent_charges.due_date` (5th of next month for new charges).
+- **Scope:** Current property only; no property switcher inside Messages. `get_current_property(conn)` is defined locally in `messaging_routes.py` (and in `report_routes.py`); no import from app.
+- **Routes:** `GET /messages`, `GET/POST /messages/broadcast`, `GET /messages/templates`, `GET/POST /messages/templates/<id>/edit`, `GET/POST /messages/reminders`, `GET/POST /messages/schedules` (reminder_schedules CRUD).
+- **Broadcast:** One `messages` row per recipient with shared `batch_id`; `template_body` stores the original unsubstituted template; audit log `broadcast_sent`. Reminders: two systems coexist — (1) **reminder_settings**: legacy hardcoded keys (rent_due_10d, rent_due_5d, etc.); (2) **reminder_schedules**: flexible per-property schedules (label, template_key, days_before_due, send_to). Both run on dashboard load; idempotent per day. Due dates use `properties.rent_due_day` and `rent_charges.due_date`.
+- **SMS Delivery:** `src/messaging/delivery.py` wraps Africa's Talking API. `send_sms(recipients, message)` normalizes Kenyan numbers (07xx → +2547xx) and sends. Credentials via env: `AT_USERNAME` (default `sandbox`), `AT_API_KEY`, `AT_SENDER_ID`. Sandbox mode uses `AT_USERNAME=sandbox` — no real SMS sent. Broadcasts, reminders, payment confirmations all call `send_sms`.
+- **Owner notifications:** `src/messaging/owner_notify.py` — `notify_property_owners(conn, property_id, message, portal_subject=None, portal_body=None, template_body=None, channel=None, recipient_count=None, message_type='notification', sent_by=None)`. Fetches property owners, stores each message in `owner_messages`, and sends SMS to owners who have phones. Called from: broadcasts (admin + caretaker), reminders, payment verifications, report generation, caretaker payment claims.
+- **Payment SMS wording:** "payment confirmed" — avoids exposing bank statement verification mechanics to tenants/caretakers.
 
 ## Test Endpoints
 
@@ -341,6 +398,13 @@ Admin uses **session-based** property selection. The currently selected property
 **Payment Processing:**
 - `POST /verify` - Auto-verify payment claims against bank transactions (calls `allocate_payment()` automatically)
 - `GET/POST /assign/<txn_id>` - Manually assign unassigned transaction to unit (calls `allocate_payment()` automatically)
+
+**Caretaker Management:**
+- `GET /caretakers` - List all caretaker accounts across properties
+- `POST /caretakers/new` - Create caretaker account (name, phone, property_id, optional password)
+- `POST /caretakers/<id>/edit` - Update name, phone, property assignment
+- `POST /caretakers/<id>/set-password` - Set or change password
+- `POST /caretakers/<id>/delete` - Delete account (immediately revokes active sessions)
 
 ## Key Implementation Details
 
@@ -427,7 +491,7 @@ Key: `run_dev.sh` sets `DATABASE_PATH` to `data/dev.db` and unsets all password 
 - **Config:** `fly.toml` with persistent volume `data_vol` mounted at `/data`
 - **Database:** SQLite at `/data/rent.db` (production) or `data/dev.db` (local dev)
 - **Workers:** Single gunicorn worker (required for SQLite write safety)
-- **Secrets:** `ADMIN_PASSWORD`, `VIEWER_PASSWORD`, `CARETAKER_PASSWORD`, `SECRET_KEY` set via `fly secrets set`
+- **Secrets:** `ADMIN_PASSWORD`, `VIEWER_PASSWORD`, `CARETAKER_PASSWORD`, `SECRET_KEY`, `APP_BASE_URL` (e.g. `https://rent-reconciliation.fly.dev`) set via `fly secrets set`. `APP_BASE_URL` is used for SMS links (e.g. tenant portal, reminders) when there is no request context. SMS secrets: `AT_USERNAME` (Africa's Talking username; use `sandbox` for sandbox mode), `AT_API_KEY`, `AT_SENDER_ID`.
 - **Deploy:** `fly deploy` from project root (uses Dockerfile)
 - **Auto-stop:** Machine auto-stops when idle, wakes on request
 - **Fly CLI:** `/Users/lincksmorara/.fly/bin/flyctl` (not in PATH by default; `export PATH="$HOME/.fly/bin:$PATH"`)

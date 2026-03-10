@@ -1,0 +1,214 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Messages — {{ property.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Messages</div>
+    <div style="font-size: 13px; color: var(--ink-3);">Send to one tenant, tenants with arrears, or broadcast to all.</div>
+  </div>
+</div>
+
+<div class="ct-section mb-4">
+  <div class="ct-section-header">Compose</div>
+  <div class="ct-section-body">
+    <form id="compose_form" method="post" action="{{ url_for('caretaker.send_message', property_id=property.id) }}">
+
+      {# Row 1: To + Via #}
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+        <select id="recipient_select" name="recipient" style="flex: 1 1 180px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+          <option value="all">All tenants</option>
+          <option value="arrears">Tenants with arrears</option>
+          {% for t in tenants %}
+          <option value="{{ t.id }}">{{ t.unit_number }} — {{ t.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="channel" style="flex: 0 0 150px; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+          <option value="portal">In-app portal</option>
+          <option value="sms">SMS to phone</option>
+        </select>
+      </div>
+
+      {# Row 2: Template picker #}
+      {% if templates %}
+      <div style="margin-bottom: 10px;">
+        <select id="template_select" style="width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+          <option value="">— Direct message (no template) —</option>
+          {% for tmpl in templates %}
+          <option value="{{ tmpl.id }}"
+                  data-body="{{ tmpl.body | e }}"
+                  data-ref="{{ tmpl.subject | e }}"
+                  {% if 'due' in tmpl.template_key or 'cutoff' in tmpl.template_key %}data-arrears-only="1"{% endif %}>{{ tmpl.template_key }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {# Row 3: Reference (internal label) #}
+      <div style="margin-bottom: 10px;">
+        <input name="reference" id="reference" type="text"
+               placeholder="Reference label (internal only — not sent to tenant)"
+               style="width: 100%; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);">
+      </div>
+
+      {# Row 4: Body + Send #}
+      <div style="display: flex; gap: 8px; align-items: flex-end;">
+        <div style="flex: 1;">
+          <textarea name="body" id="body_field" rows="5" required
+                    placeholder="Write your message here… or select a template above."
+                    style="width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink); resize: vertical; line-height: 1.6;"></textarea>
+          <div style="font-size: 11px; color: var(--ink-3); margin-top: 4px;">
+            Auto-filled per tenant: {tenant_name} &nbsp;·&nbsp; {unit_number} &nbsp;·&nbsp; {balance} &nbsp;·&nbsp; {monthly_rent} &nbsp;·&nbsp; {service_charge} &nbsp;·&nbsp; {due_date}
+          </div>
+        </div>
+        <button type="submit" id="send_btn" style="padding: 8px 20px; background: var(--ink); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;">Send</button>
+      </div>
+
+      {# Row 5: Variable fill-ins — shown when unknown {placeholders} are detected #}
+      <div id="var_fill_section" style="display: none; margin-top: 12px; padding: 10px 14px; background: #fef9c3; border: 1px solid #fde047; border-radius: 6px;">
+        <div style="font-size: 12px; font-weight: 700; color: #854d0e; margin-bottom: 8px;">
+          Fill in these placeholders before sending:
+        </div>
+        <div id="var_fill_container"></div>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden;">
+  <div class="ct-section-header" style="padding: 10px 18px;">Recently sent</div>
+  {% if sent %}
+  <div style="overflow-x: auto;">
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr>
+          <th style="padding: 10px 18px;">Date</th>
+          <th>Unit</th>
+          <th>Tenant</th>
+          <th>Reference</th>
+          <th>Via</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in sent %}
+        <tr>
+          <td style="padding: 9px 18px; color: var(--ink-3); font-size: 12px; white-space: nowrap;">{{ m.created_at[:10] }}</td>
+          <td style="font-weight: 600;">{{ m.unit_number }}</td>
+          <td>{{ m.tenant_name }}</td>
+          <td style="color: var(--ink-2);">{{ m.subject }}</td>
+          <td>
+            {% if m.delivery_channel == 'sms' %}
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: #dcfce7; color: #166534;">SMS</span>
+            {% else %}
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: #f1f5f9; color: var(--ink-2);">Portal</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding: 18px; font-size: 13px; color: var(--ink-3);">No messages sent yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // Variables auto-filled server-side — client does NOT prompt for these
+  var KNOWN_VARS = ['tenant_name', 'unit_number', 'balance', 'monthly_rent', 'service_charge', 'total_paid', 'due_date'];
+
+  var tplSelect       = document.getElementById('template_select');
+  var recipientSelect = document.getElementById('recipient_select');
+  var bodyField       = document.getElementById('body_field');
+  var refField        = document.getElementById('reference');
+  var sendBtn         = document.getElementById('send_btn');
+  var varFillSection  = document.getElementById('var_fill_section');
+  var varFillContainer = document.getElementById('var_fill_container');
+  var composeForm     = document.getElementById('compose_form');
+
+  function scanUnknownVars(text) {
+    var matches = text.match(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g) || [];
+    var seen = {}, unknowns = [];
+    matches.forEach(function (m) {
+      var name = m.slice(1, -1);
+      if (KNOWN_VARS.indexOf(name) === -1 && !seen[name]) {
+        seen[name] = true;
+        unknowns.push(name);
+      }
+    });
+    return unknowns;
+  }
+
+  function checkSendReady() {
+    var inputs = varFillContainer.querySelectorAll('.var-fill-input');
+    var allFilled = true;
+    inputs.forEach(function (i) { if (!i.value.trim()) allFilled = false; });
+    sendBtn.disabled = (inputs.length > 0 && !allFilled);
+  }
+
+  function updateVarInputs() {
+    var unknowns = scanUnknownVars(bodyField.value);
+    varFillContainer.innerHTML = '';
+    if (unknowns.length === 0) {
+      varFillSection.style.display = 'none';
+      sendBtn.disabled = false;
+      return;
+    }
+    varFillSection.style.display = 'block';
+    unknowns.forEach(function (varName) {
+      var div = document.createElement('div');
+      div.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
+      div.innerHTML =
+        '<label style="font-size: 12px; color: #92400e; min-width: 130px; font-family: monospace; font-weight: 600;">{' + varName + '}</label>' +
+        '<input type="text" class="var-fill-input" data-var="' + varName + '" ' +
+        'placeholder="Value for {' + varName + '}" ' +
+        'style="flex: 1; font-size: 13px; padding: 5px 8px; border: 1px solid #fbbf24; border-radius: 5px; background: #fff; color: var(--ink);">';
+      varFillContainer.appendChild(div);
+    });
+    checkSendReady();
+    varFillContainer.querySelectorAll('.var-fill-input').forEach(function (inp) {
+      inp.addEventListener('input', checkSendReady);
+    });
+  }
+
+  // Template picker: fill body + ref, auto-switch recipient for arrears templates
+  if (tplSelect) {
+    tplSelect.addEventListener('change', function () {
+      var opt = this.options[this.selectedIndex];
+      if (opt.value) {
+        bodyField.value = opt.dataset.body || '';
+        if (!refField.value) refField.value = opt.dataset.ref || '';
+        if (opt.dataset.arrearsOnly === '1' && recipientSelect) {
+          recipientSelect.value = 'arrears';
+        }
+      } else {
+        bodyField.value = '';
+      }
+      updateVarInputs();
+    });
+  }
+
+  // Re-scan whenever user edits the body manually
+  bodyField.addEventListener('input', updateVarInputs);
+
+  // Before submit: substitute filled-in unknowns into body textarea
+  if (composeForm) {
+    composeForm.addEventListener('submit', function () {
+      var inputs = varFillContainer.querySelectorAll('.var-fill-input');
+      var body = bodyField.value;
+      inputs.forEach(function (inp) {
+        var varName = inp.dataset.var;
+        // replace all occurrences
+        body = body.split('{' + varName + '}').join(inp.value.trim());
+      });
+      bodyField.value = body;
+    });
+  }
+})();
+</script>
+{% endblock %}

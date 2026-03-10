@@ -3,7 +3,10 @@
 {% block content %}
 <h5 class="mb-3">Select Property</h5>
 {% if not properties %}
-<p class="text-muted">No properties found.</p>
+<div class="empty-state">
+  <div class="empty-state-title">No properties assigned</div>
+  <div class="empty-state-sub">You don't have any properties assigned to your account yet. Contact your property manager to get access.</div>
+</div>
 {% else %}
 <div class="row g-3">
   {% for p in properties %}

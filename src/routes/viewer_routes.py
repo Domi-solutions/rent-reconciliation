@@ -10,6 +10,7 @@ Auth model:
     who lands on /view without a valid session
 """
 import json
+from datetime import datetime
 from math import ceil
 
 from flask import Blueprint, render_template, abort, request, redirect, session, url_for
@@ -30,10 +31,24 @@ def require_viewer_auth():
     return redirect(url_for('viewer.login'))
 
 
-@viewer_bp.route('/login')
+@viewer_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Landing page when someone arrives at /view without a session.
-    Tells them to use their private link."""
+    """Shared-password login for property viewer. Also serves as fallback landing page."""
+    import os
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        viewer_pw = os.environ.get('VIEWER_PASSWORD', '')
+        if not viewer_pw or password == viewer_pw:
+            # Set owner_id to first active owner so ownership checks pass
+            with get_connection() as conn:
+                owner = conn.execute(
+                    "SELECT id FROM owners ORDER BY created_at LIMIT 1"
+                ).fetchone()
+                if owner:
+                    session['owner_id'] = owner['id']
+            next_url = request.form.get('next') or url_for('viewer.property_list')
+            return redirect(next_url)
+        return render_template('viewer/login.html', error='Incorrect password.')
     session.pop('owner_id', None)
     session.pop('owner_token', None)
     return render_template('viewer/login.html')
@@ -81,11 +96,16 @@ def logout():
 
 @viewer_bp.route('/')
 def property_list():
-    """List all properties for owner selection. Auto-selects if only one exists."""
+    """List properties assigned to the logged-in owner. Auto-selects if only one exists."""
+    owner_id = session.get('owner_id')
     with get_connection() as conn:
-        properties = conn.execute(
-            "SELECT id, name, address FROM properties WHERE status = 'active' ORDER BY name"
-        ).fetchall()
+        properties = conn.execute("""
+            SELECT p.id, p.name, p.address
+            FROM properties p
+            JOIN property_owners po ON po.property_id = p.id
+            WHERE po.owner_id = ? AND p.status = 'active'
+            ORDER BY p.name
+        """, (owner_id,)).fetchall()
     if len(properties) == 1:
         return redirect(url_for('viewer.property_dashboard', property_id=properties[0]['id']))
     return render_template('viewer/property_list.html', properties=properties)
@@ -100,6 +120,13 @@ def property_dashboard(property_id):
         ).fetchone()
         if not prop:
             abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
 
         total_units = conn.execute(
             "SELECT COUNT(*) FROM units WHERE property_id = ?", (property_id,)
@@ -132,11 +159,13 @@ def property_dashboard(property_id):
         units_in_arrears = arrears_row['cnt']
         total_arrears = float(arrears_row['total'])
 
+        _today = datetime.today()
+        _month_start = _today.replace(day=1).strftime('%Y-%m-%d')
+        _month_label = _today.strftime('%B %Y')                      # e.g. March 2026
+
         total_collected = float(conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ?", (property_id,)
-        ).fetchone()[0])
-        total_charged = float(conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM rent_charges WHERE property_id = ?", (property_id,)
+            "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ? AND payment_date >= ?",
+            (property_id, _month_start)
         ).fetchone()[0])
 
         # Pending claims for projected arrears
@@ -189,6 +218,8 @@ def property_dashboard(property_id):
         arrears_others_pct = round(arrears_others_amount / total_arrears * 100) if total_arrears > 0 else 0
         arrears_others_projected = max(arrears_others_amount - arrears_others_pending, 0)
 
+        collection_rate = round(total_collected / total_expected * 100, 1) if total_expected > 0 else 0
+
         stats = {
             'total_units': total_units,
             'occupied_units': occupied_units,
@@ -202,7 +233,8 @@ def property_dashboard(property_id):
             'total_arrears': total_arrears,
             'units_in_arrears': units_in_arrears,
             'total_collected': total_collected,
-            'total_charged': total_charged,
+            'collection_rate': collection_rate,
+            'month_label': _month_label,
             'pending_total': pending_total,
             'projected_arrears': max(total_arrears - pending_total, 0),
         }
@@ -219,6 +251,28 @@ def property_dashboard(property_id):
             ORDER BY u.unit_number
         """, (property_id,)).fetchall()
 
+        # Recent activity preview: audit log + maintenance events merged
+        _audit_recent = conn.execute("""
+            SELECT timestamp, action, details FROM audit_log
+            ORDER BY timestamp DESC LIMIT 20
+        """).fetchall()
+        _maint_recent = conn.execute("""
+            SELECT m.created_at AS timestamp, 'maintenance_issue_raised' AS action,
+                   COALESCE(u.unit_number, 'Common area') || ' — ' || m.title AS details
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            WHERE m.property_id = ?
+            UNION ALL
+            SELECT m.resolved_at AS timestamp, 'maintenance_issue_resolved' AS action,
+                   COALESCE(u.unit_number, 'Common area') || ' — ' || m.title AS details
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            WHERE m.property_id = ? AND m.status = 'resolved' AND m.resolved_at IS NOT NULL
+        """, (property_id, property_id)).fetchall()
+        _combined = [dict(r) for r in _audit_recent] + [dict(r) for r in _maint_recent]
+        _combined.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+        recent_activity = _combined[:5]
+
     return render_template('viewer/dashboard.html',
                           property=prop,
                           stats=stats,
@@ -229,6 +283,7 @@ def property_dashboard(property_id):
                           arrears_others_pending=arrears_others_pending,
                           arrears_others_projected=arrears_others_projected,
                           arrears_others_pct=arrears_others_pct,
+                          recent_activity=recent_activity,
                           active_tab='overview')
 
 
@@ -242,6 +297,13 @@ def property_payments(property_id):
 
         if not prop:
             abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
 
         # Verified payments
         verified = conn.execute("""
@@ -298,6 +360,13 @@ def property_arrears(property_id):
 
         if not prop:
             abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
 
         arrears_rows = conn.execute("""
             SELECT
@@ -362,6 +431,326 @@ def property_arrears(property_id):
                           active_tab='arrears')
 
 
+@viewer_bp.route('/<property_id>/maintenance')
+def property_maintenance(property_id):
+    """Maintenance tab: open issues and recent resolved history for a property."""
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ?", (property_id,)
+        ).fetchone()
+
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        open_issues = conn.execute(
+            """
+            SELECT m.*, u.unit_number, t.name AS tenant_name
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            LEFT JOIN tenants t ON m.raised_by_tenant_id = t.id
+            WHERE m.property_id = ? AND m.status = 'open'
+            ORDER BY m.created_at DESC
+            """,
+            (property_id,),
+        ).fetchall()
+
+        resolved_issues = conn.execute(
+            """
+            SELECT m.*, u.unit_number, t.name AS tenant_name
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            LEFT JOIN tenants t ON m.raised_by_tenant_id = t.id
+            WHERE m.property_id = ?
+              AND m.status = 'resolved'
+              AND m.resolved_at >= datetime('now', '-30 days')
+            ORDER BY m.resolved_at DESC, m.created_at DESC
+            """,
+            (property_id,),
+        ).fetchall()
+
+    return render_template(
+        'viewer/maintenance.html',
+        property=prop,
+        open_issues=open_issues,
+        resolved_issues=resolved_issues,
+        active_tab='maintenance',
+    )
+
+
+def _structure_activity_entry(row, property_id):
+    """Transform a raw audit/maintenance row into a structured feed entry dict."""
+    entry = {
+        'timestamp': row.get('timestamp', ''),
+        'action': row.get('action', ''),
+        'raw_details': row.get('details', '') or '',
+        'user_id': row.get('user_id', '') or '',
+        'entity_id': row.get('entity_id', '') or '',
+        'link': None,
+        'type_class': 'system',
+        'label': '',
+        'meta': '',
+        'amount': None,
+    }
+    action = entry['action']
+    details = entry['raw_details']
+    entity_id = entry['entity_id']
+
+    # Parse pipe-delimited details into a dict
+    parts = {}
+    for part in details.split(' | '):
+        if ':' in part:
+            k, _, v = part.partition(':')
+            parts[k.strip()] = v.strip()
+
+    if action == 'broadcast_sent':
+        entry['type_class'] = 'message'
+        count = parts.get('Recipients', '')
+        ref = parts.get('Ref', '')
+        channel = parts.get('Channel', 'portal')
+        entry['label'] = f"Message sent to {count} tenant{'s' if count != '1' else ''}" if count else 'Message sent to tenants'
+        entry['meta'] = f'"{ref}"' if ref else ''
+        if entity_id:
+            entry['link'] = f'/view/{property_id}/messages/{entity_id}'
+
+    elif action == 'reminder_sent':
+        entry['type_class'] = 'message'
+        count_part = parts.get('tenants notified', '')
+        # details like: "10-day reminder (10d before due) — 5 tenants notified | arrears"
+        entry['label'] = details.split(' — ')[0] if ' — ' in details else 'Reminder sent'
+        entry['meta'] = details.split(' — ')[1] if ' — ' in details else ''
+        if entity_id:
+            entry['link'] = f'/view/{property_id}/messages/{entity_id}'
+
+    elif action in ('payment_manual_assigned', 'payment_auto_hint_assigned'):
+        entry['type_class'] = 'payment'
+        amount = parts.get('Amount', parts.get('KES', ''))
+        unit = parts.get('Unit', '')
+        ref = parts.get('Ref', '')
+        if amount and unit:
+            entry['label'] = f'{amount} → Unit {unit}'
+        else:
+            entry['label'] = 'Payment assigned'
+        entry['meta'] = f'Ref: {ref}' if ref else ''
+        entry['link'] = f'/view/{property_id}/payments'
+
+    elif action == 'payments_verified':
+        entry['type_class'] = 'payment'
+        entry['label'] = details or 'Payments auto-verified'
+        entry['link'] = f'/view/{property_id}/payments'
+
+    elif action == 'payment_claim_submitted':
+        entry['type_class'] = 'payment'
+        entry['label'] = 'Payment claim submitted'
+        entry['meta'] = details
+        entry['link'] = f'/view/{property_id}/payments'
+
+    elif action == 'charges_generated':
+        entry['type_class'] = 'charge'
+        period = parts.get('Period', '')
+        entry['label'] = f'Charges generated{" — " + period if period else ""}'
+        entry['meta'] = details
+
+    elif action == 'water_charges_uploaded':
+        entry['type_class'] = 'charge'
+        entry['label'] = 'Water charges uploaded'
+        entry['meta'] = details
+
+    elif action == 'report_generated':
+        entry['type_class'] = 'report'
+        entry['label'] = 'Report generated'
+        entry['meta'] = details
+        if entity_id:
+            entry['link'] = f'/view/{property_id}/reports/{entity_id}'
+
+    elif action == 'maintenance_issue_raised':
+        entry['type_class'] = 'maintenance'
+        entry['label'] = 'Maintenance issue raised'
+        entry['meta'] = details
+        entry['link'] = f'/view/{property_id}/maintenance'
+
+    elif action == 'maintenance_issue_resolved':
+        entry['type_class'] = 'maintenance'
+        entry['label'] = 'Maintenance issue resolved'
+        entry['meta'] = details
+        entry['link'] = f'/view/{property_id}/maintenance'
+
+    else:
+        fallback = {
+            'export_generated': 'Export downloaded',
+            'tenant_token_generated': 'Tenant portal link generated',
+            'tenant_token_revoked': 'Tenant portal link revoked',
+            'owner_token_generated': 'Owner portal link generated',
+            'rent_due_day_updated': 'Rent due day updated',
+            'property_created': 'Property created',
+            'property_unassigned': 'Property unassigned from owner',
+        }
+        entry['label'] = fallback.get(action, action.replace('_', ' ').title())
+        entry['meta'] = details
+
+    return entry
+
+
+@viewer_bp.route('/<property_id>/notifications')
+def property_notifications(property_id):
+    """Owner notification inbox — all messages stored for this owner/property."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        notifications = conn.execute("""
+            SELECT id, subject, body, template_body, message_type,
+                   channel, recipient_count, sent_by, read_at, created_at
+            FROM owner_messages
+            WHERE property_id = ? AND owner_id = ?
+            ORDER BY created_at DESC
+        """, (property_id, owner_id)).fetchall()
+
+        unread_count = sum(1 for n in notifications if not n['read_at'])
+
+        # Mark all as read
+        conn.execute(
+            "UPDATE owner_messages SET read_at = CURRENT_TIMESTAMP WHERE property_id = ? AND owner_id = ? AND read_at IS NULL",
+            (property_id, owner_id)
+        )
+
+    return render_template(
+        'viewer/notifications.html',
+        property=prop,
+        notifications=notifications,
+        unread_count=unread_count,
+        active_tab='notifications',
+    )
+
+
+@viewer_bp.route('/<property_id>/activity')
+def property_activity(property_id):
+    """Full unified activity feed — audit events + maintenance timeline."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        audit_entries = conn.execute("""
+            SELECT timestamp, action, details, user_id, entity_id
+            FROM audit_log
+            ORDER BY timestamp DESC
+            LIMIT 200
+        """).fetchall()
+
+        maint_entries = conn.execute("""
+            SELECT
+                m.created_at AS timestamp,
+                'maintenance_issue_raised' AS action,
+                COALESCE(u.unit_number, 'Common area') || ' — ' || m.title AS details,
+                CASE WHEN m.source = 'tenant' THEN t.name ELSE 'Caretaker' END AS user_id,
+                m.id AS entity_id
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            LEFT JOIN tenants t ON m.raised_by_tenant_id = t.id
+            WHERE m.property_id = ?
+            UNION ALL
+            SELECT
+                m.resolved_at AS timestamp,
+                'maintenance_issue_resolved' AS action,
+                COALESCE(u.unit_number, 'Common area') || ' — ' || m.title AS details,
+                'Caretaker' AS user_id,
+                m.id AS entity_id
+            FROM maintenance_issues m
+            LEFT JOIN units u ON m.unit_id = u.id
+            WHERE m.property_id = ? AND m.status = 'resolved' AND m.resolved_at IS NOT NULL
+        """, (property_id, property_id)).fetchall()
+
+        raw = [dict(r) for r in audit_entries] + [dict(r) for r in maint_entries]
+        raw.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+        entries = [_structure_activity_entry(r, property_id) for r in raw[:200]]
+
+    return render_template(
+        'viewer/activity.html',
+        property=prop,
+        entries=entries,
+        active_tab='activity',
+    )
+
+
+@viewer_bp.route('/<property_id>/messages/<batch_id>')
+def property_message_detail(property_id, batch_id):
+    """Detail view for a broadcast or reminder message batch."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        first_msg = conn.execute("""
+            SELECT subject, body, template_body, delivery_channel, message_type, created_at
+            FROM messages WHERE batch_id = ? LIMIT 1
+        """, (batch_id,)).fetchone()
+        if not first_msg:
+            abort(404)
+
+        # For broadcasts (>1 recipient), get the original reference label from audit log
+        # so we don't show a personalized subject with unfilled placeholders
+        audit_row = conn.execute("""
+            SELECT details FROM audit_log
+            WHERE entity_id = ? AND action IN ('broadcast_sent', 'reminder_sent')
+            LIMIT 1
+        """, (batch_id,)).fetchone()
+        broadcast_label = None
+        if audit_row:
+            for part in audit_row['details'].split(' | '):
+                if part.strip().startswith('Ref:') or part.strip().startswith('Subject:'):
+                    broadcast_label = part.split(':', 1)[1].strip()
+                    break
+
+        recipients = conn.execute("""
+            SELECT t.name AS tenant_name, u.unit_number,
+                   m.delivery_status, m.read_at, m.delivered_at
+            FROM messages m
+            JOIN tenants t ON m.tenant_id = t.id
+            LEFT JOIN units u ON t.unit_id = u.id
+            WHERE m.batch_id = ?
+            ORDER BY u.unit_number
+        """, (batch_id,)).fetchall()
+
+    return render_template(
+        'viewer/message_detail.html',
+        property=prop,
+        message=first_msg,
+        broadcast_label=broadcast_label,
+        recipients=recipients,
+        recipient_count=len(recipients),
+        active_tab='activity',
+    )
+
+
 @viewer_bp.route('/<property_id>/reports')
 def property_reports(property_id):
     """List all stored reports for property."""
@@ -372,6 +761,13 @@ def property_reports(property_id):
 
         if not prop:
             abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
 
         reports = conn.execute("""
             SELECT id, period_start, period_end, created_at, report_type
@@ -415,6 +811,13 @@ def viewer_report_detail(property_id, report_id):
 
         if not prop:
             abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
 
         report_row = conn.execute(
             "SELECT * FROM landlord_reports WHERE id = ? AND property_id = ?", 

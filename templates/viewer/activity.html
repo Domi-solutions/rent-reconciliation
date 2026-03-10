@@ -1,0 +1,120 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}Activity — {{ property.name }}{% endblock %}
+{% block active_tab %}activity{% endblock %}
+
+{% block extra_css %}
+<style>
+.feed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.1s;
+}
+.feed-item:last-child { border-bottom: none; }
+a.feed-item:hover { background: var(--bg-2, #f8f8f8); }
+.feed-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.feed-dot--payment    { background: #10b981; }
+.feed-dot--message    { background: #3b82f6; }
+.feed-dot--maintenance{ background: #f59e0b; }
+.feed-dot--charge     { background: #64748b; }
+.feed-dot--report     { background: #8b5cf6; }
+.feed-dot--system     { background: #d1d5db; }
+.feed-body { flex: 1; min-width: 0; }
+.feed-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.feed-meta {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  word-break: break-word;
+}
+.feed-right {
+  text-align: right;
+  flex-shrink: 0;
+  padding-left: 12px;
+}
+.feed-time { font-size: 11px; color: var(--ink-3); }
+.feed-who  { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.feed-arrow { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+.feed-date-sep {
+  padding: 8px 18px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="surface-card" style="overflow: hidden;">
+  <div class="surface-card-header">
+    <h6>All Activity</h6>
+  </div>
+
+  {% if entries %}
+  {% set _last_date = namespace(val='') %}
+  {% for item in entries %}
+    {% set _date = item.timestamp[:10] if item.timestamp else '' %}
+    {% if _date != _last_date.val %}
+      {% set _last_date.val = _date %}
+      <div class="feed-date-sep">{{ _date }}</div>
+    {% endif %}
+
+    {% if item.link %}
+    <a class="feed-item" href="{{ item.link }}">
+    {% else %}
+    <div class="feed-item">
+    {% endif %}
+
+      <div class="feed-dot feed-dot--{{ item.type_class }}"></div>
+
+      <div class="feed-body">
+        <div class="feed-label">{{ item.label }}</div>
+        {% if item.meta %}
+        <div class="feed-meta">{{ item.meta }}</div>
+        {% endif %}
+      </div>
+
+      <div class="feed-right">
+        <div class="feed-time">
+          {% if item.timestamp and item.timestamp|length > 10 %}{{ item.timestamp[11:16] }}{% endif %}
+        </div>
+        {% if item.user_id and item.user_id not in ('', 'admin', 'system') %}
+        <div class="feed-who">{{ item.user_id }}</div>
+        {% endif %}
+        {% if item.link %}
+        <div class="feed-arrow">→</div>
+        {% endif %}
+      </div>
+
+    {% if item.link %}</a>{% else %}</div>{% endif %}
+
+  {% endfor %}
+  {% else %}
+  <div class="feed-item">
+    <span style="font-size: 13px; color: var(--ink-3);">No activity recorded yet.</span>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

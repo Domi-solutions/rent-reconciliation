@@ -18,13 +18,15 @@ mkdir -p backups
 echo "→ Downloading production database from Fly.io..."
 "$FLYCTL" sftp get /data/rent.db "backups/prod_${TIMESTAMP}.db"
 
-echo "→ Copying to data/dev.db for local use..."
+echo "→ Copying to data/dev.db and data/rent.db for local use..."
 cp "backups/prod_${TIMESTAMP}.db" data/dev.db
+cp "backups/prod_${TIMESTAMP}.db" data/rent.db
 
 echo ""
 echo "✓ Done."
-echo "  Archive : backups/prod_${TIMESTAMP}.db"
-echo "  Local   : data/dev.db"
+echo "  Archive  : backups/prod_${TIMESTAMP}.db"
+echo "  dev.db   : data/dev.db  (used by ./scripts/run_dev.sh)"
+echo "  rent.db  : data/rent.db (used by flask run directly)"
 echo ""
 echo "Run the app locally with:"
 echo "  ./scripts/run_dev.sh"

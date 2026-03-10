@@ -1,0 +1,83 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Log Payment — {{ property.name }}{% endblock %}
+
+{% block content %}
+<div style="max-width: 560px;">
+
+  <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">Log Payment</h2>
+  <p style="font-size: 13px; color: var(--ink-3); margin-bottom: 24px;">
+    Paste the tenant's M-Pesa message to record their payment.
+  </p>
+
+  <form method="POST">
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Unit</label>
+      <select name="unit_id" required
+              style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
+        <option value="">— Select unit —</option>
+        {% for u in units %}
+        <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} — {{ u.tenant_name }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">M-Pesa Message</label>
+      <textarea name="message" rows="5" required placeholder="Paste the full M-Pesa SMS here..."
+                style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: monospace; background: var(--surface); resize: vertical;"></textarea>
+      <div style="font-size: 12px; color: var(--ink-3); margin-top: 4px;">
+        Just the reference code works too, e.g. <code>SG12ABC34D</code>
+      </div>
+    </div>
+
+    <button type="submit"
+            style="padding: 9px 22px; background: var(--ink); color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">
+      Log Payment
+    </button>
+  </form>
+
+</div>
+
+{% if recent_claims %}
+<div style="margin-top: 40px;">
+  <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--ink-2);">Recent Claims</h3>
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="border-bottom: 2px solid var(--border);">
+          <th style="text-align: left; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Unit</th>
+          <th style="text-align: left; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Tenant</th>
+          <th style="text-align: left; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Ref</th>
+          <th style="text-align: right; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Amount</th>
+          <th style="text-align: left; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Status</th>
+          <th style="text-align: left; padding: 6px 8px; color: var(--ink-3); font-weight: 600;">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in recent_claims %}
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 7px 8px; font-weight: 600;">{{ c.unit_number }}</td>
+          <td style="padding: 7px 8px; color: var(--ink-2);">{{ c.tenant_name or '—' }}</td>
+          <td style="padding: 7px 8px; font-family: monospace; font-size: 12px;">{{ c.mpesa_ref }}</td>
+          <td style="padding: 7px 8px; text-align: right;">
+            {% if c.claimed_amount %}KES {{ '{:,.0f}'.format(c.claimed_amount) }}{% else %}—{% endif %}
+          </td>
+          <td style="padding: 7px 8px;">
+            {% if c.status == 'verified' %}
+              <span style="color: #166534; font-weight: 600;">Verified</span>
+            {% elif c.status == 'pending' %}
+              <span style="color: #854d0e;">Pending</span>
+            {% else %}
+              {{ c.status }}
+            {% endif %}
+          </td>
+          <td style="padding: 7px 8px; color: var(--ink-3);">{{ c.created_at[:10] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

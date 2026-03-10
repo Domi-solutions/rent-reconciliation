@@ -1,0 +1,87 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}Message — {{ property.name }}{% endblock %}
+{% block active_tab %}activity{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <a href="{{ url_for('viewer.property_activity', property_id=property.id) }}"
+     style="font-size: 13px; color: var(--ink-3); text-decoration: none;">← Activity</a>
+</div>
+
+<div class="surface-card mb-4">
+  <div class="surface-card-header">
+    <h6>{{ broadcast_label if (recipient_count > 1 and broadcast_label) else message.subject }}</h6>
+  </div>
+  <div style="padding: 14px 18px; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3);">
+      <span>{{ message.created_at[:16] if message.created_at else '—' }}</span>
+      <span>{{ message.delivery_channel | upper }} · {{ message.message_type }}</span>
+      <span>{{ recipient_count }} recipient{{ 's' if recipient_count != 1 }}</span>
+    </div>
+  </div>
+  {% if recipient_count == 1 %}
+  <div style="padding: 16px 18px; font-size: 13px; color: var(--ink); white-space: pre-wrap; line-height: 1.6;">{{ message.body }}</div>
+  {% elif message.template_body %}
+  <div style="padding: 16px 18px; font-size: 13px; color: var(--ink); white-space: pre-wrap; line-height: 1.6; background: var(--bg); border-radius: 6px; font-family: monospace;">{{ message.template_body }}</div>
+  <div style="padding: 8px 18px 14px; font-size: 12px; color: var(--ink-3);">Template sent — content personalised per recipient using their account data.</div>
+  {% else %}
+  <div style="padding: 16px 18px; font-size: 13px; color: var(--ink-3); font-style: italic;">Content personalised per recipient.</div>
+  {% endif %}
+</div>
+
+<div class="surface-card">
+  <div class="surface-card-header">
+    <h6>Recipients</h6>
+  </div>
+  <table class="table table-hover mb-0 viewer-table d-none d-md-table">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Tenant</th>
+        <th>Status</th>
+        <th>Read</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in recipients %}
+      <tr>
+        <td>{{ r.unit_number or '—' }}</td>
+        <td>{{ r.tenant_name }}</td>
+        <td>
+          {% if r.read_at %}
+            <span class="status-paid">Read</span>
+          {% else %}
+            <span class="status-pending">Delivered</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 12px; color: var(--ink-3);">
+          {{ r.read_at[:16] if r.read_at else '—' }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# Mobile list #}
+  <div class="d-md-none">
+    {% for r in recipients %}
+    <div class="data-row">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="data-row-unit">{{ r.tenant_name }}</div>
+          <div class="data-row-meta">{{ r.unit_number or '—' }}</div>
+        </div>
+        <div class="text-end">
+          {% if r.read_at %}
+            <span class="status-paid">Read</span>
+            <div class="data-row-meta">{{ r.read_at[:10] }}</div>
+          {% else %}
+            <span class="status-pending">Delivered</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

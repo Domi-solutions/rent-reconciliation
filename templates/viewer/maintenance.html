@@ -1,0 +1,104 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}Maintenance — {{ property.name }}{% endblock %}
+{% block active_tab %}maintenance{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Maintenance</div>
+  <div class="page-meta">Issues logged against this property.</div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6">
+    <div class="surface-card h-100">
+      <div class="surface-card-header">
+        <h6>Open Issues</h6>
+      </div>
+      {% if open_issues %}
+      <div class="p-3">
+        {% for issue in open_issues %}
+        <div class="data-row">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="badge bg-light text-dark mb-1" style="font-size: 11px; text-transform: uppercase;">
+                {{ issue.category or 'general' }}
+              </div>
+              <div class="data-row-unit">{{ issue.title }}</div>
+              <div class="data-row-meta">
+                {{ issue.unit_number or 'Common area' }}
+                {% if issue.source == 'tenant' %}
+                  · Tenant-logged{% if issue.tenant_name %}: {{ issue.tenant_name }}{% endif %}
+                {% else %}
+                  · Caretaker-logged
+                {% endif %}
+              </div>
+              <div class="data-row-meta">
+                Open since {{ issue.created_at }}
+              </div>
+            </div>
+            <div class="text-end">
+              <span class="status-pending">Open</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No open issues</div>
+        <div class="empty-state-sub">No outstanding maintenance issues are recorded for this property.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6">
+    <div class="surface-card h-100">
+      <div class="surface-card-header">
+        <h6>Resolved (last 30 days)</h6>
+      </div>
+      {% if resolved_issues %}
+      <div class="p-3">
+        {% for issue in resolved_issues %}
+        <div class="data-row">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="badge bg-light text-dark mb-1" style="font-size: 11px; text-transform: uppercase;">
+                {{ issue.category or 'general' }}
+              </div>
+              <div class="data-row-unit">{{ issue.title }}</div>
+              <div class="data-row-meta">
+                {{ issue.unit_number or 'Common area' }}
+                {% if issue.source == 'tenant' %}
+                  · Tenant-logged{% if issue.tenant_name %}: {{ issue.tenant_name }}{% endif %}
+                {% else %}
+                  · Caretaker-logged
+                {% endif %}
+              </div>
+              <div class="data-row-meta">
+                Opened {{ issue.created_at }} · Resolved {{ issue.resolved_at or '—' }}
+              </div>
+              {% if issue.resolved_note %}
+              <div class="mt-2 data-row-meta">
+                Resolution note: {{ issue.resolved_note }}
+              </div>
+              {% endif %}
+            </div>
+            <div class="text-end">
+              <span class="status-paid">Resolved</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">No recent resolutions</div>
+        <div class="empty-state-sub">No maintenance issues have been resolved in the last 30 days.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+

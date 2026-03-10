@@ -11,13 +11,13 @@
     <div class="kpi-hero-sub">rent + service charge, occupied units</div>
   </div>
   <div class="col-12 col-md-4">
-    <div class="kpi-hero-label">Collected</div>
+    <div class="kpi-hero-label">Collected This Month</div>
     <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
     <div class="kpi-hero-sub">
-      {% if stats.pending_total > 0 %}
-        + KES {{ "{:,.0f}".format(stats.pending_total) }} pending verification
+      {% if stats.collection_rate > 0 %}
+        {{ stats.collection_rate }}% of expected · {{ stats.month_label }}
       {% else %}
-        verified against bank records
+        {{ stats.month_label }} · verified against bank records
       {% endif %}
     </div>
   </div>
@@ -59,7 +59,47 @@
   </div>
 </div>
 
-{# 3. ALERT BANNER (conditional on arrears) #}
+{# 3. RECENT ACTIVITY PREVIEW #}
+{% set _action_labels = {
+  'broadcast_sent': 'Message sent to tenants',
+  'reminder_sent': 'Reminder sent to tenants',
+  'payment_manual_assigned': 'Payment assigned',
+  'payment_auto_hint_assigned': 'Payment auto-assigned',
+  'payments_verified': 'Payments auto-verified',
+  'charges_generated': 'Charges generated',
+  'water_charges_uploaded': 'Water charges uploaded',
+  'report_generated': 'Report generated',
+  'maintenance_issue_resolved': 'Maintenance issue resolved',
+  'maintenance_issue_raised': 'Maintenance issue raised',
+  'payment_claim_submitted': 'Payment claim submitted'
+} %}
+<div class="surface-card mb-4">
+  <div class="surface-card-header d-flex justify-content-between align-items-center">
+    <h6>Recent Activity</h6>
+    <a href="{{ url_for('viewer.property_activity', property_id=property.id) }}" class="report-view-btn">View all →</a>
+  </div>
+  {% if recent_activity %}
+  {% for item in recent_activity %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="data-row-unit">{{ _action_labels.get(item.action, item.action.replace('_', ' ').title()) }}</div>
+        {% if item.details %}
+        <div class="data-row-meta">{{ item.details }}</div>
+        {% endif %}
+      </div>
+      <div class="data-row-meta text-end" style="white-space: nowrap; padding-left: 12px;">{{ item.timestamp[:10] }}</div>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="data-row">
+    <span style="font-size: 13px; color: var(--ink-3);">No recent activity recorded.</span>
+  </div>
+  {% endif %}
+</div>
+
+{# 4. ALERT BANNER (conditional on arrears) #}
 {% if stats.units_in_arrears > 0 %}
 <div class="alert-banner mb-4">
   <div class="alert-banner-icon">!</div>

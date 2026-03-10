@@ -15,6 +15,17 @@
     <a href="{{ url_for('add_tenant') }}" class="btn btn-primary">Add Tenant</a>
   </div>
 </div>
+<div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+  <a href="{{ url_for('manage_tenants', sort='unit', arrears=('1' if only_arrears else ''), show_inactive=('1' if show_inactive else '')) }}"
+     class="btn btn-sm {% if sort == 'unit' %}btn-dark{% else %}btn-outline-secondary{% endif %}">By Unit</a>
+  <a href="{{ url_for('manage_tenants', sort='name', arrears=('1' if only_arrears else ''), show_inactive=('1' if show_inactive else '')) }}"
+     class="btn btn-sm {% if sort == 'name' %}btn-dark{% else %}btn-outline-secondary{% endif %}">By Name</a>
+  <span style="width:1px; background:var(--border); height:20px;"></span>
+  <a href="{{ url_for('manage_tenants', sort=sort, arrears=('0' if only_arrears else '1'), show_inactive=('1' if show_inactive else '')) }}"
+     class="btn btn-sm {% if only_arrears %}btn-warning{% else %}btn-outline-secondary{% endif %}">
+    {% if only_arrears %}Showing: Arrears only{% else %}Filter: Arrears only{% endif %}
+  </a>
+</div>
 <div class="surface-card">
   <table class="table table-hover mb-0">
     <thead>

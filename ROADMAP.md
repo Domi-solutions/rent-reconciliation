@@ -104,7 +104,11 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [x] `landlord_reports` table (migration in `db.py`)
 - [x] `tenants.access_token` + messaging tables: `messages`, `message_templates`, `reminder_settings` (migrations in `db.py`)
 - [x] `rent_charges.due_date` set on generate; backfill migration
-- [ ] Balance snapshots mechanism (needed for Phase 3 weekly arrears comparison)
+- [x] `messages.template_body` column (migration: `migrate_add_template_body` in `db.py`) — stores unsubstituted template for broadcasts
+- [x] `reminder_schedules` table — flexible per-property schedules (label, template_key, days_before_due, send_to)
+- [x] `owner_messages` table (migration: `migrate_add_owner_messages` in `db.py`) — owner portal inbox; stores all SMS notifications + broadcasts
+- [x] `caretakers` table (migration: `migrate_add_caretakers` in `db.py`) — named caretaker accounts; id, property_id, name, phone, password_hash
+- [ ] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently on dashboard load.
 
 ### Phase 0: Core Reconciliation Engine
 - [x] PDF bank statement parser
@@ -127,6 +131,7 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [x] Three-state payment visibility (verified / claimed / no activity counts)
 - [x] Vacancy cost per unit (days × daily rent)
 - [x] Arrears concentration context
+ - [x] Recent maintenance activity surfaced on owner dashboard + dedicated maintenance tab
 
 ### Phase 2: The Ledger (Monthly Report)
 - [x] Database tables created (report_settings, landlord_reports)
@@ -145,17 +150,29 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [x] Tenant portal: read-only via `/tenant/<token>` (balance, charges, payments, messages); token generate/revoke from Tenants page; data-descriptive language
 - [x] Messaging: admin dashboard, broadcast (one row per recipient, batch_id), templates list/edit, reminder settings (days_before_due per type)
 - [x] Automatic reminders: run on dashboard load; idempotent per day per template; only active tenants with unit and balance > 0; due_date = 5th of next month for new charges
+- [x] Tenant maintenance logging: tenants can log maintenance issues from their portal and see status updates; caretaker resolution triggers in-app notice
+- [x] SMS delivery via Africa's Talking: `src/messaging/delivery.py`; broadcasts + reminders + payment confirmations reach tenant phones; sandbox mode (AT_USERNAME=sandbox) for testing
+- [x] Payment SMS wording: "payment confirmed" — bank statement reconciliation mechanics not visible to tenants or caretakers
 
 ### Caretaker Portal
 - [x] Live operational view at `/caretaker/<property_id>` (separate from owner viewer)
-- [x] Auth: `CARETAKER_PASSWORD` env var; session-based
-- [x] 3 tabs: Overview (occupancy + vacant units + top arrears), Arrears (full list with KES + phone), Tenants (directory)
+- [x] Auth: named DB accounts (name + password); falls back to `CARETAKER_PASSWORD` env var if no accounts exist; dev mode open if neither
+- [x] Session security: `before_request` verifies `caretaker_id` still exists in DB — deleting an account revokes access immediately, even for active browser sessions
+- [x] Named caretaker management at `/caretakers` (admin): create, edit, set password, delete; sidebar nav item
+- [x] `sent_by` in owner inbox uses actual caretaker name from session (not generic 'Caretaker')
+- [x] Caretaker header shows logged-in caretaker's name
+- [x] Tabs: Overview, Arrears, Tenants, Issues, Log Payment
 - [x] Printable (each tab has Print button, nav hides in `@media print`)
+- [x] Maintenance issues board: caretakers can log issues, mark them resolved, and see recent history; tenant-raised issues appear alongside caretaker issues
+- [x] Log Payment tab: caretaker submits M-Pesa SMS for a tenant; creates payment_claims record (`source='caretaker'`); shows last 15 claims with Verified/Pending status; notifies property owners
 
 ### Owners & Multi-Property
 - [x] `owners` table, token + password portal auth
 - [x] One owner can have multiple properties (`properties.owner_id` one-to-many)
 - [x] Owners page: shows assigned property chips, copy-link button (clipboard API), assign property on creation
+- [x] Owner messages inbox: `/view/<property_id>/notifications`; broadcasts show template body + personalisation note; `sent_by` shown as colored badge (blue=Admin, amber=caretaker name, gray=System); unread highlighted; all marked read on page load
+- [x] Owner notifications for all key events: broadcast sent, reminder sent, payment confirmed, report generated, caretaker payment claim submitted
+- [x] Bug fixed: `property_notifications` query was missing `sent_by`, `template_body`, `channel`, `recipient_count` columns — now selects all required fields
 
 ### Mobile & UX
 - [x] Admin sidebar: backdrop overlay on mobile, closes on tap-outside
@@ -165,15 +182,42 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 
 ### Developer Tooling
 - [x] Git repository initialized, `.gitignore` (excludes DBs, venv, screenshots)
-- [x] `scripts/download_prod_db.sh` — pull production DB from Fly.io
-- [x] `scripts/run_dev.sh` — local dev server (uses `data/dev.db`, no passwords)
+- [x] `scripts/download_prod_db.sh` — pull production DB from Fly.io; copies to both `data/dev.db` AND `data/rent.db` so both `run_dev.sh` and `flask run` use the same data
+- [x] `scripts/run_dev.sh` — local dev server on :5001 (uses `data/dev.db`, no passwords)
 - [x] `scripts/reset_dev_db.sh` — reset dev DB from latest backup
 
+### Messaging Delivery Integration
+**Goal:** Admin and caretaker broadcasts reach tenants on their actual phones — not just the in-app portal.
+
+**Status: SMS delivery COMPLETE (sandbox tested). Production SMS keys pending.**
+
+**Delivery channels:**
+1. **SMS** ✅ — Africa's Talking integration live. `delivery_channel = 'sms'` on outbound, `'portal'` for in-app-only. Kenyan number normalization (07xx → +2547xx). Sandbox via `AT_USERNAME=sandbox`.
+2. **WhatsApp** (future) — WhatsApp Business API via Meta or BSP. `delivery_channel = 'whatsapp'`. Start API application early — Meta approval has lead time.
+3. **Email** (future) — SMTP or Resend. Lower priority.
+
+**Checklist:**
+- [x] Africa's Talking account + sandbox API key
+- [x] `src/messaging/delivery.py` — SMS send function (Africa's Talking), phone number normalizer
+- [x] Admin broadcast: channel selector + SMS delivery wired up
+- [x] Caretaker broadcast: same
+- [x] Automatic reminders: SMS sent alongside portal message
+- [x] Payment confirmation SMS: "payment confirmed" wording (no bank mechanics exposed)
+- [x] `owner_messages` table + `notify_property_owners()` — owner inbox + SMS notifications
+- [x] `messages.template_body` — broadcasts store unsubstituted template for owner inbox display
+- [x] `sent_by` attribution in owner inbox — uses actual caretaker name (from session), 'Admin', or 'System'
+- [ ] Switch Africa's Talking from sandbox → live credentials in production (`fly secrets set AT_USERNAME=... AT_API_KEY=...`)
+- [ ] Decide on sender ID / shortcode for SMS (Africa's Talking account setup)
+- [ ] WhatsApp Business API credentials + send function
+- [ ] Email delivery (Resend or SMTP) — future
+
 ### Phase 3: The Signal (Weekly Digest)
-- [ ] Email delivery infrastructure (smtplib or Resend)
-- [ ] WhatsApp Business API integration
-- [ ] Weekly digest generation
-- [ ] Scheduled delivery (APScheduler or cron)
+- [ ] `balance_snapshots` table + daily snapshot trigger (prerequisite)
+- [ ] `src/reports/weekly_digest.py` — `generate_weekly_digest(conn, property_id)` computing: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days pending), occupancy changes
+- [ ] Admin preview route `GET /reports/weekly-digest` + manual send
+- [ ] Email delivery infrastructure (smtplib or Resend) — `EMAIL_FROM`, `SMTP_*` or `RESEND_API_KEY` env vars
+- [ ] Scheduled delivery (APScheduler or Fly.io cron — Monday morning)
+- [ ] WhatsApp Business API integration (future — Meta approval lead time)
 
 ### Phase 4: The Investment View (Yearly)
 - [ ] Requires 12+ months of data accumulation

@@ -1,7 +1,7 @@
 """Tenant portal: read-only access via shareable token URL. No session or password."""
 
-from flask import Blueprint, render_template, request
-from src.database.db import get_connection
+from flask import Blueprint, render_template, request, redirect, url_for
+from src.database.db import get_connection, generate_id
 
 tenant_bp = Blueprint('tenant', __name__, url_prefix='/tenant')
 
@@ -226,3 +226,63 @@ def messages(token):
         property=prop,
         messages=message_list,
     )
+
+
+@tenant_bp.route('/<token>/maintenance')
+def maintenance(token):
+    """List tenant-raised maintenance issues with inline submission form."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+
+        issues = conn.execute(
+            """
+            SELECT id, category, title, description, status, created_at, resolved_at
+            FROM maintenance_issues
+            WHERE raised_by_tenant_id = ?
+            ORDER BY created_at DESC
+            """,
+            (tenant['id'],),
+        ).fetchall()
+
+    return render_template(
+        'tenant/maintenance.html',
+        token=token,
+        tenant=tenant,
+        unit=unit,
+        property=prop,
+        issues=issues,
+    )
+
+
+@tenant_bp.route('/<token>/maintenance/new', methods=['POST'])
+def new_maintenance(token):
+    """Submit a new maintenance issue from the tenant portal."""
+    category = (request.form.get('category') or 'general').strip() or 'general'
+    title = (request.form.get('title') or '').strip()
+    description = (request.form.get('description') or '').strip()
+
+    if not title:
+        # Title is required; rely on frontend required attribute in practice.
+        return redirect(url_for('tenant.maintenance', token=token))
+
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+
+        issue_id = generate_id('MAINT')
+        conn.execute(
+            """
+            INSERT INTO maintenance_issues
+                (id, property_id, unit_id, source, raised_by_tenant_id, category, title, description)
+            VALUES
+                (?, ?, ?, 'tenant', ?, ?, ?, ?)
+            """,
+            (issue_id, prop['id'], unit['id'], tenant['id'], category, title, description),
+        )
+
+    return redirect(url_for('tenant.maintenance', token=token))
