@@ -103,6 +103,7 @@ export PATH="$HOME/.fly/bin:$PATH" && fly deploy
 ## Protocol for agents
 
 - **Update this file** at the end of every session — overwrite "Last Session" with what you did and what's next
+- **Git backup after every session** — from the project root run: `git add . && git commit -m "describe work done" && git push`. This keeps the owner's code safe and resumable from any device.
 - **Never use agency voice** in any user-facing string
 - **Additive migrations only** — `CREATE TABLE IF NOT EXISTS`, never drop/recreate tables with data
 - **Raw SQL only** — no ORM
