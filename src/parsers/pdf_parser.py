@@ -1,8 +1,13 @@
 """
 PDF Parser for Bank Statement Extraction
 
-Extracts transactions from Co-operative Bank Kenya PDF statements.
-Uses deterministic rule-based parsing with balance checksum validation.
+Co-operative Bank Kenya: DD-MMM- dates, 3-digit codes, Paybill lines (`parse_cooperative_bank_statement`).
+
+Tabular KES (e.g. KCB-style): Debit/Credit/Book Balance columns, dates like "01 JAN 26"
+(`parse_tabular_kes_bank_statement`).
+
+`parse_bank_statement` is the orchestrator: it detects format and dispatches; cooperative
+and tabular parsers stay independent so each layout is handled without breaking the other.
 """
 
 import pdfplumber
@@ -107,6 +112,245 @@ def segment_transactions(raw_text: str, page_numbers: List[int]) -> List[dict]:
         })
     
     return transactions
+
+
+def segment_tabular_transactions(raw_text: str, page_numbers: List[int]) -> List[dict]:
+    """
+    Segment tabular bank statements (DD MMM YY at line start, e.g. 01 JAN 26).
+    Continuation lines do not start with this pattern.
+    """
+    lines = raw_text.split('\n')
+    transactions: List[dict] = []
+    current_transaction: List[str] = []
+    current_start_line_idx = 0
+
+    date_pattern = re.compile(r'^\d{2} [A-Z]{3} \d{2}\s')
+
+    for line_idx, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+
+        if date_pattern.match(line):
+            if current_transaction:
+                page_num = page_numbers[current_start_line_idx] if current_start_line_idx < len(page_numbers) else 1
+                transactions.append({
+                    'lines': current_transaction,
+                    'raw_text': '\n'.join(current_transaction),
+                    'page_number': page_num
+                })
+            current_transaction = [line]
+            current_start_line_idx = line_idx
+        else:
+            if current_transaction:
+                current_transaction.append(line)
+
+    if current_transaction:
+        page_num = page_numbers[current_start_line_idx] if current_start_line_idx < len(page_numbers) else 1
+        transactions.append({
+            'lines': current_transaction,
+            'raw_text': '\n'.join(current_transaction),
+            'page_number': page_num
+        })
+
+    return transactions
+
+
+TABULAR_TRIPLE_AMOUNTS = re.compile(
+    r'(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s*$'
+)
+
+
+def tabular_trailing_three_amounts(line: str) -> Optional[tuple[Decimal, Decimal, Decimal]]:
+    """Debit, Credit, Book balance from end of a tabular statement line."""
+    m = TABULAR_TRIPLE_AMOUNTS.search(line.strip())
+    if not m:
+        return None
+    d, c, b = m.groups()
+    return (
+        Decimal(d.replace(',', '')),
+        Decimal(c.replace(',', '')),
+        Decimal(b.replace(',', ''))
+    )
+
+
+def tabular_date_from_first_line(first_line: str) -> Optional[str]:
+    """01 JAN 26 -> 01-JAN-2026"""
+    m = re.match(r'^(\d{2}) ([A-Z]{3}) (\d{2})\s', first_line)
+    if not m:
+        return None
+    dd, mon, yy = m.groups()
+    y = int(yy)
+    year = 2000 + y if y < 80 else 1900 + y
+    return f'{dd}-{mon}-{year}'
+
+
+def extract_balances_tabular(raw_text: str) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """
+    Opening/closing for tabular statements (Balance B/Fwd, Book Balance as at).
+    """
+    opening_balance = None
+    closing_balance = None
+
+    bf = re.search(
+        r'Balance B/Fwd\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})',
+        raw_text,
+        re.IGNORECASE
+    )
+    if bf:
+        try:
+            opening_balance = Decimal(bf.group(3).replace(',', ''))
+        except Exception:
+            pass
+
+    for pattern in (
+        r'Book Balance as at\s*:\s*(\d{1,3}(?:,\d{3})*\.\d{2})',
+        r'Cleared Balance As at\s*:\s*(\d{1,3}(?:,\d{3})*\.\d{2})',
+    ):
+        m = re.search(pattern, raw_text, re.IGNORECASE)
+        if m:
+            try:
+                closing_balance = Decimal(m.group(1).replace(',', ''))
+                break
+            except Exception:
+                pass
+
+    return opening_balance, closing_balance
+
+
+def parse_tabular_transaction(block: dict, page_num: int) -> Transaction:
+    """Parse one tabular (KCB-style) transaction block."""
+    lines = block['lines']
+    full_text = block['raw_text']
+    if not lines:
+        return Transaction(
+            txn_type='PARSE_ERROR',
+            raw_text=full_text,
+            page_number=page_num,
+            parse_warnings=['Empty tabular block']
+        )
+
+    first_line = lines[0]
+    triple = tabular_trailing_three_amounts(first_line)
+    if triple is None:
+        return Transaction(
+            txn_type='PARSE_ERROR',
+            raw_text=full_text,
+            page_number=page_num,
+            parse_warnings=['Could not parse Debit/Credit/Book Balance columns']
+        )
+
+    debit_amt, credit_amt, book_bal = triple
+    upper = full_text.upper()
+
+    if 'BALANCE B/FWD' in first_line.upper():
+        return Transaction(
+            transaction_date=tabular_date_from_first_line(first_line),
+            txn_type='STATEMENT_ANCHOR',
+            amount=Decimal('0.00'),
+            direction='credit',
+            running_balance=book_bal,
+            raw_text=full_text,
+            page_number=page_num,
+            parse_warnings=[]
+        )
+
+    if credit_amt > Decimal('0') and debit_amt > Decimal('0'):
+        return Transaction(
+            transaction_date=tabular_date_from_first_line(first_line),
+            txn_type='PARSE_ERROR',
+            raw_text=full_text,
+            page_number=page_num,
+            parse_warnings=['Both debit and credit non-zero on same line']
+        )
+
+    if credit_amt > Decimal('0'):
+        direction = 'credit'
+        amount = credit_amt
+    elif debit_amt > Decimal('0'):
+        direction = 'debit'
+        amount = debit_amt
+    else:
+        return Transaction(
+            transaction_date=tabular_date_from_first_line(first_line),
+            txn_type='OTHER',
+            amount=Decimal('0.00'),
+            direction='credit',
+            running_balance=book_bal,
+            raw_text=full_text,
+            page_number=page_num,
+            parse_warnings=['Zero debit and credit']
+        )
+
+    txn_type = 'OTHER'
+    if direction == 'credit':
+        if (
+            'MPESA PAY BILL' in upper
+            or 'MPESA MERCHANT' in upper
+            or 'MERCHANT TILL' in upper
+            or ('FT26' in first_line and 'MPESA' in upper)
+        ):
+            txn_type = 'PAYBILL_CREDIT'
+        elif 'SETTLEMENT' in upper or 'LIPA NA M' in upper:
+            txn_type = 'SETTLEMENT'
+    else:
+        if 'REVERSAL' in upper or 'REV DD' in upper:
+            txn_type = 'REVERSAL'
+        elif 'CHEQUE' in upper:
+            txn_type = 'CHEQUE'
+
+    reference = extract_reference(full_text)
+    sender = None
+    narration = None
+    unit_hint = None
+
+    if txn_type == 'PAYBILL_CREDIT':
+        if 'MPESA PAY BILL' in upper:
+            before = re.split(r'MPESA PAY BILL', full_text, maxsplit=1, flags=re.IGNORECASE)[0]
+            before = re.sub(r'[\d,\s]{3,}', ' ', before)
+            before = re.sub(r'\b254\d{9}\b', ' ', before)
+            before = re.sub(r'\bKES\d+\b', ' ', before, flags=re.IGNORECASE)
+            before = re.sub(r'\bUA[A-Z0-9]{8,12}\b', ' ', before)
+            sender = ' '.join(before.split())[-80:].strip()[:120]
+            if len(sender) < 2:
+                sender = None
+
+        full_join = ' '.join(lines)
+        nar_m = re.search(r'(MOWIN\s+[A-Z0-9]{1,4})', full_join, re.IGNORECASE)
+        if nar_m:
+            narration = nar_m.group(1)
+            um = re.search(r'MOWIN\s*([A-Z0-9]{1,4})', full_join.upper())
+            if um:
+                unit_hint = um.group(1)
+        else:
+            mer_m = re.search(
+                r'(?:606888|938026)\s+([A-Z0-9]{1,4})\s+',
+                full_join,
+                re.IGNORECASE
+            )
+            if mer_m:
+                unit_hint = mer_m.group(1).upper()
+
+    warnings: List[str] = []
+    if txn_type == 'PAYBILL_CREDIT' and not reference:
+        warnings.append('Missing Mpesa reference code')
+    if txn_type == 'PAYBILL_CREDIT' and not sender:
+        warnings.append('Missing sender name')
+
+    return Transaction(
+        transaction_date=tabular_date_from_first_line(first_line),
+        txn_type=txn_type,
+        reference=reference,
+        sender=sender,
+        narration=narration,
+        unit_hint=unit_hint,
+        amount=amount,
+        direction=direction,
+        running_balance=book_bal,
+        raw_text=full_text,
+        page_number=page_num,
+        parse_warnings=warnings
+    )
 
 
 def classify_transaction(first_line: str, full_text: str) -> tuple[str, str]:
@@ -948,6 +1192,8 @@ def validate_balance_checksum(
     total_debits = Decimal('0.00')
     
     for txn in transactions:
+        if txn.txn_type == 'STATEMENT_ANCHOR':
+            continue
         if txn.direction == 'credit':
             total_credits += txn.amount
         elif txn.direction == 'debit':
@@ -970,101 +1216,164 @@ def validate_balance_checksum(
     }
 
 
+def detect_bank_statement_format(raw_text: str, page_numbers: List[int]) -> str:
+    """
+    Choose parser strategy from extracted PDF text (no file I/O).
+
+    Returns:
+        'cooperative' — Co-operative Bank layout (segment_coop > 0)
+        'tabular_kes' — tabular Debit/Credit/Book Balance layout (only when coop has no rows)
+        'cooperative' — also used when neither segments (legacy default / unreadable PDF)
+    """
+    if len(segment_transactions(raw_text, page_numbers)) > 0:
+        return 'cooperative'
+    if len(segment_tabular_transactions(raw_text, page_numbers)) > 0:
+        return 'tabular_kes'
+    return 'cooperative'
+
+
+def _finalize_bank_statement_result(
+    opening_balance: Optional[Decimal],
+    closing_balance: Optional[Decimal],
+    transactions: List[Transaction],
+    errors: List[str],
+    statement_format: str,
+) -> dict:
+    """Shared validation, summary, and success flag for all bank statement parsers."""
+    merged_errors: List[str] = []
+    if opening_balance is None:
+        merged_errors.append('Could not extract opening balance')
+    if closing_balance is None:
+        merged_errors.append('Could not extract closing balance')
+    merged_errors.extend(errors)
+
+    if opening_balance and closing_balance:
+        validation = validate_balance_checksum(transactions, opening_balance, closing_balance)
+    else:
+        validation = {
+            'valid': False,
+            'error': 'Cannot validate: missing opening or closing balance'
+        }
+
+    paybill_credits = [t for t in transactions if t.txn_type == 'PAYBILL_CREDIT']
+    total_rent_amount = sum(t.amount for t in paybill_credits)
+
+    summary = {
+        'total_transactions': len(transactions),
+        'paybill_credits': len(paybill_credits),
+        'total_rent_amount': total_rent_amount,
+        'reversals': len([t for t in transactions if t.txn_type == 'REVERSAL']),
+        'settlements': len([t for t in transactions if t.txn_type == 'SETTLEMENT']),
+        'cheques': len([t for t in transactions if t.txn_type == 'CHEQUE']),
+        'parse_errors': len([t for t in transactions if t.txn_type == 'PARSE_ERROR'])
+    }
+
+    success = validation.get('valid', False) and len(merged_errors) == 0
+
+    return {
+        'success': success,
+        'statement_format': statement_format,
+        'opening_balance': opening_balance,
+        'closing_balance': closing_balance,
+        'transactions': transactions,
+        'validation': validation,
+        'summary': summary,
+        'errors': merged_errors,
+    }
+
+
+def _parse_cooperative_from_raw(raw_text: str, page_numbers: List[int]) -> dict:
+    """Co-operative Bank pipeline only (original behaviour)."""
+    errors: List[str] = []
+    opening_balance, closing_balance = extract_balances(raw_text)
+    transaction_blocks = segment_transactions(raw_text, page_numbers)
+
+    transactions: List[Transaction] = []
+    for i, block in enumerate(transaction_blocks):
+        page_num = block.get('page_number', 1)
+        try:
+            txn = parse_transaction(block, page_num)
+            transactions.append(txn)
+        except Exception as e:
+            errors.append(f'Error parsing transaction {i+1}: {str(e)}')
+            transactions.append(Transaction(
+                txn_type='PARSE_ERROR',
+                raw_text=block['raw_text'],
+                page_number=page_num,
+                parse_warnings=[f'Parse exception: {str(e)}']
+            ))
+
+    return _finalize_bank_statement_result(
+        opening_balance, closing_balance, transactions, errors, 'cooperative'
+    )
+
+
+def _parse_tabular_kes_from_raw(raw_text: str, page_numbers: List[int]) -> dict:
+    """KES tabular (e.g. KCB-style) pipeline only."""
+    errors: List[str] = []
+    opening_balance, closing_balance = extract_balances_tabular(raw_text)
+    transaction_blocks = segment_tabular_transactions(raw_text, page_numbers)
+
+    transactions: List[Transaction] = []
+    for i, block in enumerate(transaction_blocks):
+        page_num = block.get('page_number', 1)
+        try:
+            txn = parse_tabular_transaction(block, page_num)
+            transactions.append(txn)
+        except Exception as e:
+            errors.append(f'Error parsing transaction {i+1}: {str(e)}')
+            transactions.append(Transaction(
+                txn_type='PARSE_ERROR',
+                raw_text=block['raw_text'],
+                page_number=page_num,
+                parse_warnings=[f'Parse exception: {str(e)}']
+            ))
+
+    return _finalize_bank_statement_result(
+        opening_balance, closing_balance, transactions, errors, 'tabular_kes'
+    )
+
+
+def parse_cooperative_bank_statement(pdf_path: str) -> dict:
+    """Parse a Co-operative Bank Kenya statement PDF (no format detection)."""
+    raw_text, page_numbers = extract_raw_text(pdf_path)
+    return _parse_cooperative_from_raw(raw_text, page_numbers)
+
+
+def parse_tabular_kes_bank_statement(pdf_path: str) -> dict:
+    """Parse a tabular KES statement PDF (no format detection)."""
+    raw_text, page_numbers = extract_raw_text(pdf_path)
+    return _parse_tabular_kes_from_raw(raw_text, page_numbers)
+
+
 def parse_bank_statement(pdf_path: str) -> dict:
     """
-    Main entry point.
-    
+    Orchestrated entry: extract text once, detect format, dispatch to cooperative or tabular parser.
+
+    Result includes ``statement_format`` (``'cooperative'`` | ``'tabular_kes'``).
+
     Returns:
     {
         'success': bool,
+        'statement_format': str,
         'opening_balance': Decimal,
         'closing_balance': Decimal,
         'transactions': List[Transaction],
-        'validation': dict,  # Balance checksum results
-        'summary': {
-            'total_transactions': int,
-            'paybill_credits': int,
-            'total_rent_amount': Decimal,
-            'reversals': int,
-            'settlements': int,
-            'cheques': int,
-            'parse_errors': int
-        },
+        'validation': dict,
+        'summary': dict,
         'errors': List[str]
     }
     """
-    errors = []
-    
     try:
-        # Extract raw text
         raw_text, page_numbers = extract_raw_text(pdf_path)
-        
-        # Extract balances
-        opening_balance, closing_balance = extract_balances(raw_text)
-        
-        if opening_balance is None:
-            errors.append('Could not extract opening balance')
-        if closing_balance is None:
-            errors.append('Could not extract closing balance')
-        
-        # Segment transactions
-        transaction_blocks = segment_transactions(raw_text, page_numbers)
-        
-        # Parse each transaction
-        transactions = []
-        for i, block in enumerate(transaction_blocks):
-            page_num = block.get('page_number', 1)
-            
-            try:
-                txn = parse_transaction(block, page_num)
-                transactions.append(txn)
-            except Exception as e:
-                errors.append(f'Error parsing transaction {i+1}: {str(e)}')
-                transactions.append(Transaction(
-                    txn_type='PARSE_ERROR',
-                    raw_text=block['raw_text'],
-                    page_number=page_num,
-                    parse_warnings=[f'Parse exception: {str(e)}']
-                ))
-        
-        # Validate balance checksum
-        if opening_balance and closing_balance:
-            validation = validate_balance_checksum(transactions, opening_balance, closing_balance)
-        else:
-            validation = {
-                'valid': False,
-                'error': 'Cannot validate: missing opening or closing balance'
-            }
-        
-        # Calculate summary
-        paybill_credits = [t for t in transactions if t.txn_type == 'PAYBILL_CREDIT']
-        total_rent_amount = sum(t.amount for t in paybill_credits)
-        
-        summary = {
-            'total_transactions': len(transactions),
-            'paybill_credits': len(paybill_credits),
-            'total_rent_amount': total_rent_amount,
-            'reversals': len([t for t in transactions if t.txn_type == 'REVERSAL']),
-            'settlements': len([t for t in transactions if t.txn_type == 'SETTLEMENT']),
-            'cheques': len([t for t in transactions if t.txn_type == 'CHEQUE']),
-            'parse_errors': len([t for t in transactions if t.txn_type == 'PARSE_ERROR'])
-        }
-        
-        success = validation.get('valid', False) and len(errors) == 0
-        
-        return {
-            'success': success,
-            'opening_balance': opening_balance,
-            'closing_balance': closing_balance,
-            'transactions': transactions,
-            'validation': validation,
-            'summary': summary,
-            'errors': errors
-        }
-        
+        fmt = detect_bank_statement_format(raw_text, page_numbers)
+        if fmt == 'tabular_kes':
+            return _parse_tabular_kes_from_raw(raw_text, page_numbers)
+        return _parse_cooperative_from_raw(raw_text, page_numbers)
     except Exception as e:
         return {
             'success': False,
+            'statement_format': 'unknown',
             'opening_balance': None,
             'closing_balance': None,
             'transactions': [],
@@ -1085,6 +1394,7 @@ if __name__ == '__main__':
     result = parse_bank_statement(pdf_path)
     
     print("=== BANK STATEMENT PARSER ===\n")
+    print(f"Format: {result.get('statement_format', 'n/a')}\n")
     
     if result['opening_balance']:
         print(f"Opening Balance: KES {result['opening_balance']:,.2f}")
