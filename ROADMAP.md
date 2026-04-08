@@ -217,7 +217,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently by scheduler (not dashboard load).
 - [x] `inbound_messages` table — all inbound messages from any channel; async processing pipeline
 - [x] `inbound_sessions` table — conversation state (24-hour window); resolves "yes"/"no" replies
-- [ ] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
+- [x] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
 - [ ] `property_info` table — local amenities per property: id, property_id, category (pharmacy/grocery/wifi/hospital/gas/etc.), name, details. Admin-managed at onboarding or anytime. Queried when tenant asks Domi about local services.
 - [ ] `tenants.language_preference` column — `'en'` | `'sw'` | NULL. NULL = not yet set; triggers language prompt on first inbound contact. Stored permanently on tenant record.
 - [ ] `tenants.flagged` column — boolean, default false. Set when payment claim rejected (M-Pesa reference absent from bank statement). Cleared manually by admin only.
@@ -358,10 +358,10 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] Local amenities query → pull from `property_info` table (anytime, not just on greeting)
 - [ ] `property_info` table + migration + admin management UI
 - [ ] Unknown number → polite decline
-- [ ] `checkin_responses` table + migration
-- [ ] Monthly check-in outbound: Domi sends "How is everything? Reply 1/2/3 + optional comment"
+- [x] `checkin_responses` table + migration
+- [x] Monthly check-in outbound: Domi sends "How is everything? Reply 1/2/3 + optional comment"
 - [ ] Check-in response handler: store numeric + free text, classify category via LLM
-- [ ] Check-in aggregator: monthly sentiment briefing for caretaker and owner
+- [x] Check-in aggregator: monthly sentiment briefing for caretaker and owner
 
 **Caretaker:**
 - [ ] Issue acknowledgment reply → logged; clears pending flag; failure within 24h logged for owner report

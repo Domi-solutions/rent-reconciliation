@@ -33,6 +33,7 @@ from src.agent.coordinator import (
     morning_briefings_job,
     weekly_digest_job,
     anomaly_check_job,
+    monthly_checkins_job,
 )
 
 app = Flask(__name__)
@@ -72,6 +73,7 @@ from src.database.db import (
     migrate_add_balance_snapshots,
     migrate_add_inbound_messages,
     migrate_add_inbound_sessions,
+    migrate_add_checkin_responses,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -96,6 +98,7 @@ migrate_add_caretakers()
 migrate_add_balance_snapshots()
 migrate_add_inbound_messages()
 migrate_add_inbound_sessions()
+migrate_add_checkin_responses()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -115,6 +118,7 @@ scheduler.add_job(func=daily_snapshot_job, trigger='cron', hour=1, minute=0, id=
 scheduler.add_job(func=morning_briefings_job, trigger='cron', hour=7, minute=0, id='morning_briefings_job', replace_existing=True)
 scheduler.add_job(func=weekly_digest_job, trigger='cron', day_of_week='mon', hour=8, minute=0, id='weekly_digest_job', replace_existing=True)
 scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='anomaly_check_job', replace_existing=True)
+scheduler.add_job(func=monthly_checkins_job, trigger='cron', day=1, hour=9, minute=0, id='monthly_checkins_job', replace_existing=True)
 
 _running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 _is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"

@@ -799,3 +799,28 @@ def migrate_add_inbound_sessions():
             """
         )
         print("Migration complete: inbound_sessions table ready.")
+
+
+def migrate_add_checkin_responses():
+    """Create checkin_responses table. Idempotent."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS checkin_responses (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                property_id TEXT NOT NULL,
+                period TEXT NOT NULL,
+                numeric_response INTEGER,
+                free_text TEXT,
+                classified_category TEXT,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_checkin_property_period "
+            "ON checkin_responses(property_id, period)"
+        )
+        print("Migration complete: checkin_responses table ready.")

@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 from src.agent.detector import check_pending_tasks, detect_anomalies, detect_followups
+from src.agent.llm import call_llm
 
 
 def _fmt_kes(value):
@@ -249,4 +250,42 @@ def generate_admin_checklist(conn, property_id):
         )
 
     return "\n".join(lines)
+
+
+def generate_sentiment_summary(conn, property_id, period):
+    """Aggregate monthly check-in sentiment into a short paragraph."""
+    rows = conn.execute(
+        """
+        SELECT numeric_response, free_text
+        FROM checkin_responses
+        WHERE property_id = ?
+          AND period = ?
+        ORDER BY received_at DESC
+        """,
+        (property_id, period),
+    ).fetchall()
+    if not rows:
+        return f"Tenant sentiment for {period}: no check-in responses recorded."
+
+    total = len(rows)
+    good = sum(1 for r in rows if int(r["numeric_response"] or 0) == 1)
+    minor = sum(1 for r in rows if int(r["numeric_response"] or 0) == 2)
+    urgent = sum(1 for r in rows if int(r["numeric_response"] or 0) == 3)
+
+    comments = [r["free_text"].strip() for r in rows if (r["free_text"] or "").strip()]
+    category_summary = "No comment themes identified."
+    if comments:
+        prompt = (
+            "Classify these tenant comments into a compact category summary using labels: "
+            "maintenance, noise, security, water, general. Return one short sentence only.\n\n"
+            + "\n".join(f"- {c}" for c in comments[:20])
+        )
+        llm_out = call_llm(prompt, model="fast")
+        category_summary = llm_out.strip() or category_summary
+
+    return (
+        f"Tenant sentiment for {period}: {total} response(s) — "
+        f"{good} good, {minor} small issue, {urgent} urgent. "
+        f"{category_summary}"
+    )
 

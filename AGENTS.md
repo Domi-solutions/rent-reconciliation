@@ -29,36 +29,35 @@ Financial intelligence layer for a Kenyan property management agency. Flask 3 + 
 
 ### What was built
 
-- **Phase D complete**:
-  - Added D1 migrations in `src/database/db.py`:
-    - `migrate_add_inbound_messages()`
-    - `migrate_add_inbound_sessions()`
-  - Wired both migrations in startup sequence in `app.py`
-  - Implemented D2 LLM wrapper behavior in `src/agent/llm.py` (Anthropic, model mapping, safe error handling)
-  - Implemented D3 classifier in `src/agent/inbound.py` with full intent set and confidence scoring
-  - Implemented D4 action handlers in `src/agent/inbound.py` (DB writes + response text per intent)
-  - Added `process_inbound_message()` flow to classify, act, and update `inbound_messages`
-  - Implemented D5 simulator page:
-    - Route: `GET/POST /agent/simulator` in `src/routes/agent_routes.py`
-    - Template: `templates/agent/simulator.html`
-    - Output includes intent, confidence, extracted fields, action taken, and response
-  - Simulator test coverage completed for:
-    - forwarded M-Pesa SMS
-    - maintenance complaint
-    - balance query
-    - greeting
-    - all pass end-to-end via test client
+- **Phase E complete**:
+  - Added E1 migration in `src/database/db.py`:
+    - `migrate_add_checkin_responses()`
+  - Wired migration in `app.py` startup sequence
+  - Added monthly scheduler trigger in `app.py`:
+    - `monthly_checkins_job` on day 1 at 9:00
+  - Implemented E2 check-in jobs in `src/agent/coordinator.py`:
+    - `send_monthly_checkins_job(property_id)`
+    - `monthly_checkins_job()`
+    - Idempotent per tenant + period
+  - Kept agent delivery abstraction intact:
+    - check-ins use `route_message()` (no direct `send_sms` import in agent module)
+  - Implemented E3 sentiment aggregator in `src/agent/briefings.py`:
+    - `generate_sentiment_summary(conn, property_id, period)`
+  - Ran smoke test:
+    - monthly check-in messages inserted as `message_type='checkin'`
+    - sentiment summary generated from `checkin_responses`
 
 ### What was confirmed (do not re-implement)
 
 - Existing owner/caretaker/tenant portals remain unchanged by this build
 - Agent previews and simulator are admin-only routes under `/agent/*` and render via `base.html`
+- Monthly check-ins are now sent once per tenant per period
 
 ### Pick up next
 
 1. Build inbound webhooks: `POST /inbound/sms`, `POST /inbound/whatsapp` (write inbound row, return 200)
 2. Add language preference column + first-contact language prompt flow
-3. Begin Phase E tenant check-ins and sentiment aggregation
+3. Begin Phase F WhatsApp adapter and template-based outbound path
 
 ---
 

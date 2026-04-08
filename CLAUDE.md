@@ -20,7 +20,7 @@
 1. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) and async processing loop
 2. Add `tenants.language_preference` column + language preference prompt on first contact
 3. Build admin task feed on dashboard (extend dashboard route + `dashboard.html`, base.html untouched)
-4. Wire SMS delivery to all agent outputs; WhatsApp added last
+4. Wire WhatsApp delivery after SMS flows are stable
 
 ---
 
