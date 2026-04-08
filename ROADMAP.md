@@ -1,16 +1,26 @@
-# Product Roadmap — Financial Intelligence Layer
+# Domi — Product Roadmap
 
 > **For AI agents:** Read this file to understand the product vision, what's built, and what's next.
 > After completing work, update the status checkboxes and "Current Implementation Status" section below.
 > For technical patterns, database schema, and code conventions, see `CLAUDE.md`.
 
+**Product name:** Domi (derived from *domus*, Latin for home). Warm, neutral, non-intrusive — sits on top of any property brand. "This building runs on Domi."
+**Repo/deploy name:** `rent-reconciliation` (unchanged)
+**Market:** Kenya → East Africa
+
 ---
 
 ## Vision
 
-This app is a **financial intelligence layer** on property data. It does not report what an agency did — it surfaces what the data shows. Think of it as a stock portfolio dashboard for rental property: it doesn't manage the stocks, it tells you exactly what's happening with your money at every level of zoom.
+Domi is a **property intelligence platform** — an invisible, intelligent layer across residential properties that handles rent reconciliation, financial reporting, maintenance, and communication. It does not report what an agency did — it surfaces what the data shows, routes it to the right person at the right time, and captures qualitative signals that would otherwise disappear into WhatsApp conversations.
 
-**The insight is the product.**
+**The insight is the product. The push is the delivery. The conversation is the data.**
+
+### The Core Shift: Pull → Push
+
+The original product required users to come to it. Lazy users (the expected baseline) got zero value. The new model delivers value TO users regardless of their behavior — meeting them in the channel they already use (WhatsApp/SMS) without requiring them to open a dashboard.
+
+A landlord who reads a 30-second WhatsApp digest outperforms one using spreadsheets and gut feel — not because they changed behavior, but because the system does the analytical work automatically.
 
 ## Design Rule: Data-Descriptive Language
 
@@ -37,6 +47,11 @@ The app makes no claims about actions taken. It reports what the data knows.
 ---
 
 ## Product Layers
+
+### Layer 0: Core Reconciliation Engine
+PDF parsing, M-Pesa SMS matching, FIFO allocation, exports, multi-property, auth. **Status: COMPLETE.**
+
+---
 
 ### Layer 1: The Pulse (Real-Time Dashboard)
 **Question it answers:** "What is the current financial state of my asset?"
@@ -77,7 +92,8 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - **Occupancy change events** — Unit status changes are discrete events. Report them if they happened, omit if nothing changed.
 
 **Requires:** Email/WhatsApp delivery infrastructure. WhatsApp Business API application has lead time.
-**Status:** FUTURE — not started. Start WhatsApp API application in parallel.
+**Requires:** `balance_snapshots` table (daily snapshots) — prerequisite for arrears comparison.
+**Status:** IN PROGRESS — `balance_snapshots` and APScheduler are the first build items.
 
 ### Layer 4: The Investment View (Yearly Report)
 **Question it answers:** "Is this property performing as a financial asset?"
@@ -91,6 +107,79 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 
 **Format:** In-app view + PDF export. This is what a landlord takes to their accountant.
 **Status:** FUTURE — requires 12+ months of structured data.
+
+---
+
+### Layer 5: The Coordinator (AI Agent Layer)
+**Question it answers:** "What needs to happen right now — and who needs to know?"
+
+The agent monitors system state continuously and routes the right action to the right person without anyone having to remember to check.
+
+**What the agent owns (no human input needed):**
+- Daily balance snapshots
+- Monthly charge generation (if not done by day 3)
+- Weekly digest delivery (Monday morning)
+- Caretaker daily briefing (every morning via WhatsApp/SMS)
+- Reminder sending (on real schedule, not dashboard-load side-effect)
+- Anomaly detection: water charge spikes, vacancy duration, arrears thresholds, collection pace
+
+**What the agent flags (human decides):**
+- Missing bank statement / water charges / report (task prompts to admin)
+- Units with no payment or claim activity by day 15 (follow-up nudge to caretaker)
+- Open maintenance issues aging past 7 days
+- Arrears threshold crossings (owner + caretaker notified)
+- Low-confidence inbound parses (asks before acting)
+
+**Status:** PLANNED — builds on top of Phase 3 infrastructure. See `CURSOR_PLAN.md` for build sequence.
+
+---
+
+### Layer 6: The Conversation (Inbound Free-Text)
+**Question it answers:** "What are users actually telling us?"
+
+Every user gets a conversational input channel via WhatsApp/SMS. Natural language in, structured data out. Builds the qualitative data layer no other property tool captures.
+
+**Tenant inbound:**
+- Check-in replies (1/2/3) → structured sentiment record
+- Free-text maintenance reports → issue created and categorized automatically
+- M-Pesa confirmation forwarded → payment claim created
+- Balance queries → answered instantly
+
+**Caretaker inbound:**
+- "Fixed the tap in B7" → closes maintenance issue
+- "Unit A3 guy says he'll pay Friday" → follow-up note logged against unit with date
+- "New tenant in F1 on 1st April" → occupancy update flagged to admin
+- Payment logging: ref + amount → claim created
+
+**Owner inbound:**
+- Replies to weekly digest → parsed as queries or instructions
+- "Follow up on A3 urgently" → logged as owner instruction, routed to caretaker
+- Questions answered instantly from live DB data
+
+**Confidence rule:** ≥0.85 → act and confirm. Below 0.85 → ask before acting. Never silent failures.
+
+**Monthly tenant check-ins:** Periodic SMS "How is everything? Reply 1/2/3." Responses aggregated by AI into sentiment briefing for caretaker and owner. Patterns over time are leading indicators of tenant departures.
+
+**Status:** PLANNED — built on top of Phase 5 infrastructure. Requires WhatsApp Business API approval (apply now — long lead time).
+
+---
+
+### Layer 7: The Voice (Real Estate Newsletter)
+**Question it answers:** "What is the Kenyan property market telling us?"
+
+An AI-written weekly real estate newsletter targeting landlords, building owners, and real estate companies in Kenya. Hedge fund style — proprietary data analysis, not market commentary rehash.
+
+**Unfair advantage:** Anonymized aggregate data from the Domi platform (collection rates, arrears patterns, vacancy trends) combined with public Kenya market data (Kenya Bankers Association, KNBS, county permit data).
+
+**Purpose:** SEO presence on Google + AI search indexing + LinkedIn authority. The flywheel: newsletter builds audience → audience becomes product leads → more properties on Domi → richer data → better newsletter.
+
+**Distribution:** Web (SEO/LLM indexing) + LinkedIn articles + weekly email list.
+
+**Architecture:** Separate codebase. Connects to this system via a single read-only internal API endpoint (`GET /api/v1/aggregate-stats`) that returns anonymized property-level aggregate data. This system is never modified for newsletter purposes beyond that one endpoint.
+
+**Branding:** Newsletter is "Domi Weekly" or "The Domi Brief" — same brand, extended into content.
+
+**Status:** FUTURE — separate repo. Start WhatsApp Business API application immediately (independent of newsletter timeline).
 
 ---
 
@@ -108,7 +197,11 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [x] `reminder_schedules` table — flexible per-property schedules (label, template_key, days_before_due, send_to)
 - [x] `owner_messages` table (migration: `migrate_add_owner_messages` in `db.py`) — owner portal inbox; stores all SMS notifications + broadcasts
 - [x] `caretakers` table (migration: `migrate_add_caretakers` in `db.py`) — named caretaker accounts; id, property_id, name, phone, password_hash
-- [ ] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently on dashboard load.
+- [ ] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently by scheduler (not dashboard load).
+- [ ] `inbound_messages` table — all inbound messages from any channel; async processing pipeline
+- [ ] `inbound_sessions` table — conversation state (24-hour window); resolves "yes"/"no" replies
+- [ ] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
+- [ ] APScheduler setup in `app.py` — real job scheduler replacing dashboard-load side-effects
 
 ### Phase 0: Core Reconciliation Engine
 - [x] PDF bank statement parser
@@ -212,31 +305,83 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 - [ ] Email delivery (Resend or SMTP) — future
 
 ### Phase 3: The Signal (Weekly Digest)
-- [ ] `balance_snapshots` table + daily snapshot trigger (prerequisite)
-- [ ] `src/reports/weekly_digest.py` — `generate_weekly_digest(conn, property_id)` computing: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days pending), occupancy changes
-- [ ] Admin preview route `GET /reports/weekly-digest` + manual send
-- [ ] Email delivery infrastructure (smtplib or Resend) — `EMAIL_FROM`, `SMTP_*` or `RESEND_API_KEY` env vars
-- [ ] Scheduled delivery (APScheduler or Fly.io cron — Monday morning)
-- [ ] WhatsApp Business API integration (future — Meta approval lead time)
+- [ ] `balance_snapshots` table + migration (prerequisite)
+- [ ] APScheduler setup — real scheduler in `app.py`
+- [ ] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
+- [ ] Admin preview route `GET /agent/digest/preview/<property_id>`
+- [ ] Scheduled delivery — Monday morning via SMS (WhatsApp added later)
 
 ### Phase 4: The Investment View (Yearly)
 - [ ] Requires 12+ months of data accumulation
-- [ ] Trend analysis
-- [ ] Tenant reliability scoring
+- [ ] Annual collection rate + month-by-month trend
+- [ ] Arrears trajectory over 12 months
+- [ ] Tenant reliability scoring (payment timing, arrears history, claim behavior)
+- [ ] Revenue composition (rent vs service vs water)
 - [ ] PDF export
+
+### Phase 5: The Coordinator (AI Agent Layer)
+- [ ] `src/agent/` module skeleton (`coordinator.py`, `detector.py`, `briefings.py`, `router.py`, `llm.py`)
+- [ ] Delivery router abstraction (`src/agent/router.py`) — portal / SMS adapters wired; WhatsApp stub
+- [ ] Task checker — missing bank statement, water charges, charge generation, stale claims
+- [ ] Anomaly detector — water charge spikes (>30% above 3mo avg), vacancy duration, arrears thresholds, collection pace
+- [ ] Follow-up nudge generator — no payment/claim by day 15, aging maintenance issues
+- [ ] Caretaker daily briefing generator + preview route
+- [ ] Owner monthly briefing generator + preview route
+- [ ] Admin task checklist generator + preview route
+- [ ] Wire all briefings to SMS delivery
+- [ ] Agent admin routes blueprint (`src/routes/agent_routes.py`)
+
+### Phase 6: The Conversation (Inbound Free-Text)
+- [ ] `inbound_messages` table + migration
+- [ ] `inbound_sessions` table + migration (conversation state)
+- [ ] `src/agent/llm.py` — LLM wrapper (Anthropic Claude API)
+- [ ] `src/agent/inbound.py` — intent classifier (11 intent types)
+- [ ] Action handlers per intent (maintenance_report, maintenance_resolve, payment_claim, followup_note, query_balance, query_arrears, checkin_reply, owner_instruction, occupancy_update, confirmation, unknown)
+- [ ] `src/agent/state.py` — session state management
+- [ ] `src/agent/responder.py` — response message generator
+- [ ] Message simulator admin page (`GET /agent/simulator`) — test all inbound scenarios without WhatsApp
+- [ ] `checkin_responses` table + migration
+- [ ] Tenant check-in scheduler — monthly SMS to all active tenants
+- [ ] Check-in response aggregator + sentiment summary generator
+- [ ] Africa's Talking inbound SMS webhook (`POST /inbound/sms`)
+- [ ] WhatsApp Business API credentials + inbound webhook (`POST /inbound/whatsapp`)
+- [ ] Pre-approve all outbound WhatsApp templates (list in `CURSOR_PLAN.md`)
+
+### Phase 7: The Voice (Newsletter)
+- [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
+- [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"
+- [ ] Read-only aggregate stats API endpoint (`GET /api/v1/aggregate-stats`) in this codebase
+- [ ] Separate newsletter repository
+- [ ] AI agent pipeline: data ingestion → analysis → content generation → distribution
+- [ ] Web presence (SEO/LLM indexing) + LinkedIn + email list
 
 ---
 
 ## Business Context
 
 - Property management agency in Kenya, 2-3 person team
-- Currently: 1 property (Mowin Apartments, 44 units)
-- Target: 3-5 properties near-term
-- Revenue model: not locked down (likely 8-10% of verified collections)
-- Kenya market: M-Pesa dominant, WhatsApp for communication
-- The dashboard/tech IS the sales differentiator
-- No brand name yet, no social media presence
-- WhatsApp Business API application should be started for Phase 3 lead time
+- **Product name: Domi** — derived from *domus* (Latin: home). Warm, neutral, non-intrusive.
+- Currently: 1 property (Mowin Apartments, 44 units, property ID: PROP-45ED445A)
+- Target: 3-5 properties near-term; 15+ at scale
+- Revenue model: not locked down (likely 8-10% of verified collections — aligns product revenue with landlord success)
+- Kenya market: M-Pesa dominant, WhatsApp is the primary communication channel for all user types
+- The intelligence + push delivery IS the sales differentiator vs. spreadsheets and WhatsApp group chats
+- No social media presence yet — newsletter (Phase 7) is the content/SEO/LinkedIn strategy
+- **WhatsApp Business API application must be started immediately** — Meta approval has 2-6 week lead time; apply via Africa's Talking (existing relationship). This gates Phase 6.
+
+### WhatsApp Strategy
+- One WhatsApp Business number for the entire platform (not per property)
+- Identity routing: sender phone number → lookup in DB → role + property + entity
+- Multi-property owners: prompted to select property if ambiguous (cached in inbound_sessions)
+- All proactive outbound messages require pre-approved Meta templates (utility category)
+- SMS via Africa's Talking remains the fallback for users without WhatsApp
+- Quality rating protection: only high-value, relevant messages; opt-out always available
+- Cost at scale: ~$0.065/conversation (Africa pricing tier) — manageable and bundled into service fee
+
+### Scaling Path
+- 1-5 properties: SQLite + APScheduler + single Fly.io worker
+- 5-15 properties: PostgreSQL on Fly.io + Redis/RQ job queue + second worker for agent jobs
+- 15+ properties: `src/agent/` extracted to separate Fly.io service; dedicated inbound processor
 
 ---
 

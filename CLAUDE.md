@@ -1,10 +1,12 @@
-# Rent Reconciliation System
+# Domi — Property Intelligence Platform
 
 ## AI Re-entry Overview (for agents)
 
-Flask + SQLite financial intelligence layer for a Kenya property management agency. Surfaces live rent data, arrears, and verified payments for landlords, caretakers, and tenants.
+**Domi** is a property intelligence platform for Kenya (and East Africa) that acts as an invisible, intelligent layer across residential properties. It handles rent reconciliation, financial reporting, maintenance, and communication for landlords, property managers, caretakers, and tenants. The product name "Domi" is derived from *domus* (Latin: home) — warm, neutral, and non-intrusive so it can sit on top of any property brand.
 
-**Status:** Core engine, dashboards (The Pulse), monthly reports (The Ledger), tenant/owner/caretaker portals, SMS delivery (Africa's Talking sandbox), and named caretaker accounts are all complete and in production. Phase 3 (Weekly Digest) and Phase 4 (Yearly View) not started.
+**Current codebase name:** `rent-reconciliation` (repo/deploy name unchanged — Domi is the product brand)
+
+**Status:** Core engine, dashboards (The Pulse), monthly reports (The Ledger), tenant/owner/caretaker portals, SMS delivery (Africa's Talking sandbox), and named caretaker accounts are all complete and in production. The AI coordinator layer, conversational inbound parsing, and WhatsApp delivery are planned next.
 
 **Canonical docs — read in this order:**
 - `CLAUDE.md` (this file) — technical reference: schema, routes, auth models, patterns, conventions
@@ -14,16 +16,27 @@ Flask + SQLite financial intelligence layer for a Kenya property management agen
 
 **Read both `CLAUDE.md` and `CURSOR_PLAN.md` before editing any code.**
 
-**Next 3 steps:**
-1. Switch Africa's Talking from sandbox → live credentials (`fly secrets set AT_USERNAME=... AT_API_KEY=...`)
-2. Build `balance_snapshots` table — daily per-unit snapshots, prerequisite for weekly digest
-3. Implement Weekly Digest (`src/reports/weekly_digest.py`) — payment velocity, arrears changes, claim aging
+**Next steps (in order):**
+1. Build `balance_snapshots` table + APScheduler setup — prerequisites for everything agent-related
+2. Build `src/agent/` module skeleton + delivery router abstraction
+3. Build detection engine (task checker + anomaly detector)
+4. Build digest/briefing generators + admin preview routes (local testing)
+5. Build inbound message parser + message simulator (admin page)
+6. Wire SMS delivery to agent outputs; WhatsApp is added last on top of the same logic
 
 ---
 
-## Vision: Financial Intelligence Layer
+## Vision: Property Intelligence Platform
 
-This app is a **financial intelligence layer** on property data. It does not report what an agency did — it surfaces what the data shows. Think of it as a stock portfolio dashboard for rental property: it doesn't manage the stocks, it tells you exactly what's happening with your money at every level of zoom. **The insight is the product.**
+Domi is a **financial and operational intelligence layer** on property data. It does not report what an agency did — it surfaces what the data shows, routes it to the right person at the right time, and captures signals that would otherwise be lost in WhatsApp conversations and people's heads.
+
+The product is **pull → push**: it does not wait for users to come to it. Lazy users are the expected baseline. The system delivers value to them regardless.
+
+**Two data layers:**
+- **Financial (structured):** charges, payments, bank statements, allocations, balances
+- **Qualitative (unstructured → parsed):** tenant feedback, caretaker notes, owner instructions, free-text via WhatsApp/SMS
+
+Both layers together produce intelligence no other property tool captures.
 
 ### Design Rule: Data-Descriptive Language
 
@@ -33,7 +46,7 @@ Every user-facing string uses data-descriptive voice, not agency voice:
 - "Unit B3 — vacant 14 days, now occupied" — NOT "We filled the vacancy in 14 days"
 - "Unit C4 water charge: KES 4,200 — 43% above 3-month average" — NOT "We noticed water usage increased"
 
-The app makes no claims about actions taken. It reports what the data knows. This applies to dashboard cards, report templates, and all future automated messages.
+The app makes no claims about actions taken. It reports what the data knows. This applies to all dashboards, reports, automated messages, WhatsApp briefings, and agent-generated content.
 
 ### Three Audiences (Over Time)
 
@@ -41,44 +54,67 @@ The app makes no claims about actions taken. It reports what the data knows. Thi
 2. **Agency** (FUTURE): Where are we performing well/poorly across properties
 3. **Client-facing** (FUTURE): Same data, tone may shift for external presentation
 
-### Product Layers (Roadmap)
+### Product Layers
 
-1. **The Pulse** (Real-time Dashboard) — "What is the current financial state of my asset?"
+1. **The Pulse** (Real-time Dashboard) — "What is the current financial state of my asset?" ✅ COMPLETE
    - Net collectible vs. verified collected (shilling gap)
    - Three-state payment visibility: verified / claimed-unverified / no activity
    - Vacancy cost per unit (days × daily rent = foregone income)
    - Arrears concentration (which units hold most of the debt)
 
-2. **The Ledger** (Monthly Report) — "How did the numbers move this period?"
+2. **The Ledger** (Monthly Report) — "How did the numbers move this period?" ✅ COMPLETE
    - Collection rate (verified ÷ charged)
    - Payment timing distribution
    - Charges generated (rent/service/water breakdown)
    - Tenant movement (move-ins/departures)
-   - Claim resolution rate
-   - Vacancy cost calculation
+   - Claim resolution rate / Vacancy cost calculation
 
-3. **The Signal** (Weekly Digest) — "What changed?" Delivered via email/WhatsApp.
+3. **The Signal** (Weekly Digest) — "What changed?" Auto-delivered via WhatsApp/SMS
    - Payment velocity (verified income in last 7 days)
-   - Arrears state changes (only units that got better/worse)
+   - Arrears state changes (only units that got better/worse vs last snapshot)
    - Claim aging alerts (pending 5+ days)
    - Occupancy change events
-   - Brevity IS the signal — if nothing changed, brief message confirms steady state
+   - Brevity IS the signal — stable = silence
 
 4. **The Investment View** (Yearly Report) — "Is this property performing as an asset?"
    - Annual collection rate + month-by-month trend
    - Arrears trajectory over 12 months
    - Tenant reliability scoring (payment behavior profiles)
-   - Total vacancy cost
-   - Revenue composition (rent vs service vs water)
+   - Total vacancy cost / Revenue composition
    - Year-over-year comparison (requires 2+ years of data)
+
+5. **The Coordinator** (AI Agent Layer) — "What needs to happen right now?"
+   - Task prompts to humans for physical inputs (bank statement, water readings)
+   - Anomaly detection (water spikes, arrears thresholds, vacancy duration, collection pace)
+   - Follow-up nudges (units with no activity, aging maintenance issues)
+   - Automated execution of routine operations (charge generation, snapshots, reminders on real schedule)
+   - Owner engagement loop: briefing + response invited + instruction recorded
+
+6. **The Conversation** (Inbound Free-Text Layer) — "What are users telling us?"
+   - WhatsApp/SMS inbound channel for all user roles
+   - LLM-based intent classification → structured actions
+   - Tenant check-ins: periodic sentiment collection, aggregated and surfaced
+   - Caretaker notes logged via natural language
+   - Owner instructions parsed and routed
+   - Qualitative data layer built alongside financial data
+
+7. **The Voice** (Real Estate Newsletter) — "What is the market telling us?"
+   - AI-written weekly real estate newsletter targeting landlords and building owners
+   - Proprietary data from Domi platform (anonymized aggregates) + Kenya market data
+   - Hedge fund style analysis, not market commentary
+   - Distribution: web (SEO/LLM indexing) + LinkedIn + email list
+   - Separate codebase; connects via read-only internal API from this system
 
 ### Current Implementation Status
 
 - [x] Phase 0: Core reconciliation engine (parsing, matching, allocation)
-- [x] Phase 1: Dashboard upgrade ("The Pulse") — COMPLETE
-- [x] Phase 2: Monthly report generation ("The Ledger") — COMPLETE
-- [ ] Phase 3: Weekly digest ("The Signal") — requires email/WhatsApp delivery
-- [ ] Phase 4: Yearly view ("The Investment View") — requires 12+ months of data
+- [x] Phase 1: The Pulse (Dashboard) — COMPLETE
+- [x] Phase 2: The Ledger (Monthly Reports) — COMPLETE
+- [ ] Phase 3: The Signal (Weekly Digest) — in progress
+- [ ] Phase 4: The Investment View (Yearly) — requires 12+ months of data
+- [ ] Phase 5: The Coordinator (AI Agent Layer) — planned
+- [ ] Phase 6: The Conversation (Inbound Free-Text) — planned
+- [ ] Phase 7: The Voice (Newsletter) — separate codebase, future
 
 ---
 
@@ -96,17 +132,30 @@ Flask web app for rental management agencies to:
 
 ## Tech Stack
 
-- Python 3.13, Flask 3.0+, SQLite
+- Python 3.13, Flask 3.0+, SQLite (PostgreSQL migration path at ~10 properties)
 - Templates: Jinja2 + Bootstrap 5
 - Parsers: pdfplumber (PDF), pandas + openpyxl (Excel)
-- No ORM - raw SQL with parameterized queries
+- No ORM — raw SQL with parameterized queries
+- APScheduler — background job scheduler (embedded in Flask, replaces dashboard-load trigger)
+- Anthropic Claude API — LLM inference for inbound message parsing (via `src/agent/llm.py` wrapper)
+- Africa's Talking — SMS delivery (live) + WhatsApp Business API (pending approval)
 
 ## Project Structure
 
 ```
 rent-reconciliation/
-├── app.py                    # Main Flask app, admin routes, blueprint registration
+├── app.py                    # Main Flask app, admin routes, blueprint registration, APScheduler init
 ├── src/
+│   ├── agent/                # AI coordinator layer (Phase 5/6) — NEW
+│   │   ├── __init__.py
+│   │   ├── coordinator.py    # Orchestrates all scheduled agent jobs
+│   │   ├── detector.py       # Anomaly detection + task checker + follow-up nudges
+│   │   ├── briefings.py      # Digest + briefing generators (weekly, daily, monthly)
+│   │   ├── inbound.py        # Inbound message parsing, intent classification, action handlers
+│   │   ├── responder.py      # Response message generation
+│   │   ├── router.py         # Delivery abstraction: portal / SMS / WhatsApp / email
+│   │   ├── llm.py            # Thin LLM wrapper — never import Anthropic SDK directly elsewhere
+│   │   └── state.py          # Conversation session state (inbound_sessions table)
 │   ├── parsers/
 │   │   ├── router.py         # Input auto-detection & routing
 │   │   ├── pdf_parser.py     # Bank statement parsing
@@ -119,7 +168,8 @@ rent-reconciliation/
 │   │   ├── tenant_routes.py  # /tenant/<token> - tenant portal (token auth)
 │   │   ├── messaging_routes.py  # /messages/* - admin messaging
 │   │   ├── report_routes.py  # /reports/* - admin report generation & viewer
-│   │   └── caretaker_routes.py  # /caretaker/* - caretaker live portal
+│   │   ├── caretaker_routes.py  # /caretaker/* - caretaker live portal
+│   │   └── agent_routes.py   # /agent/* - agent preview + simulator + manual triggers (NEW)
 │   ├── reports/
 │   │   └── landlord_report.py   # Report generation + enrich_report_data()
 │   ├── messaging/
@@ -134,6 +184,7 @@ rent-reconciliation/
 │       └── state_machine.py  # Payment lifecycle
 ├── templates/
 │   ├── base.html             # Admin base (sidebar nav, property selector)
+│   ├── agent/                # Agent admin pages (simulator, digest preview, briefing preview) NEW
 │   ├── viewer/               # Owner portal (base_viewer, dashboard, arrears, payments,
 │   │                         #   report_detail, reports, activity, notifications,
 │   │                         #   message_detail, maintenance)
@@ -157,6 +208,7 @@ rent-reconciliation/
 
 ## Database Tables
 
+### Existing Tables
 - `properties` - Rental properties
 - `units` - Units with `monthly_rent`, `service_charge`, `apartment_size`, `status` (occupied/vacant/office)
 - `tenants` - Linked to units; `access_token` (TEXT, unique) for shareable portal link; NULL = no link
@@ -176,6 +228,12 @@ rent-reconciliation/
 - `maintenance_issues` - Logged issues against a property/unit; `source` ('tenant' | 'caretaker'), `raised_by_tenant_id` when tenant-sourced, `category`, `status` ('open' | 'resolved'), `resolved_at`, `resolved_note`
 - `owner_messages` - Notifications + broadcast copies stored in owner portal inbox. Columns: id, property_id, owner_id, subject, body, template_body (unsubstituted for broadcasts), message_type ('notification' | 'broadcast' | 'reminder'), channel, recipient_count, sent_by (caretaker's actual name, 'Admin', or 'System'), read_at, created_at. Separate from `messages` table (which requires tenant_id NOT NULL). Populated by `notify_property_owners()`.
 - `caretakers` - Named caretaker accounts per property. Columns: id, property_id (FK), name, phone, password_hash, created_at. Migration: `migrate_add_caretakers()`. Name doubles as login username. One caretaker per property (can be expanded). Managed at `/caretakers` (admin).
+
+### New Tables (Agent Layer — Phase 5/6)
+- `balance_snapshots` — Daily per-unit balance snapshots. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid, created_at. UNIQUE(unit_id, snapshot_date). Inserted idempotently by scheduler. **Prerequisite for weekly digest and anomaly detection.**
+- `inbound_messages` — Every inbound message from any channel lands here first. Schema: id, property_id, sender_phone, sender_role ('tenant'|'caretaker'|'owner'|'admin'|'unknown'), sender_entity_id, raw_body, channel ('sms'|'whatsapp'), received_at, processed_at, classified_intent, confidence (REAL), action_taken, response_sent. Processing is always async — webhook writes here, worker reads and processes.
+- `inbound_sessions` — Conversation state within a 24-hour window. Schema: phone, property_id, last_intent, awaiting_confirmation (TEXT), context_json (TEXT), expires_at. Used so "yes"/"no"/"skip" replies can be resolved against the last prompt.
+- `checkin_responses` — Tenant check-in responses. Schema: id, tenant_id, unit_id, property_id, period (YYYY-MM), numeric_response (1|2|3), free_text, classified_category, received_at. Aggregated monthly into sentiment briefings.
 
 ## Key Patterns
 
@@ -219,6 +277,41 @@ with get_connection() as conn:
 from src.database.db import migrate_add_charge_type, migrate_add_apartment_size, migrate_add_payment_allocations, migrate_allocate_existing_payments
 # Called automatically at startup in app.py
 # All migrations are idempotent (safe to call multiple times)
+```
+
+**LLM Wrapper (never import Anthropic SDK directly outside this module):**
+
+```python
+from src.agent.llm import call_llm
+result = call_llm(prompt, model='fast')   # 'fast' = haiku, 'smart' = sonnet
+# Abstracts provider — swap models/providers without touching agent logic
+```
+
+**Delivery Router (agent output — never call delivery directly from agent logic):**
+
+```python
+from src.agent.router import route_message
+route_message({
+    'recipient_phone': '+254712345678',
+    'recipient_role': 'caretaker',
+    'property_id': 'PROP-45ED445A',
+    'message_type': 'daily_briefing',
+    'body': 'Morning James...'
+})
+# Router decides channel: portal / SMS / WhatsApp based on config
+# WhatsApp adapter is a stub until credentials are live
+```
+
+**Intent Classification Pattern:**
+
+```python
+from src.agent.inbound import classify_intent
+result = classify_intent(raw_text, sender_role='caretaker')
+# Returns: {'intent': 'maintenance_report', 'confidence': 0.94, 'extracted': {...}}
+# Intents: maintenance_report | maintenance_resolve | payment_claim |
+#          followup_note | query_balance | query_arrears | checkin_reply |
+#          owner_instruction | occupancy_update | confirmation | unknown
+# Rule: confidence >= 0.85 → act + confirm. Below → ask before acting.
 ```
 
 ## User Roles
@@ -327,6 +420,87 @@ Monthly charges have THREE components per tenant:
 - [x] SMS delivery — Africa's Talking integration (`src/messaging/delivery.py`); broadcasts, reminders, and payment confirmations reach tenant phones
 - [x] Owner messages inbox — `owner_messages` table + `/view/<property_id>/notifications`; all SMS events (broadcasts, reminders, payment confirmations, reports) also stored in owner portal; `sent_by` attribution (Admin/Caretaker/System)
 - [x] Payment SMS wording — "payment confirmed" (no bank statement mechanics visible to tenants/caretakers)
+
+## Agent System (Phase 5 — The Coordinator)
+
+The agent layer is **channel-agnostic and additive**. It never modifies existing routes. It writes to existing tables (audit_log, messages, owner_messages) and new tables (balance_snapshots, inbound_messages, inbound_sessions).
+
+### What the Agent Owns (runs without human input)
+- Daily balance snapshots (scheduler tick)
+- Monthly charge generation (if not done by day 3)
+- Weekly digest computation and delivery
+- Caretaker daily briefing (every morning)
+- Reminder sending (replaces fragile dashboard-load trigger)
+- Anomaly detection: water charge >30% above 3-month average, vacancy >14/30/60 days, arrears threshold crossings, collection rate below pace vs same day last month
+- Task checker: missing bank statement, missing water charges, claims aging >7 days, unassigned transactions
+
+### What the Agent Flags (human decides)
+- Follow-up nudges: units with no payment/claim by day 15, open maintenance issues >7 days
+- Low-confidence inbound parses: ask before acting
+- Arrears threshold crossings: surfaced to owner + caretaker, not auto-acted
+- Owner instructions from inbound replies: logged + routed to caretaker
+
+### Agent Admin Routes (/agent/*)
+- `GET /agent/simulator` — message simulator: type as any user, see intent classification + action + response
+- `GET /agent/digest/preview/<property_id>` — this week's digest as it would be sent
+- `GET /agent/briefing/caretaker/<property_id>/preview` — today's caretaker briefing
+- `GET /agent/briefing/owner/<property_id>/preview` — owner briefing
+- `GET /agent/checklist/<property_id>/preview` — admin task checklist
+- `POST /agent/trigger/<job_name>` — manually trigger any scheduled job (dev/testing)
+
+## WhatsApp / Inbound Channel
+
+### Multi-Tenancy: One Number, All Users
+One WhatsApp Business number serves all users across all properties. Identity = phone number.
+
+```
+Inbound: sender_phone → lookup in tenants/caretakers/owners tables
+Result: role + entity_id + property_id → all responses scoped to that context
+```
+
+**Lookup priority:** caretakers → owners → tenants → unknown
+
+**Multi-property owners:** if owner has 2+ properties, system prompts "Reply 1 for [Property A], 2 for [Property B]" and caches selection in inbound_sessions for 24 hours.
+
+### Inbound Flow (async — never block on LLM)
+```
+POST /inbound/sms or /inbound/whatsapp
+  → Write to inbound_messages table
+  → Return 200 immediately
+  → Background worker: classify intent → route to action handler → send response
+```
+
+### Outbound: All Proactive Messages Need Pre-Approved Templates
+Any message sent to a user who hasn't messaged in the last 24 hours requires a Meta-approved template. Templates are plain text with `{{1}}` variables. All briefings, digests, reminders, charge notifications, and anomaly alerts must be pre-approved before the WhatsApp channel goes live. SMS remains the fallback.
+
+### Channel Configuration
+- `AT_USERNAME=sandbox` → SMS sandbox mode (no real messages)
+- `AT_WHATSAPP_ENABLED=true/false` → enable/disable WhatsApp channel
+- WhatsApp adapter in `src/agent/router.py` is a stub (logs "would send via WhatsApp") until credentials are live and templates approved
+
+## Scaling Architecture
+
+### Current (1–5 properties)
+SQLite is fine. APScheduler runs background jobs in-process. One gunicorn worker. Africa's Talking SMS.
+
+### Near-term (5–15 properties)
+- Migrate SQLite → PostgreSQL on Fly.io (one command)
+- Add second Fly.io worker for agent jobs (separate from web workers)
+- Redis + RQ for job queue (replace APScheduler)
+- WhatsApp Business API live
+
+### Scale (15+ properties)
+- `src/agent/` extracted to a separate Fly.io app
+- PostgreSQL with connection pooling (PgBouncer)
+- Dedicated inbound message processor service
+- Newsletter (Phase 7) runs as fully separate infrastructure
+
+### Architectural Rules (set now, cheap to enforce, expensive to retrofit)
+1. **Agent logic never imports from routes.** They communicate via the DB only.
+2. **LLM calls are always async.** Never block a web request or webhook handler on inference.
+3. **Every agent feature is property-scoped.** All tables have `property_id`. All jobs are parameterized by property. Going from 1 to 20 properties = the job runs 20 times, not a rewrite.
+4. **Delivery is abstracted.** `src/agent/router.py` is the only place that knows about channels. Agent code calls `route_message()`, never `send_sms()` directly.
+5. **LLM provider is abstracted.** `src/agent/llm.py` is the only place that imports the Anthropic SDK. Swap models or providers by editing one file.
 
 CLAUDE.md is the canonical context for AI agents working on this repo.
 See `ROADMAP.md` for product vision, design rules, phase status, and update protocol.
