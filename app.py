@@ -27,6 +27,7 @@ from src.routes.test_routes import test_bp
 from src.routes.viewer_routes import viewer_bp
 from src.routes.report_routes import report_bp
 from src.routes.caretaker_routes import caretaker_bp
+from src.routes.agent_routes import agent_bp
 from src.agent.coordinator import (
     daily_snapshot_job,
     morning_briefings_job,
@@ -102,6 +103,7 @@ app.register_blueprint(report_bp)
 app.register_blueprint(tenant_bp)
 app.register_blueprint(messaging_bp)
 app.register_blueprint(caretaker_bp)
+app.register_blueprint(agent_bp)
 
 
 scheduler = BackgroundScheduler(daemon=True)

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from src.database.db import generate_id, get_connection
 from src.agent.detector import check_pending_tasks, detect_anomalies, detect_followups
+from src.agent.briefings import generate_weekly_digest
 
 
 def _active_property_ids(conn):
@@ -62,9 +63,8 @@ def morning_briefings_job():
 
 
 def weekly_digest_job():
-    """Reserved hook for weekly digest generation/delivery."""
+    """Generate weekly digest text for each active property."""
     with get_connection() as conn:
-        for _property_id in _active_property_ids(conn):
-            # Phase C wires digest generation and delivery.
-            pass
+        for property_id in _active_property_ids(conn):
+            generate_weekly_digest(conn, property_id)
 

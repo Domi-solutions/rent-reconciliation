@@ -29,47 +29,33 @@ Financial intelligence layer for a Kenyan property management agency. Flask 3 + 
 
 ### What was built
 
-- **Phase A complete**:
-  - Added `migrate_add_balance_snapshots()` in `src/database/db.py`
-  - Wired migration call in `app.py` startup sequence
-  - Added APScheduler in `app.py` with four jobs:
-    - `daily_snapshot_job` (1am)
-    - `anomaly_check_job` (6am)
-    - `morning_briefings_job` (7am)
-    - `weekly_digest_job` (Mon 8am)
-  - Added safe scheduler startup guard for Flask reloader mode + `atexit` shutdown
-- **Phase A module skeleton complete**:
-  - Created `src/agent/` with:
-    - `__init__.py`
-    - `coordinator.py`
-    - `detector.py`
-    - `briefings.py`
-    - `inbound.py`
-    - `responder.py`
-    - `router.py`
-    - `llm.py`
-    - `state.py`
-- **Phase A delivery router complete**:
-  - `route_message()` now writes portal messages to `owner_messages`/`messages`
-  - SMS adapter wired via `src.messaging.delivery.send_sms`
-  - WhatsApp adapter left as explicit stub
-- **Phase B complete** in `src/agent/detector.py`:
-  - `check_pending_tasks(conn, property_id)`
-  - `detect_anomalies(conn, property_id)`
-  - `detect_followups(conn, property_id)`
-- Added dependencies: `apscheduler`, `anthropic`
-- Updated docs: `ROADMAP.md`, `CLAUDE.md`, `CURSOR_PLAN.md`
+- **Phase C complete**:
+  - Implemented real digest/briefing generators in `src/agent/briefings.py`:
+    - `generate_weekly_digest()`
+    - `generate_caretaker_briefing()`
+    - `generate_owner_briefing()`
+    - `generate_admin_checklist()`
+  - Added agent preview routes in `src/routes/agent_routes.py`:
+    - `GET /agent/digest/preview/<property_id>`
+    - `GET /agent/briefing/caretaker/<property_id>/preview`
+    - `GET /agent/briefing/owner/<property_id>/preview`
+    - `GET /agent/checklist/<property_id>/preview`
+    - `POST /agent/trigger/<job_name>`
+  - Registered `agent_bp` in `app.py`
+  - Added `templates/agent/preview_text.html` for browser preview rendering
+  - Updated `weekly_digest_job()` in `src/agent/coordinator.py` to call digest generation
+  - Validation completed: app import check passes, no linter errors
 
 ### What was confirmed (do not re-implement)
 
 - Existing owner/caretaker/tenant portals remain unchanged by this build
-- New `src/agent/*` layer is additive and not yet wired to user-facing routes
+- Agent previews are admin-only routes under `/agent/*` and render via `base.html`
 
 ### Pick up next
 
 1. Build inbound tables + webhooks: `inbound_messages`, `inbound_sessions`, `POST /inbound/sms`, `POST /inbound/whatsapp`
-2. Implement weekly digest generator in `src/agent/briefings.py` and add `/agent/*` preview routes
-3. Add language preference column + first-contact language prompt flow
+2. Add language preference column + first-contact language prompt flow
+3. Build inbound intent classifier/actions simulator workflows (Phase D)
 
 ---
 

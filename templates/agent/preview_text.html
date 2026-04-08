@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ preview_title }} - {{ property.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div class="page-title">{{ preview_title }}</div>
+    <div class="page-meta">{{ property.name }} ({{ property.id }})</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Back to Dashboard</a>
+    <button class="btn btn-primary" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="surface-card" style="padding: 20px;">
+  <pre style="margin: 0; white-space: pre-wrap; font-family: inherit;">{{ content }}</pre>
+</div>
+{% endblock %}
+

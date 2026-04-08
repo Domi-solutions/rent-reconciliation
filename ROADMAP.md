@@ -332,8 +332,8 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] APScheduler setup — real scheduler in `app.py`
 - [x] `src/agent/` module skeleton (`coordinator.py`, `detector.py`, `briefings.py`, `router.py`, `llm.py`)
 - [x] Delivery router abstraction (`src/agent/router.py`) — portal / SMS adapters wired; WhatsApp stub
-- [ ] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
-- [ ] Admin preview route `GET /agent/digest/preview/<property_id>`
+- [x] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
+- [x] Admin preview route `GET /agent/digest/preview/<property_id>`
 - [ ] Inbound webhook foundation — `POST /inbound/sms` and `POST /inbound/whatsapp` → write to `inbound_messages`, return 200 immediately
 - [ ] `inbound_messages` + `inbound_sessions` tables + migrations
 - [ ] `tenants.language_preference` column + migration
