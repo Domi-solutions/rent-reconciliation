@@ -24,34 +24,52 @@ Financial intelligence layer for a Kenyan property management agency. Flask 3 + 
 
 ## Last Session
 
-**Who:** Claude Code
-**Date:** 2026-03-09
+**Who:** Cursor Agent
+**Date:** 2026-04-08
 
 ### What was built
 
-- **Named caretaker accounts** — `caretakers` table, migration in `db.py`, called at startup
-- **Caretaker management UI** at `/caretakers` (admin) — create, edit, set password, delete; mirrors owners page; sidebar nav item
-- **Caretaker auth upgraded** in `src/routes/caretaker_routes.py`:
-  - Three-tier: DB accounts (name+password) → `CARETAKER_PASSWORD` env var → dev open
-  - `before_request` verifies `caretaker_id` against DB on every request — deletion immediately revokes sessions
-- **Caretaker name in header** — `base_caretaker.html` shows logged-in name next to logout
-- **`sent_by` attribution** — caretaker broadcasts now use actual name from session, not generic string
-- **Owner inbox bug fixed** — `property_notifications` SELECT was missing `sent_by`, `template_body`, `channel`, `recipient_count`; fixed in `viewer_routes.py`
-- **Attribution badges** in `templates/viewer/notifications.html` — blue=Admin, amber=caretaker name, gray=System
-- All docs updated: `CLAUDE.md`, `ROADMAP.md`, `CURSOR_PLAN.md`
-- **Agent memory system set up** — `AGENTS.md` created as single entry point; `~/Desktop/Projects/projects.md` created as global project registry
-- **Project folder moved** — from `~/Desktop/rentalManagement/rent-reconciliation/` to `~/Desktop/Projects/rent-reconciliation/`
+- **Phase A complete**:
+  - Added `migrate_add_balance_snapshots()` in `src/database/db.py`
+  - Wired migration call in `app.py` startup sequence
+  - Added APScheduler in `app.py` with four jobs:
+    - `daily_snapshot_job` (1am)
+    - `anomaly_check_job` (6am)
+    - `morning_briefings_job` (7am)
+    - `weekly_digest_job` (Mon 8am)
+  - Added safe scheduler startup guard for Flask reloader mode + `atexit` shutdown
+- **Phase A module skeleton complete**:
+  - Created `src/agent/` with:
+    - `__init__.py`
+    - `coordinator.py`
+    - `detector.py`
+    - `briefings.py`
+    - `inbound.py`
+    - `responder.py`
+    - `router.py`
+    - `llm.py`
+    - `state.py`
+- **Phase A delivery router complete**:
+  - `route_message()` now writes portal messages to `owner_messages`/`messages`
+  - SMS adapter wired via `src.messaging.delivery.send_sms`
+  - WhatsApp adapter left as explicit stub
+- **Phase B complete** in `src/agent/detector.py`:
+  - `check_pending_tasks(conn, property_id)`
+  - `detect_anomalies(conn, property_id)`
+  - `detect_followups(conn, property_id)`
+- Added dependencies: `apscheduler`, `anthropic`
+- Updated docs: `ROADMAP.md`, `CLAUDE.md`, `CURSOR_PLAN.md`
 
 ### What was confirmed (do not re-implement)
 
-- Tenant sort + arrears filter is **fully built** — `app.py:622–627`, `tenants.html:18–28`
-- Old owner_messages records have NULL `sent_by` — unrecoverable, will show no badge (expected)
+- Existing owner/caretaker/tenant portals remain unchanged by this build
+- New `src/agent/*` layer is additive and not yet wired to user-facing routes
 
 ### Pick up next
 
-1. **Admin dashboard days-to-due countdown** — caretaker dashboard has `next_due_date`/`days_to_due`/`recent_reminder` banner; verify admin `dashboard()` route and `templates/dashboard.html` have the same. Add if missing (no schema changes needed).
-2. **`balance_snapshots` table** — daily per-unit balance snapshots, prerequisite for Phase 3. Full schema in `CURSOR_PLAN.md` Priority 2.
-3. **Weekly digest** — after balance_snapshots. See `CURSOR_PLAN.md` Priority 3.
+1. Build inbound tables + webhooks: `inbound_messages`, `inbound_sessions`, `POST /inbound/sms`, `POST /inbound/whatsapp`
+2. Implement weekly digest generator in `src/agent/briefings.py` and add `/agent/*` preview routes
+3. Add language preference column + first-contact language prompt flow
 
 ---
 

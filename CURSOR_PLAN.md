@@ -4,12 +4,15 @@
 
 **Last updated:** 2026-04-08
 
+**Build progress update:** Phase A (A1-A4) and Phase B (B1-B3) are now implemented in code (`db.py`, `app.py`, `src/agent/*`). Next step remains Phase C.
+
 - **Product name:** Domi (property intelligence platform). Repo/deploy name: `rent-reconciliation` (unchanged).
 - **Stack:** Python 3.13, Flask 3.0+, SQLite (no ORM), Jinja2 + Bootstrap 5. Deployed on Fly.io (Johannesburg).
 - **Source of truth docs — read ALL of these before touching code:**
   - `CLAUDE.md` — canonical technical reference: schema, all routes, patterns, conventions, auth models, agent architecture
-  - `ROADMAP.md` — product vision, all 7 phases, checklist status, business context, WhatsApp strategy
+  - `ROADMAP.md` — product vision, all 8 phases, checklist status, business context, WhatsApp strategy
   - `CURSOR_PLAN.md` (this file) — active build sequence, next steps, implementation notes
+  - `CURSOR_PATTERNS.md` — **read this before writing any code** — logged mistakes from previous Cursor builds; do not repeat these
   - `README.md` — how to run and deploy
 
 ---
@@ -412,4 +415,5 @@ Submit to Meta via Africa's Talking dashboard before going live:
 3. Update `ROADMAP.md` — mark completed items `[x]`, add new items
 4. Update `CLAUDE.md` — add new tables, routes, patterns
 5. Update `CURSOR_PLAN.md` (this file) — move completed items to "What Is Fully Built", update plan
-6. Deploy: `export PATH="$HOME/.fly/bin:$PATH" && fly deploy`
+6. **Commit your work** — commit after every build session with a clear message describing what was built. This is required, not optional. The git log is used by Claude to diagnose issues in the next review session.
+7. Deploy: `export PATH="$HOME/.fly/bin:$PATH" && fly deploy`

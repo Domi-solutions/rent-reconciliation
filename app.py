@@ -8,8 +8,10 @@ import re
 import secrets
 import sqlite3
 import io
+import atexit
 from datetime import datetime
 from decimal import Decimal
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from werkzeug.utils import secure_filename
@@ -25,6 +27,12 @@ from src.routes.test_routes import test_bp
 from src.routes.viewer_routes import viewer_bp
 from src.routes.report_routes import report_bp
 from src.routes.caretaker_routes import caretaker_bp
+from src.agent.coordinator import (
+    daily_snapshot_job,
+    morning_briefings_job,
+    weekly_digest_job,
+    anomaly_check_job,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
@@ -60,6 +68,7 @@ from src.database.db import (
     migrate_add_template_body,
     migrate_add_owner_messages,
     migrate_add_caretakers,
+    migrate_add_balance_snapshots,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -81,6 +90,7 @@ migrate_add_sms_delivery()
 migrate_add_template_body()
 migrate_add_owner_messages()
 migrate_add_caretakers()
+migrate_add_balance_snapshots()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -92,6 +102,21 @@ app.register_blueprint(report_bp)
 app.register_blueprint(tenant_bp)
 app.register_blueprint(messaging_bp)
 app.register_blueprint(caretaker_bp)
+
+
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(func=daily_snapshot_job, trigger='cron', hour=1, minute=0, id='daily_snapshot_job', replace_existing=True)
+scheduler.add_job(func=morning_briefings_job, trigger='cron', hour=7, minute=0, id='morning_briefings_job', replace_existing=True)
+scheduler.add_job(func=weekly_digest_job, trigger='cron', day_of_week='mon', hour=8, minute=0, id='weekly_digest_job', replace_existing=True)
+scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='anomaly_check_job', replace_existing=True)
+
+_running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
+_is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+_should_start_scheduler = (not _running_via_flask_cli) or _is_werkzeug_child
+
+if _should_start_scheduler and not scheduler.running:
+    scheduler.start()
+    atexit.register(lambda: scheduler.shutdown(wait=False))
 
 # #endregion
 

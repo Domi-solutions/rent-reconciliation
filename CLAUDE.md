@@ -17,12 +17,12 @@
 **Read both `CLAUDE.md` and `CURSOR_PLAN.md` before editing any code.**
 
 **Next steps (in order):**
-1. Build `balance_snapshots` table + APScheduler setup — prerequisites for everything agent-related
-2. Build `src/agent/` module skeleton + delivery router abstraction
-3. Build detection engine (task checker + anomaly detector)
-4. Build digest/briefing generators + admin preview routes (local testing)
-5. Build inbound message parser + message simulator (admin page)
-6. Wire SMS delivery to agent outputs; WhatsApp is added last on top of the same logic
+1. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) + `inbound_messages`/`inbound_sessions` tables
+2. Add `tenants.language_preference` column + language preference prompt on first contact
+3. Build weekly digest generator + admin preview route
+4. Build inbound intent classifier + action handlers (all roles) + message simulator
+5. Build admin task feed on dashboard (extend dashboard route + `dashboard.html`, base.html untouched)
+6. Wire SMS delivery to all agent outputs; WhatsApp added last
 
 ---
 
@@ -57,17 +57,8 @@ The app makes no claims about actions taken. It reports what the data knows. Thi
 ### Product Layers
 
 1. **The Pulse** (Real-time Dashboard) — "What is the current financial state of my asset?" ✅ COMPLETE
-   - Net collectible vs. verified collected (shilling gap)
-   - Three-state payment visibility: verified / claimed-unverified / no activity
-   - Vacancy cost per unit (days × daily rent = foregone income)
-   - Arrears concentration (which units hold most of the debt)
 
 2. **The Ledger** (Monthly Report) — "How did the numbers move this period?" ✅ COMPLETE
-   - Collection rate (verified ÷ charged)
-   - Payment timing distribution
-   - Charges generated (rent/service/water breakdown)
-   - Tenant movement (move-ins/departures)
-   - Claim resolution rate / Vacancy cost calculation
 
 3. **The Signal** (Weekly Digest) — "What changed?" Auto-delivered via WhatsApp/SMS
    - Payment velocity (verified income in last 7 days)
@@ -105,30 +96,9 @@ The app makes no claims about actions taken. It reports what the data knows. Thi
    - Distribution: web (SEO/LLM indexing) + LinkedIn + email list
    - Separate codebase; connects via read-only internal API from this system
 
-### Current Implementation Status
-
-- [x] Phase 0: Core reconciliation engine (parsing, matching, allocation)
-- [x] Phase 1: The Pulse (Dashboard) — COMPLETE
-- [x] Phase 2: The Ledger (Monthly Reports) — COMPLETE
-- [ ] Phase 3: The Signal (Weekly Digest) — in progress
-- [ ] Phase 4: The Investment View (Yearly) — requires 12+ months of data
-- [ ] Phase 5: The Coordinator (AI Agent Layer) — planned
-- [ ] Phase 6: The Conversation (Inbound Free-Text) — planned
-- [ ] Phase 7: The Voice (Newsletter) — separate codebase, future
+**Phase status:** Phases 0–2 complete. Phase 3 (Signal + Inbound Foundation) in progress. Phases 4–8 planned. Build sequence: 3 → 4 (Conversation/All Roles) → 5 (Coordinator/Admin Intelligence) → 6 (Owner AI) → 7 (Investment View, deferred) → 8 (Voice). See `ROADMAP.md` for full checklist.
 
 ---
-
-## Purpose
-
-Flask web app for rental management agencies to:
-
-1. Onboard properties with units/tenants (via Excel upload)
-2. Parse bank statements (PDF) to extract M-Pesa transactions
-3. Match tenant payment claims (SMS) to bank transactions
-4. Track monthly charges (rent + service + water) and outstanding balances
-5. Allocate payments FIFO across charges (oldest first, regardless of type)
-6. Export reports for accountability (current state, activity logs, payment verification)
-7. Provide view-only access for property owners via financial intelligence dashboard
 
 ## Tech Stack
 
@@ -229,11 +199,20 @@ rent-reconciliation/
 - `owner_messages` - Notifications + broadcast copies stored in owner portal inbox. Columns: id, property_id, owner_id, subject, body, template_body (unsubstituted for broadcasts), message_type ('notification' | 'broadcast' | 'reminder'), channel, recipient_count, sent_by (caretaker's actual name, 'Admin', or 'System'), read_at, created_at. Separate from `messages` table (which requires tenant_id NOT NULL). Populated by `notify_property_owners()`.
 - `caretakers` - Named caretaker accounts per property. Columns: id, property_id (FK), name, phone, password_hash, created_at. Migration: `migrate_add_caretakers()`. Name doubles as login username. One caretaker per property (can be expanded). Managed at `/caretakers` (admin).
 
-### New Tables (Agent Layer — Phase 5/6)
+### New Tables (Agent Layer — Phases 3–6)
 - `balance_snapshots` — Daily per-unit balance snapshots. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid, created_at. UNIQUE(unit_id, snapshot_date). Inserted idempotently by scheduler. **Prerequisite for weekly digest and anomaly detection.**
 - `inbound_messages` — Every inbound message from any channel lands here first. Schema: id, property_id, sender_phone, sender_role ('tenant'|'caretaker'|'owner'|'admin'|'unknown'), sender_entity_id, raw_body, channel ('sms'|'whatsapp'), received_at, processed_at, classified_intent, confidence (REAL), action_taken, response_sent. Processing is always async — webhook writes here, worker reads and processes.
 - `inbound_sessions` — Conversation state within a 24-hour window. Schema: phone, property_id, last_intent, awaiting_confirmation (TEXT), context_json (TEXT), expires_at. Used so "yes"/"no"/"skip" replies can be resolved against the last prompt.
 - `checkin_responses` — Tenant check-in responses. Schema: id, tenant_id, unit_id, property_id, period (YYYY-MM), numeric_response (1|2|3), free_text, classified_category, received_at. Aggregated monthly into sentiment briefings.
+- `property_info` — Local amenities per property. Schema: id, property_id, category (pharmacy/grocery/wifi/hospital/gas/etc.), name, details. Admin-managed at onboarding or anytime. Queried when tenant asks Domi about nearby services.
+- `caretaker_request_routing` — Per-property config for caretaker escalation routing. Schema: property_id (PK), notify_admin (bool), notify_owner (bool). Owner report always captures all caretaker requests regardless of this config.
+
+### New Columns (additive migrations)
+- `tenants.language_preference` — `'en'` | `'sw'` | NULL. NULL triggers language prompt on first inbound contact from that tenant. All Domi responses use the stored preference going forward.
+- `tenants.flagged` — boolean, default false. Set when payment claim is rejected (M-Pesa reference absent from bank statement). Flagged tenants' future claims don't get pending-state treatment. Cleared manually by admin only.
+- `tenants.flagged_reason` — TEXT, nullable. Set alongside `flagged`.
+- `tenants.flagged_at` — TIMESTAMP, nullable. Set alongside `flagged`.
+- `maintenance_issues.priority` — `'urgent'` | `'routine'`, default `'routine'`. Urgent issues forwarded to caretaker immediately (24/7); routine issues queue for morning briefing.
 
 ## Key Patterns
 
@@ -308,10 +287,8 @@ route_message({
 from src.agent.inbound import classify_intent
 result = classify_intent(raw_text, sender_role='caretaker')
 # Returns: {'intent': 'maintenance_report', 'confidence': 0.94, 'extracted': {...}}
-# Intents: maintenance_report | maintenance_resolve | payment_claim |
-#          followup_note | query_balance | query_arrears | checkin_reply |
-#          owner_instruction | occupancy_update | confirmation | unknown
 # Rule: confidence >= 0.85 → act + confirm. Below → ask before acting.
+# Full intent set in ROADMAP.md Phase 4 checklist.
 ```
 
 ## User Roles
@@ -323,43 +300,33 @@ result = classify_intent(raw_text, sender_role='caretaker')
 
 ## Owner Viewer (/view/*)
 
-- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/view/<property_id>/payments`, `/view/<property_id>/reports` = saved monthly reports list, `/view/<property_id>/reports/<report_id>` = full report detail; `/view/<property_id>/maintenance` = maintenance tab (open + last 30 days resolved); `/view/<property_id>/notifications` = owner messages inbox.
-- **Ownership:** Property list shows only properties in `property_owners` for the logged-in owner (`session['owner_id']`). If an owner has no properties, the list is empty with "No properties assigned" empty state (no redirect). For any `/view/<property_id>/...` route, after loading the property the app checks that `(property_id, owner_id)` exists in `property_owners`; if not, returns 403.
-- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html` (no admin navbar). Child templates set `active_tab` (overview | arrears | payments | reports | maintenance | notifications) for pill nav; the view passes `active_tab` in context. Do not add a second `container` in child templates—the base provides `<main class="container py-4">`. Empty state uses `.empty-state` / `.empty-state-title` / `.empty-state-sub`.
-- **Auth:** Protected by shared password (env `VIEWER_PASSWORD`); login at `/view/login`, logout at `/view/logout`.
-- **Reports tab:** Shows list of admin-generated monthly reports; clicking opens `viewer/report_detail.html` which uses `enrich_report_data()` to back-fill fields for old reports.
-- **Messages tab:** Owner inbox at `/view/<property_id>/notifications`; renders `notifications.html`; marks all as read on page load. Broadcasts show `template_body` (unsubstituted) in monospace box with personalisation note. Notifications show body. `sent_by` shown as a colored pill badge next to the subject: blue=Admin, amber=Caretaker name, gray outline=System. Records with NULL `sent_by` (old data before attribution was added) show no badge. Unread messages highlighted yellow. **Query must SELECT all columns:** `id, subject, body, template_body, message_type, channel, recipient_count, sent_by, read_at, created_at` — omitting any column silently hides that data in the template.
-- **Link sharing:** Admin copies owner portal URL from Owners page (clipboard API button). One owner can have multiple properties via `property_owners` M:M.
+- **URLs:** `/view/` = property list; `/view/<property_id>` = dashboard; `/view/<property_id>/arrears`, `/payments`, `/reports`, `/reports/<report_id>`, `/maintenance`, `/notifications`.
+- **Auth:** Shared password (`VIEWER_PASSWORD`); login at `/view/login`.
+- **Ownership:** Property list filtered to `property_owners` for `session['owner_id']`. Any `/view/<property_id>/...` route checks `(property_id, owner_id)` in `property_owners`; returns 403 if not found.
+- **Templates:** All viewer pages extend `templates/viewer/base_viewer.html`; pass `active_tab` for pill nav.
+- **Reports tab:** Uses `enrich_report_data()` to back-fill fields for old saved reports before rendering.
+- **Messages tab (notifications):** Marks all as read on page load. **Query must SELECT all columns** (`id, subject, body, template_body, message_type, channel, recipient_count, sent_by, read_at, created_at`) — omitting any silently hides data. Broadcasts show `template_body` (unsubstituted). `sent_by` badge: blue=Admin, amber=Caretaker, gray=System.
+- **Link sharing:** One owner can have multiple properties via `property_owners` M:M; copy URL from Owners page.
 
 ## Caretaker Portal (/caretaker/*)
 
-- **URLs:** `/caretaker/<property_id>` = overview dashboard; `/caretaker/<property_id>/arrears` = full arrears list; `/caretaker/<property_id>/tenants` = tenant directory; `/caretaker/<property_id>/issues` = maintenance issues board; `POST /caretaker/<property_id>/issues/new` = log caretaker issue; `POST /caretaker/<property_id>/issues/<issue_id>/resolve` = mark issue resolved (optionally with note + in-app tenant notice); `GET/POST /caretaker/<property_id>/log-payment` = submit M-Pesa SMS claim for a tenant (creates payment_claims record with `source='caretaker'`).
-- **Auth (priority order):**
-  1. **DB accounts** (preferred): If any rows exist in `caretakers` table → login requires name + password. Session stores `caretaker_id`, `caretaker_name`, `caretaker_property_id`. On every request, `before_request` verifies `caretaker_id` still exists in DB — deleting the account immediately revokes access even for active sessions.
-  2. **Legacy shared password**: If no DB caretakers exist and `CARETAKER_PASSWORD` env var is set → single shared password, session key `caretaker_authenticated`.
-  3. **Dev mode**: If neither DB accounts nor env var → portal is open (no auth).
-  - Login at `/caretaker/login`, logout at `/caretaker/logout`. Login form shows name+password when DB accounts exist, password-only otherwise.
-- **`sent_by` attribution:** Broadcasts and notifications sent from caretaker portal use `session.get('caretaker_name', 'Caretaker')` as `sent_by` — so owner inbox shows the actual caretaker's name.
-- **Templates:** Extend `templates/caretaker/base_caretaker.html` (sticky header shows logged-in caretaker name + nav tabs + logout). `@media print` hides header for printable views.
-- **Data shown:** Occupancy KPIs, vacant unit pills, top arrears (unit + tenant + phone + KES balance + months badge), full tenant directory with phone. KES amounts ARE visible to caretakers.
-- **Log Payment tab:** Unit selector (occupied units only), M-Pesa SMS textarea, shows last 15 claims with Verified/Pending status. Parses SMS via `src/parsers/sms_parser.parse_mpesa_message`. Notifies property owners on submission.
-- **Print buttons:** Each tab has a "Print" button. Caretaker can print any tab as a PDF via browser.
-- **Blueprint:** `caretaker_bp` in `src/routes/caretaker_routes.py`, registered in `app.py`. Auth bypass added: paths starting with `/caretaker` are exempt from admin auth.
+- **URLs:** `/caretaker/<property_id>` = dashboard; `/arrears`, `/tenants`, `/issues`, `POST /issues/new`, `POST /issues/<id>/resolve`, `GET/POST /log-payment`.
+- **Auth (priority order):** 1) DB accounts in `caretakers` table (name+password, `before_request` verifies `caretaker_id` still exists — deletion revokes immediately); 2) `CARETAKER_PASSWORD` env var (shared password); 3) open in dev. Login at `/caretaker/login`.
+- **`sent_by` attribution:** Uses `session.get('caretaker_name', 'Caretaker')` so owner inbox shows actual caretaker name.
+- **Data:** Occupancy KPIs, vacant units, top arrears with KES amounts (KES visible to caretakers). Log Payment parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission.
+- **Blueprint:** `caretaker_bp` in `src/routes/caretaker_routes.py`. Paths starting with `/caretaker` are exempt from admin auth.
 
 ## Caretaker Management (Admin — /caretakers)
 
-- **URL:** `GET /caretakers` = list all caretakers; `POST /caretakers/new` = create; `POST /caretakers/<id>/edit` = update name/phone/property; `POST /caretakers/<id>/set-password` = set/change password; `POST /caretakers/<id>/delete` = delete (immediately revokes all active sessions).
-- **Template:** `templates/caretakers.html` — mirrors `owners.html` pattern. "Manage" collapse per caretaker shows edit form, password form, portal URL with login name, delete button.
-- **Workflow to replace a caretaker:** Create new account → brief new person → delete old account. Deletion takes effect on next request (DB verification in `before_request`).
-- **Sidebar nav:** "Caretakers" item in admin sidebar, active for all caretaker management endpoints.
+- **Routes:** `GET /caretakers`; `POST /caretakers/new`; `POST /caretakers/<id>/edit`; `POST /caretakers/<id>/set-password`; `POST /caretakers/<id>/delete` (immediately revokes all active sessions via `before_request` DB check).
+- **Replace workflow:** Create new → brief them → delete old. Deletion is instant.
 
 ## Monthly Reports Admin (/reports/*)
 
-- **Routes:** `GET /reports` = list saved reports; `GET/POST /reports/generate` = generate new report; `GET /reports/<id>` = preview report (admin view); `GET /reports/<id>/caretaker` = caretaker-formatted printable report.
-- **Report module:** `src/reports/landlord_report.py` — `generate_report()` computes all metrics and saves JSON to `landlord_reports` table; `enrich_report_data()` back-fills new fields for old saved reports (always call before rendering).
-- **Collection metric:** `vs_expected_income_pct = total_verified / expected_monthly_income * 100` — verified payments vs. what the property should collect per month. NOT verified ÷ period charges (that metric is misleadingly low for mid-month snapshots).
-- **PDF export:** "Export PDF" button calls `window.print()`; `@media print` CSS in `preview.html` hides sidebar/topbar. No server-side PDF generation needed.
-- **Caretaker report:** `GET /reports/<id>/caretaker` renders `caretaker_preview.html` — same data but formatted for caretaker use; includes KES amounts in arrears table.
+- **Routes:** `GET /reports`; `GET/POST /reports/generate`; `GET /reports/<id>`; `GET /reports/<id>/caretaker`.
+- **Report module:** `src/reports/landlord_report.py` — `generate_report()` saves JSON to `landlord_reports`; always call `enrich_report_data()` before rendering (back-fills fields for old reports).
+- **Collection metric:** `vs_expected_income_pct = total_verified / expected_monthly_income * 100` — NOT verified ÷ period charges (misleadingly low mid-month).
+- **PDF export:** `window.print()` — no server-side PDF generation.
 
 ## Charge Types & Monthly Workflow
 
@@ -383,43 +350,9 @@ Monthly charges have THREE components per tenant:
 - Overpayments (payment exceeds all charges) show as "Overpayment / Credit" in Export 3
 - If a payment is deleted, its allocations are automatically deleted (ON DELETE CASCADE)
 
-## Database (viewer-relevant)
-
-- **unit_balances** (VIEW): `unit_id`, `property_id`, `unit_number`, `monthly_rent`, tenant fields, `total_charged` (sums ALL charge types), `total_paid` (sums ALL payments), `balance`. Viewer uses it for arrears counts and sums. The view aggregates all charge types automatically.
-- **units:** `service_charge`, `apartment_size` (TEXT), `status` (`'occupied'` | `'vacant'` | `'office'`). Rentable units = total − office; occupancy rate = occupied / rentable.
-- **rent_charges:** `charge_type` ('rent' | 'service' | 'water'), `period` (YYYY-MM or 'ARREARS'), UNIQUE constraint on (unit_id, period, charge_type). Existing charges from before migration have `charge_type='rent'` (default).
-- **payment_allocations:** Links payments to specific charges. Used for Export 3 (payment verification audit trail). Query allocations per payment to see how payment was split across charges.
-
 ## Current Status
 
-- [x] PDF parser with balance validation
-- [x] SMS parser (M-Pesa formats)
-- [x] Excel parser for onboarding
-- [x] Water readings Excel parser (`water_parser.py`)
-- [x] Input router layer
-- [x] Test routes (/test/*)
-- [x] Viewer routes (/view/*) — property list, dashboard (occupancy, expected income, arrears), arrears tab (months behind, tel links), payments tab, reports tab
-- [x] Property onboarding flow (includes `apartment_size`, `charge_type` for ARREARS)
-- [x] Water charges upload (`/charges/water`)
-- [x] Charge generation (rent + service separately, `/charges/generate`)
-- [x] Payment allocation engine (FIFO, automatic on payment verification/assignment)
-- [x] Export 1: Current State Excel (unit breakdown by charge type)
-- [x] Export 2: Activity Log Excel (date-filtered audit trail)
-- [x] Export 3: Payment Verification Excel (3-sheet legal audit trail with allocations)
-- [x] Viewer auth (shared password via VIEWER_PASSWORD; login/logout routes)
-- [x] Database migrations (charge_type, apartment_size, payment_allocations) - auto-run at startup
-- [ ] User authentication (admin routes)
-- [x] Multi-property support (session-based property selection; selector in nav)
-- [x] Monthly report generator (`src/reports/landlord_report.py`) — 6-section report saved to DB
-- [x] Caretaker live portal (`/caretaker/*`) — operational view with named DB accounts (name+password per caretaker); falls back to CARETAKER_PASSWORD env var if no DB accounts exist
-- [x] Caretaker account management (`/caretakers`) — admin creates/edits/deletes named caretaker accounts; deletion immediately revokes active sessions via per-request DB check
-- [x] PDF export for reports (browser print with `@media print` CSS)
-- [x] Owners multi-property — assign multiple properties per owner; copy-link button in UI
-- [x] Mobile-friendly — sidebar backdrop, report columns collapse ≤600px, tables scroll horizontally
-- [x] Dev scripts — `scripts/run_dev.sh`, `scripts/download_prod_db.sh` (copies to both dev.db and rent.db), `scripts/reset_dev_db.sh`
-- [x] SMS delivery — Africa's Talking integration (`src/messaging/delivery.py`); broadcasts, reminders, and payment confirmations reach tenant phones
-- [x] Owner messages inbox — `owner_messages` table + `/view/<property_id>/notifications`; all SMS events (broadcasts, reminders, payment confirmations, reports) also stored in owner portal; `sent_by` attribution (Admin/Caretaker/System)
-- [x] Payment SMS wording — "payment confirmed" (no bank statement mechanics visible to tenants/caretakers)
+Phases 0–2 complete. See `ROADMAP.md` for full checklist. Notable incomplete item: admin route authentication (no login required currently).
 
 ## Agent System (Phase 5 — The Coordinator)
 
@@ -428,17 +361,32 @@ The agent layer is **channel-agnostic and additive**. It never modifies existing
 ### What the Agent Owns (runs without human input)
 - Daily balance snapshots (scheduler tick)
 - Monthly charge generation (if not done by day 3)
-- Weekly digest computation and delivery
-- Caretaker daily briefing (every morning)
+- Weekly digest computation and delivery (Monday morning)
+- Caretaker morning briefing: routine issues + nudges batched; urgent issues (`maintenance_issues.priority='urgent'`) forwarded immediately 24/7
+- Monthly tenant check-in outbound: 1–3 rating + optional free text; results aggregated into sentiment briefing
+- Payment rejection notification: fires when bank statement processed + claim has no matching reference
 - Reminder sending (replaces fragile dashboard-load trigger)
-- Anomaly detection: water charge >30% above 3-month average, vacancy >14/30/60 days, arrears threshold crossings, collection rate below pace vs same day last month
-- Task checker: missing bank statement, missing water charges, claims aging >7 days, unassigned transactions
+- Anomaly detection: water charge >30% above 3-month average (configurable), vacancy duration, arrears threshold crossings, collection pace
 
 ### What the Agent Flags (human decides)
-- Follow-up nudges: units with no payment/claim by day 15, open maintenance issues >7 days
+- Missing bank statement, water charges, claims aging >7 days, unassigned transactions
+- Units with no payment/claim by day 15 → physical follow-up nudge to caretaker
+- Arrears threshold crossings: nudge to caretaker + owner report (threshold and nudge frequency configurable per property)
+- Water anomaly: caretaker must acknowledge; non-response logged for owner report
+- Tenant departure (unit goes vacant): caretaker must comment
+- Caretaker escalation requests: routed per `caretaker_request_routing` config; always in owner report
+- Caretaker acknowledgment failures (24h window): logged for owner report
 - Low-confidence inbound parses: ask before acting
-- Arrears threshold crossings: surfaced to owner + caretaker, not auto-acted
 - Owner instructions from inbound replies: logged + routed to caretaker
+
+### Language
+All Domi outbound messages support English and Kiswahili. Tenant language preference stored in `tenants.language_preference`. NULL = not yet set; triggers "English or Kiswahili?" prompt on first inbound contact. All responses thereafter use the stored preference.
+
+### Tenant Flagging
+Triggered when a payment claim's M-Pesa reference is absent from the bank statement (confirmed falsification, not a timing lag). Flagged state: `tenants.flagged = true`. Flagged tenants' future claims don't receive pending-state treatment (still logged, but not treated as likely-real). Admin clears manually via admin portal. All flag events logged.
+
+### Admin Task Feed
+Domi task feed embedded on the main admin dashboard (Option A: extend dashboard route + `dashboard.html`; `base.html` untouched). Pending tasks, anomalies, caretaker requests, flagged items, and unresolved issues surface here. Admin's primary UI — first thing seen on login, returned to after each completed task.
 
 ### Agent Admin Routes (/agent/*)
 - `GET /agent/simulator` — message simulator: type as any user, see intent classification + action + response
@@ -474,26 +422,14 @@ POST /inbound/sms or /inbound/whatsapp
 Any message sent to a user who hasn't messaged in the last 24 hours requires a Meta-approved template. Templates are plain text with `{{1}}` variables. All briefings, digests, reminders, charge notifications, and anomaly alerts must be pre-approved before the WhatsApp channel goes live. SMS remains the fallback.
 
 ### Channel Configuration
-- `AT_USERNAME=sandbox` → SMS sandbox mode (no real messages)
-- `AT_WHATSAPP_ENABLED=true/false` → enable/disable WhatsApp channel
-- WhatsApp adapter in `src/agent/router.py` is a stub (logs "would send via WhatsApp") until credentials are live and templates approved
+- `AT_USERNAME=sandbox` → SMS sandbox mode; `AT_WHATSAPP_ENABLED=true/false` → toggle WhatsApp
+- WhatsApp adapter in `src/agent/router.py` is a stub until credentials are live and templates approved
 
 ## Scaling Architecture
 
-### Current (1–5 properties)
-SQLite is fine. APScheduler runs background jobs in-process. One gunicorn worker. Africa's Talking SMS.
-
-### Near-term (5–15 properties)
-- Migrate SQLite → PostgreSQL on Fly.io (one command)
-- Add second Fly.io worker for agent jobs (separate from web workers)
-- Redis + RQ for job queue (replace APScheduler)
-- WhatsApp Business API live
-
-### Scale (15+ properties)
-- `src/agent/` extracted to a separate Fly.io app
-- PostgreSQL with connection pooling (PgBouncer)
-- Dedicated inbound message processor service
-- Newsletter (Phase 7) runs as fully separate infrastructure
+- **1–5 properties (now):** SQLite + APScheduler in-process + single gunicorn worker
+- **5–15 properties:** SQLite → PostgreSQL (one command), Redis + RQ for jobs, second Fly worker
+- **15+ properties:** `src/agent/` extracted to separate Fly app, PgBouncer, dedicated inbound processor
 
 ### Architectural Rules (set now, cheap to enforce, expensive to retrofit)
 1. **Agent logic never imports from routes.** They communicate via the DB only.
@@ -519,74 +455,22 @@ Admin uses **session-based** property selection. The currently selected property
 
 ## Tenant Portal (/tenant/*)
 
-- **Auth:** URL contains the credential; no session or password. Token is `tenants.access_token` (generated via admin "Generate link", revoked via "Revoke").
-- **Bypass:** `require_admin_auth` exempts paths starting with `/tenant`.
-- **Routes:** `GET /tenant/<token>` = overview (balance + recent messages); `GET /tenant/<token>/charges` = charges by period with paid/unpaid; `GET /tenant/<token>/payments` = payments with allocation trail; `GET /tenant/<token>/messages` = inbox (marks unread as read on view); `GET /tenant/<token>/maintenance` = maintenance issues list + submission form; `POST /tenant/<token>/maintenance/new` = log new maintenance issue for the tenant’s unit.
-- **Helper:** `_get_tenant_by_token(conn, token)` in `tenant_routes.py` returns (tenant, unit, property) or None; invalid/revoked token renders `tenant/invalid_token.html`.
-- **Data-descriptive language:** All tenant-facing text uses data voice.
+- **Auth:** Token in URL (`tenants.access_token`); no session. `require_admin_auth` exempts `/tenant` paths.
+- **Routes:** `GET /tenant/<token>` = overview; `/charges`, `/payments`, `/messages`, `/maintenance`; `POST /maintenance/new`.
+- **Helper:** `_get_tenant_by_token(conn, token)` in `tenant_routes.py` returns (tenant, unit, property) or None.
+- **Data-descriptive language** required on all tenant-facing text.
 
 ## Messaging (Admin)
 
-- **Scope:** Current property only; no property switcher inside Messages. `get_current_property(conn)` is defined locally in `messaging_routes.py` (and in `report_routes.py`); no import from app.
-- **Routes:** `GET /messages`, `GET/POST /messages/broadcast`, `GET /messages/templates`, `GET/POST /messages/templates/<id>/edit`, `GET/POST /messages/reminders`, `GET/POST /messages/schedules` (reminder_schedules CRUD).
-- **Broadcast:** One `messages` row per recipient with shared `batch_id`; `template_body` stores the original unsubstituted template; audit log `broadcast_sent`. Reminders: two systems coexist — (1) **reminder_settings**: legacy hardcoded keys (rent_due_10d, rent_due_5d, etc.); (2) **reminder_schedules**: flexible per-property schedules (label, template_key, days_before_due, send_to). Both run on dashboard load; idempotent per day. Due dates use `properties.rent_due_day` and `rent_charges.due_date`.
-- **SMS Delivery:** `src/messaging/delivery.py` wraps Africa's Talking API. `send_sms(recipients, message)` normalizes Kenyan numbers (07xx → +2547xx) and sends. Credentials via env: `AT_USERNAME` (default `sandbox`), `AT_API_KEY`, `AT_SENDER_ID`. Sandbox mode uses `AT_USERNAME=sandbox` — no real SMS sent. Broadcasts, reminders, payment confirmations all call `send_sms`.
-- **Owner notifications:** `src/messaging/owner_notify.py` — `notify_property_owners(conn, property_id, message, portal_subject=None, portal_body=None, template_body=None, channel=None, recipient_count=None, message_type='notification', sent_by=None)`. Fetches property owners, stores each message in `owner_messages`, and sends SMS to owners who have phones. Called from: broadcasts (admin + caretaker), reminders, payment verifications, report generation, caretaker payment claims.
-- **Payment SMS wording:** "payment confirmed" — avoids exposing bank statement verification mechanics to tenants/caretakers.
-
-## Test Endpoints
-
-- `POST /test/parse` - Auto-detect and parse any input
-- `POST /test/parse/sms` - Test SMS parser
-- `POST /test/parse/excel` - Test Excel parser
-- `POST /test/parse/pdf` - Test PDF parser
-- `POST /test/detect` - Test type detection only
-- `POST /test/crud/property` - Create property (commits to DB, dev only)
-- `POST /test/crud/unit` - Create unit
-- `POST /test/crud/tenant` - Create tenant
-- `POST /test/crud/charge` - Create charge (accepts optional `charge_type` in JSON, defaults to 'rent')
-- `GET /test/crud/balance/<unit_id>` - Get unit balance
-
-## Admin Routes
-
-**Property selection:**
-- `GET /properties` - List properties to select; auto-selects and redirects if only one exists
-- `GET /properties/select/<property_id>` - Set active property in session, redirect to dashboard
-
-**Monthly Reports:**
-- `GET /reports` - List saved reports for current property
-- `GET/POST /reports/generate` - Generate and save a new monthly report
-- `GET /reports/<report_id>` - Preview saved report (admin view with all financials)
-- `GET /reports/<report_id>/caretaker` - Caretaker-formatted printable view of report
-
-**Charges:**
-- `GET/POST /charges/water` - Upload water readings Excel (creates `charge_type='water'` records)
-- `GET/POST /charges/generate` - Generate rent + service charges for a period (creates separate records)
-
-**Exports:**
-- `GET /export/current-state` - Download current state Excel (all units with charge breakdown)
-- `GET /export/activity?from=YYYY-MM-DD&to=YYYY-MM-DD` - Download activity log Excel
-- `GET /export/payments?from=YYYY-MM-DD&to=YYYY-MM-DD` - Download payment verification Excel (3 sheets)
-- `GET /export` - Export landing page with date pickers
-
-**Payment Processing:**
-- `POST /verify` - Auto-verify payment claims against bank transactions (calls `allocate_payment()` automatically)
-- `GET/POST /assign/<txn_id>` - Manually assign unassigned transaction to unit (calls `allocate_payment()` automatically)
-
-**Caretaker Management:**
-- `GET /caretakers` - List all caretaker accounts across properties
-- `POST /caretakers/new` - Create caretaker account (name, phone, property_id, optional password)
-- `POST /caretakers/<id>/edit` - Update name, phone, property assignment
-- `POST /caretakers/<id>/set-password` - Set or change password
-- `POST /caretakers/<id>/delete` - Delete account (immediately revokes active sessions)
+- **Scope:** Current property only. `get_current_property(conn)` defined locally in `messaging_routes.py` and `report_routes.py` (not imported from app).
+- **Routes:** `GET /messages`; `GET/POST /messages/broadcast`, `/templates`, `/templates/<id>/edit`, `/reminders`, `/schedules`.
+- **Broadcast:** One `messages` row per recipient with shared `batch_id`; `template_body` stores unsubstituted template.
+- **Reminders:** Two coexisting systems — `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both run on dashboard load; idempotent per day. Due dates use `properties.rent_due_day` and `rent_charges.due_date`.
+- **SMS Delivery:** `send_sms(recipients, message)` in `delivery.py` normalizes Kenyan numbers (07xx → +2547xx). Env: `AT_USERNAME` (default `sandbox`), `AT_API_KEY`, `AT_SENDER_ID`.
+- **Owner notifications:** `notify_property_owners(conn, property_id, message, ...)` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims.
+- **Payment SMS wording:** "payment confirmed" — never expose bank statement mechanics.
 
 ## Key Implementation Details
-
-**Charge Type Migration:**
-- Migration recreates `rent_charges` table to add `charge_type` column and change UNIQUE constraint
-- Backs up database before migration (`rent.db.backup_before_charge_type`)
-- Drops and recreates `unit_balances` VIEW after table recreation
-- Existing charges get `charge_type='rent'` (default)
 
 **Payment Allocation Logic:**
 - `allocate_payment(conn, payment_id, unit_id, amount)` in `src/database/db.py`
@@ -596,50 +480,28 @@ Admin uses **session-based** property selection. The currently selected property
 - Creates `payment_allocations` records for each allocation
 - Returns list of allocation dicts (for audit/export purposes)
 
-**Export Queries:**
-- Export 1: Groups charges by `charge_type` per unit, calculates due = charged - paid per type
-- Export 2: Simple audit_log query with date filter
-- Export 3: Joins payments → allocations → charges to show full allocation trail, includes overpayment detection
+**Exports:**
+- Export 1: Current state by charge type per unit
+- Export 2: Audit log with date filter (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
+- Export 3: Payment verification — 3 sheets with full allocation trail; most complex
+- All exports use `openpyxl`, log to `audit_log` automatically
 
-**Templates:**
-- All viewer templates extend `viewer/base_viewer.html` (no admin nav)
-- Admin templates extend `base.html` (full nav with Charges dropdown, Exports dropdown)
-- `generate_charges.html` shows two-step workflow (water first, then rent+service)
-- `dashboard.html` hint updated to mention water charges first
+**Templates:** Viewer templates extend `viewer/base_viewer.html`; admin templates extend `base.html`.
 
 ## Important Notes for AI Agents
 
-**Database Migrations:**
-- All migrations run automatically at startup in `app.py` (after `init_database()`)
-- Migrations are idempotent - safe to call multiple times
-- `migrate_add_charge_type()` backs up database before table recreation
-- `migrate_allocate_existing_payments()` processes any payments without allocations (idempotent)
+**Database Migrations:** All migrations auto-run at startup in `app.py`. All are idempotent — safe to call multiple times.
 
 **Charge Type Handling:**
-- Always specify `charge_type` when creating `rent_charges` records ('rent', 'service', or 'water')
-- UNIQUE constraint is `(unit_id, period, charge_type)` - same unit can have all three types for same period
-- When querying charges, filter by `charge_type` if you need specific type, or aggregate all types for totals
+- Always specify `charge_type` when creating `rent_charges` ('rent' | 'service' | 'water')
+- UNIQUE constraint: `(unit_id, period, charge_type)` — same unit can have all three types per period
+- Aggregate all types for totals; filter by type for specific queries
 
-**Payment Allocation:**
-- Allocation happens automatically - do NOT call `allocate_payment()` manually unless creating payments outside normal flow
-- If modifying payment amounts or deleting payments, allocations are handled automatically (CASCADE delete)
-- Overpayments are tracked but not stored separately - Export 3 calculates unallocated amount dynamically
+**Payment Allocation:** Happens automatically on verify/assign — do NOT call `allocate_payment()` manually. Allocations cascade-delete when payment is deleted.
 
-**Viewer Routes:**
-- Viewer routes (`/view/*`) are separate blueprint - do not modify `base.html` for viewer changes
-- Viewer uses `unit_balances` VIEW which aggregates all charge types automatically
-- Viewer totals remain correct even with multiple charge types (view sums everything)
+**Viewer Routes:** Separate blueprint (`/view/*`) — never modify `base.html` for viewer changes. Uses `unit_balances` VIEW which aggregates all charge types.
 
-**Export Generation:**
-- All exports use `openpyxl` (already in requirements.txt)
-- Exports log to `audit_log` automatically
-- Export 3 (payment verification) is the most complex - includes 3 sheets with allocation breakdown
-- Date ranges use query params `?from=YYYY-MM-DD&to=YYYY-MM-DD` (defaults to all time if not provided)
-
-**Water Parser:**
-- Reuses `parse_currency()` from `excel_parser.py` - do not duplicate this function
-- Column normalization handles variations: "House No", "Unit No", "Water Charge", "Water", etc.
-- Skips rows with water_charge = 0 (warns but doesn't error)
+**Water Parser:** Reuses `parse_currency()` from `excel_parser.py` — do not duplicate. Skips rows with water_charge = 0.
 
 ## Local Development
 
@@ -681,17 +543,6 @@ Key: `run_dev.sh` sets `DATABASE_PATH` to `data/dev.db` and unsets all password 
 - Social media: zero presence currently
 - The custom tech is a genuine differentiator vs. other property managers in Kenya
 - WhatsApp Business API: application process should be started for future Phase 3 (weekly digest delivery)
-
-## Feature Phases & Status
-
-See `ROADMAP.md` for the full product vision, detailed phase descriptions, and checklist status.
-
-Summary:
-- **Phase 0 (Core Engine):** COMPLETE — parsing, matching, allocation, exports, auth, deployment
-- **Phase 1 (The Pulse — Dashboard):** COMPLETE — collection gap, three-state payments, vacancy cost, arrears concentration
-- **Phase 2 (The Ledger — Monthly Report):** COMPLETE — report generator, admin routes, viewer Reports tab
-- **Phase 3 (The Signal — Weekly Digest):** FUTURE — requires email/WhatsApp delivery
-- **Phase 4 (The Investment View — Yearly):** FUTURE — requires 12+ months of data
 
 ## Agent Coordination Rules
 

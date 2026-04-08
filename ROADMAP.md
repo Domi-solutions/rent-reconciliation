@@ -93,7 +93,7 @@ Delivered automatically via email/WhatsApp. Only surfaces changes. Brevity IS th
 
 **Requires:** Email/WhatsApp delivery infrastructure. WhatsApp Business API application has lead time.
 **Requires:** `balance_snapshots` table (daily snapshots) — prerequisite for arrears comparison.
-**Status:** IN PROGRESS — `balance_snapshots` and APScheduler are the first build items.
+**Status:** IN PROGRESS — `balance_snapshots`, APScheduler, and detector foundations are now in place; digest/inbound wiring is next.
 
 ### Layer 4: The Investment View (Yearly Report)
 **Question it answers:** "Is this property performing as a financial asset?"
@@ -119,18 +119,27 @@ The agent monitors system state continuously and routes the right action to the 
 - Daily balance snapshots
 - Monthly charge generation (if not done by day 3)
 - Weekly digest delivery (Monday morning)
-- Caretaker daily briefing (every morning via WhatsApp/SMS)
+- Caretaker morning briefing (every morning): routine issues + nudges batched; urgent issues forwarded immediately 24/7 regardless of time
+- Monthly tenant check-in outbound: 1–3 rating + optional free text; results aggregated into sentiment briefing for caretaker and owner
 - Reminder sending (on real schedule, not dashboard-load side-effect)
-- Anomaly detection: water charge spikes, vacancy duration, arrears thresholds, collection pace
+- Payment rejection notification: when bank statement processed and claim has no matching reference → tenant gets "we could not verify your payment, please contact us"; admin sees unverified claims in portal
+- Anomaly detection: water charge spikes (>30% above 3-month avg, threshold configurable), vacancy duration, arrears thresholds, collection pace
 
 **What the agent flags (human decides):**
 - Missing bank statement / water charges / report (task prompts to admin)
-- Units with no payment or claim activity by day 15 (follow-up nudge to caretaker)
+- Units with no payment or claim activity by day 15 → physical follow-up nudge to caretaker ("call or visit unit X — no payment activity")
+- Arrears threshold crossings (nudge to caretaker + surfaced in owner report; threshold and nudge frequency configurable per property)
+- Water bill anomaly → caretaker must acknowledge or comment (logged if no response)
+- Tenant departure (unit goes vacant) → caretaker must comment for owner report context
 - Open maintenance issues aging past 7 days
-- Arrears threshold crossings (owner + caretaker notified)
+- Caretaker escalation requests (supply, repair, other) → routed per `caretaker_request_routing` config (admin only / owner only / both); always captured in owner report
+- Caretaker acknowledgment failures: if caretaker doesn't respond to a forwarded issue within 24h → logged for owner report
 - Low-confidence inbound parses (asks before acting)
 
-**Status:** PLANNED — builds on top of Phase 3 infrastructure. See `CURSOR_PLAN.md` for build sequence.
+**Admin task feed (dashboard integration):**
+Domi task feed embedded on admin dashboard alongside existing financial KPIs (Option A: dashboard route extended, base.html untouched). Admin sees pending actions on first load; returns to dashboard after completing each task for "what next." This is the primary UI element for admin day-to-day use.
+
+**Status:** PLANNED — builds on top of Phase 3 infrastructure.
 
 ---
 
@@ -140,25 +149,33 @@ The agent monitors system state continuously and routes the right action to the 
 Every user gets a conversational input channel via WhatsApp/SMS. Natural language in, structured data out. Builds the qualitative data layer no other property tool captures.
 
 **Tenant inbound:**
-- Check-in replies (1/2/3) → structured sentiment record
-- Free-text maintenance reports → issue created and categorized automatically
-- M-Pesa confirmation forwarded → payment claim created
-- Balance queries → answered instantly
+- M-Pesa SMS forwarded → payment claim created; tenant enters pending state (treated as likely paid, not chased like non-payer). Falsified/rejected reference → tenant flagged; future claims lose pending status. Flag cleared by admin only.
+- Check-in replies (1/2/3 + optional free text) → intent classification tags category (maintenance/staff/neighbour/general); no multi-question flows
+- Complaints (maintenance, noise, domestic violence, staff) → issue created and categorized; caretaker notified per urgency
+- Balance / payment history query → answered from live DB
+- Local amenities query ("nearest pharmacy", "wifi provider") → pulled from `property_info` table; available anytime, not just on greeting
+- Unknown/ex-tenant numbers → polite decline ("we don't have an active account for this number")
+- Greeting → Domi responds with suggested help options
+- Language preference: first contact from new tenant triggers "English or Kiswahili?" prompt; preference stored on tenant record; all future messages in their language
 
 **Caretaker inbound:**
+- Issue acknowledgment reply → logged against forwarded issue; clears pending acknowledgment flag
 - "Fixed the tap in B7" → closes maintenance issue
 - "Unit A3 guy says he'll pay Friday" → follow-up note logged against unit with date
 - "New tenant in F1 on 1st April" → occupancy update flagged to admin
-- Payment logging: ref + amount → claim created
+- Payment logging (M-Pesa ref + unit) → claim created; caretaker source recorded
+- Escalation request (supply, repair, anything needed) → routed per property config; always in owner report
+- Broadcast to all tenants → sent via Domi channel
+- Rent notice to specific tenant → targeted message
 
-**Owner inbound:**
+**Owner inbound (conversational AI — SQL-backed):**
 - Replies to weekly digest → parsed as queries or instructions
 - "Follow up on A3 urgently" → logged as owner instruction, routed to caretaker
-- Questions answered instantly from live DB data
+- Questions answered from live DB data: "how much collected this month?", "which unit has most arrears?", "what maintenance issues are open?" → intent classified → SQL query → LLM formats response in data-descriptive voice
+- Full conversation context: owner can think, plan, and analyze their property with Domi as the interface to their own data
+- RAG / vector DB for qualitative data (tenant feedback, caretaker notes) added in a later iteration once sufficient data exists
 
 **Confidence rule:** ≥0.85 → act and confirm. Below 0.85 → ask before acting. Never silent failures.
-
-**Monthly tenant check-ins:** Periodic SMS "How is everything? Reply 1/2/3." Responses aggregated by AI into sentiment briefing for caretaker and owner. Patterns over time are leading indicators of tenant departures.
 
 **Status:** PLANNED — built on top of Phase 5 infrastructure. Requires WhatsApp Business API approval (apply now — long lead time).
 
@@ -197,11 +214,17 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `reminder_schedules` table — flexible per-property schedules (label, template_key, days_before_due, send_to)
 - [x] `owner_messages` table (migration: `migrate_add_owner_messages` in `db.py`) — owner portal inbox; stores all SMS notifications + broadcasts
 - [x] `caretakers` table (migration: `migrate_add_caretakers` in `db.py`) — named caretaker accounts; id, property_id, name, phone, password_hash
-- [ ] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently by scheduler (not dashboard load).
+- [x] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently by scheduler (not dashboard load).
 - [ ] `inbound_messages` table — all inbound messages from any channel; async processing pipeline
 - [ ] `inbound_sessions` table — conversation state (24-hour window); resolves "yes"/"no" replies
 - [ ] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
-- [ ] APScheduler setup in `app.py` — real job scheduler replacing dashboard-load side-effects
+- [ ] `property_info` table — local amenities per property: id, property_id, category (pharmacy/grocery/wifi/hospital/gas/etc.), name, details. Admin-managed at onboarding or anytime. Queried when tenant asks Domi about local services.
+- [ ] `tenants.language_preference` column — `'en'` | `'sw'` | NULL. NULL = not yet set; triggers language prompt on first inbound contact. Stored permanently on tenant record.
+- [ ] `tenants.flagged` column — boolean, default false. Set when payment claim rejected (M-Pesa reference absent from bank statement). Cleared manually by admin only.
+- [ ] `tenants.flagged_reason`, `tenants.flagged_at` — text + timestamp, nullable. Set alongside `flagged`.
+- [ ] `maintenance_issues.priority` column — `'urgent'` | `'routine'`, default `'routine'`. Urgent = forward to caretaker immediately (24/7). Routine = next morning briefing.
+- [ ] `caretaker_request_routing` table — per-property config: property_id, notify_admin (bool), notify_owner (bool). Governs where caretaker escalation requests are routed. Owner report always captures all requests regardless of routing config.
+- [x] APScheduler setup in `app.py` — real job scheduler replacing dashboard-load side-effects
 
 ### Phase 0: Core Reconciliation Engine
 - [x] PDF bank statement parser
@@ -304,50 +327,111 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] WhatsApp Business API credentials + send function
 - [ ] Email delivery (Resend or SMTP) — future
 
-### Phase 3: The Signal (Weekly Digest)
-- [ ] `balance_snapshots` table + migration (prerequisite)
-- [ ] APScheduler setup — real scheduler in `app.py`
+### Phase 3: The Signal + Inbound Foundation
+- [x] `balance_snapshots` table + migration (prerequisite for arrears comparison)
+- [x] APScheduler setup — real scheduler in `app.py`
+- [x] `src/agent/` module skeleton (`coordinator.py`, `detector.py`, `briefings.py`, `router.py`, `llm.py`)
+- [x] Delivery router abstraction (`src/agent/router.py`) — portal / SMS adapters wired; WhatsApp stub
 - [ ] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
 - [ ] Admin preview route `GET /agent/digest/preview/<property_id>`
+- [ ] Inbound webhook foundation — `POST /inbound/sms` and `POST /inbound/whatsapp` → write to `inbound_messages`, return 200 immediately
+- [ ] `inbound_messages` + `inbound_sessions` tables + migrations
+- [ ] `tenants.language_preference` column + migration
+- [ ] Payment rejection notification: fires when bank statement processed + claim has no matching reference → SMS to tenant
 - [ ] Scheduled delivery — Monday morning via SMS (WhatsApp added later)
 
-### Phase 4: The Investment View (Yearly)
-- [ ] Requires 12+ months of data accumulation
-- [ ] Annual collection rate + month-by-month trend
-- [ ] Arrears trajectory over 12 months
-- [ ] Tenant reliability scoring (payment timing, arrears history, claim behavior)
-- [ ] Revenue composition (rent vs service vs water)
-- [ ] PDF export
+### Phase 4: The Conversation — All Roles
+*Pulled forward from Layer 6 — core to the product value proposition.*
 
-### Phase 5: The Coordinator (AI Agent Layer)
-- [ ] `src/agent/` module skeleton (`coordinator.py`, `detector.py`, `briefings.py`, `router.py`, `llm.py`)
-- [ ] Delivery router abstraction (`src/agent/router.py`) — portal / SMS adapters wired; WhatsApp stub
-- [ ] Task checker — missing bank statement, water charges, charge generation, stale claims
-- [ ] Anomaly detector — water charge spikes (>30% above 3mo avg), vacancy duration, arrears thresholds, collection pace
-- [ ] Follow-up nudge generator — no payment/claim by day 15, aging maintenance issues
-- [ ] Caretaker daily briefing generator + preview route
-- [ ] Owner monthly briefing generator + preview route
-- [ ] Admin task checklist generator + preview route
-- [ ] Wire all briefings to SMS delivery
-- [ ] Agent admin routes blueprint (`src/routes/agent_routes.py`)
-
-### Phase 6: The Conversation (Inbound Free-Text)
-- [ ] `inbound_messages` table + migration
-- [ ] `inbound_sessions` table + migration (conversation state)
+**Tenant:**
 - [ ] `src/agent/llm.py` — LLM wrapper (Anthropic Claude API)
-- [ ] `src/agent/inbound.py` — intent classifier (11 intent types)
-- [ ] Action handlers per intent (maintenance_report, maintenance_resolve, payment_claim, followup_note, query_balance, query_arrears, checkin_reply, owner_instruction, occupancy_update, confirmation, unknown)
+- [ ] `src/agent/inbound.py` — intent classifier; extended intent set (see below)
 - [ ] `src/agent/state.py` — session state management
-- [ ] `src/agent/responder.py` — response message generator
-- [ ] Message simulator admin page (`GET /agent/simulator`) — test all inbound scenarios without WhatsApp
+- [ ] `src/agent/responder.py` — response message generator (bilingual: EN/SW)
+- [ ] Language preference prompt on first contact; store to `tenants.language_preference`
+- [ ] Payment claim via WhatsApp/SMS → pending state (not treated same as non-payer)
+- [ ] Falsification detection: claim rejected after bank statement → `tenants.flagged = true`; flagged claims lose pending status; admin clears manually
+- [ ] `tenants.flagged`, `tenants.flagged_reason`, `tenants.flagged_at` columns + migration
+- [ ] Complaint submission (maintenance, noise, domestic violence, staff) → `maintenance_issues` record + urgency routing
+- [ ] `maintenance_issues.priority` column + migration (`'urgent'` | `'routine'`)
+- [ ] Balance / payment history query → answered from live DB
+- [ ] Local amenities query → pull from `property_info` table (anytime, not just on greeting)
+- [ ] `property_info` table + migration + admin management UI
+- [ ] Unknown number → polite decline
 - [ ] `checkin_responses` table + migration
-- [ ] Tenant check-in scheduler — monthly SMS to all active tenants
-- [ ] Check-in response aggregator + sentiment summary generator
+- [ ] Monthly check-in outbound: Domi sends "How is everything? Reply 1/2/3 + optional comment"
+- [ ] Check-in response handler: store numeric + free text, classify category via LLM
+- [ ] Check-in aggregator: monthly sentiment briefing for caretaker and owner
+
+**Caretaker:**
+- [ ] Issue acknowledgment reply → logged; clears pending flag; failure within 24h logged for owner report
+- [ ] Maintenance issue resolution via message → closes issue in DB
+- [ ] Follow-up note logging (unit + comment + implied date)
+- [ ] Occupancy update → flagged to admin
+- [ ] Payment logging via message (M-Pesa ref + unit assignment)
+- [ ] Escalation request → `caretaker_request_routing` config → notify admin/owner/both; always in owner report
+- [ ] `caretaker_request_routing` table + migration + admin config UI
+- [ ] Broadcast to all tenants via Domi
+- [ ] Rent notice to specific tenant
+
+**Owner:**
+- [ ] Owner inbound reply handler (digest responses, queries, instructions)
+- [ ] Owner instruction → logged + routed to caretaker
+- [ ] Owner conversational Q&A: classify intent → SQL query → LLM formats response in data-descriptive voice
+- [ ] Initial query set: collections (period/YTD), arrears (by unit/total), maintenance (open issues, aging), occupancy, payment history by unit
+
+**Infrastructure:**
+- [ ] Message simulator admin page (`GET /agent/simulator`) — test all inbound scenarios as any user role
 - [ ] Africa's Talking inbound SMS webhook (`POST /inbound/sms`)
 - [ ] WhatsApp Business API credentials + inbound webhook (`POST /inbound/whatsapp`)
 - [ ] Pre-approve all outbound WhatsApp templates (list in `CURSOR_PLAN.md`)
 
-### Phase 7: The Voice (Newsletter)
+**Extended intent set:**
+`maintenance_report` | `maintenance_resolve` | `payment_claim` | `followup_note` | `query_balance` | `query_arrears` | `query_collections` | `query_maintenance` | `checkin_reply` | `local_amenity_query` | `owner_instruction` | `escalation_request` | `occupancy_update` | `confirmation` | `greeting` | `unknown`
+
+---
+
+### Phase 5: The Coordinator — Admin Intelligence Layer
+
+- [ ] Task checker — missing bank statement, water charges, charge generation, stale claims
+- [ ] Anomaly detector — water charge spikes, vacancy duration, arrears threshold crossings, collection pace
+- [ ] Caretaker morning briefing: batches routine issues, nudges, anomalies; urgent issues bypass and go immediately
+- [ ] Arrears nudge to caretaker: configurable threshold (default >2 months) + frequency (default every 2 weeks) per property
+- [ ] Physical follow-up nudge: no payment/claim by day 15 → caretaker prompt to call/visit unit
+- [ ] Water anomaly nudge: caretaker must acknowledge; non-response logged for owner report
+- [ ] Tenant departure nudge: caretaker must comment when unit goes vacant
+- [ ] Admin task feed on dashboard: extend dashboard route + `dashboard.html` to show Domi pending actions alongside financial KPIs (base.html untouched)
+- [ ] Owner monthly briefing with LLM narrative layer: pass structured report JSON to Claude → narrative summary + recommendations in data-descriptive voice
+- [ ] Admin preview routes: `GET /agent/digest/preview/<property_id>`, `GET /agent/briefing/caretaker/<property_id>/preview`, `GET /agent/briefing/owner/<property_id>/preview`, `GET /agent/checklist/<property_id>/preview`
+- [ ] `POST /agent/trigger/<job_name>` — manual job trigger for dev/testing
+- [ ] Agent admin routes blueprint (`src/routes/agent_routes.py`)
+- [ ] Wire all briefings to SMS delivery
+
+---
+
+### Phase 6: Owner Intelligence (SQL-backed Conversational AI)
+
+- [ ] Extend owner Q&A with broader query coverage (payment trends, tenant reliability patterns, vacancy history)
+- [ ] Owner can initiate conversation (not just reply to digest) — "ask Domi anything about my property"
+- [ ] Response quality tuning: prompt engineering for data-descriptive voice, accurate SQL generation
+- [ ] Qualitative data aggregation: surface patterns from `checkin_responses` free text to owner
+- [ ] RAG / vector DB for qualitative layer (tenant feedback text, caretaker notes) — added when sufficient data exists; modular, does not replace SQL-backed Q&A
+
+---
+
+### Phase 7: The Investment View (Yearly Report)
+*Deferred — requires 12+ months of structured data.*
+
+- [ ] Annual collection rate + month-by-month trend
+- [ ] Arrears trajectory over 12 months
+- [ ] Tenant reliability scoring (payment timing, arrears history, claim behavior)
+- [ ] Revenue composition (rent vs service vs water)
+- [ ] Year-over-year comparison
+- [ ] PDF export
+
+---
+
+### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
 - [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"
 - [ ] Read-only aggregate stats API endpoint (`GET /api/v1/aggregate-stats`) in this codebase

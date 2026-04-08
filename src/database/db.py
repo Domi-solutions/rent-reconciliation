@@ -729,3 +729,26 @@ def migrate_add_caretakers():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_caretakers_property ON caretakers(property_id)")
         print("Migration complete: caretakers table ready.")
+
+
+def migrate_add_balance_snapshots():
+    """Create balance_snapshots table for daily unit snapshots. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS balance_snapshots (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                unit_id TEXT NOT NULL REFERENCES units(id),
+                snapshot_date TEXT NOT NULL,
+                balance REAL NOT NULL,
+                total_charged REAL NOT NULL,
+                total_paid REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (unit_id, snapshot_date)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_balance_snapshots_property_date "
+            "ON balance_snapshots(property_id, snapshot_date)"
+        )
+        print("Migration complete: balance_snapshots table ready.")
