@@ -14,7 +14,8 @@ from src.agent.coordinator import (
     morning_briefings_job,
     weekly_digest_job,
 )
-from src.database.db import get_connection
+from src.agent.inbound import process_inbound_message
+from src.database.db import generate_id, get_connection
 
 agent_bp = Blueprint("agent", __name__, url_prefix="/agent")
 
@@ -124,4 +125,90 @@ def trigger_job(job_name):
     except Exception as exc:
         flash(f"Failed to trigger {job_name}: {exc}", "error")
     return redirect(request.referrer or url_for("dashboard"))
+
+
+@agent_bp.route("/simulator", methods=["GET", "POST"])
+def simulator():
+    """Inbound simulator for admin testing."""
+    with get_connection() as conn:
+        current_property = get_current_property(conn)
+        properties = conn.execute(
+            "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
+        ).fetchall()
+
+        selected_property_id = request.form.get("property_id") or (current_property["id"] if current_property else None)
+        selected_role = request.form.get("sender_role", "tenant")
+        selected_unit_id = request.form.get("unit_id")
+        sender_phone = request.form.get("sender_phone", "").strip()
+        raw_text = request.form.get("raw_text", "").strip()
+
+        units = []
+        if selected_property_id:
+            units = conn.execute(
+                "SELECT id, unit_number FROM units WHERE property_id = ? ORDER BY unit_number",
+                (selected_property_id,),
+            ).fetchall()
+
+        result = None
+        if request.method == "POST":
+            if not selected_property_id:
+                flash("Select a property.", "error")
+                return redirect(url_for("agent.simulator"))
+            if not raw_text:
+                flash("Type a message to simulate.", "error")
+                return redirect(url_for("agent.simulator"))
+
+            sender_entity_id = None
+            if selected_role == "tenant" and selected_unit_id:
+                tenant = conn.execute(
+                    """
+                    SELECT id FROM tenants
+                    WHERE property_id = ? AND unit_id = ? AND status = 'active'
+                    LIMIT 1
+                    """,
+                    (selected_property_id, selected_unit_id),
+                ).fetchone()
+                sender_entity_id = tenant["id"] if tenant else None
+
+            inbound_id = generate_id("INB")
+            conn.execute(
+                """
+                INSERT INTO inbound_messages
+                (id, property_id, sender_phone, sender_role, sender_entity_id, raw_body, channel)
+                VALUES (?, ?, ?, ?, ?, ?, 'sms')
+                """,
+                (
+                    inbound_id,
+                    selected_property_id,
+                    sender_phone or "+254700000000",
+                    selected_role,
+                    sender_entity_id,
+                    raw_text,
+                ),
+            )
+
+            result = process_inbound_message(
+                conn,
+                message_id=inbound_id,
+                raw_text=raw_text,
+                context={
+                    "property_id": selected_property_id,
+                    "sender_role": selected_role,
+                    "sender_entity_id": sender_entity_id,
+                    "sender_phone": sender_phone or "+254700000000",
+                    "unit_id": selected_unit_id,
+                },
+            )
+
+        return render_template(
+            "agent/simulator.html",
+            properties=properties,
+            units=units,
+            selected_property_id=selected_property_id,
+            selected_role=selected_role,
+            selected_unit_id=selected_unit_id,
+            sender_phone=sender_phone,
+            raw_text=raw_text,
+            result=result,
+        )
 

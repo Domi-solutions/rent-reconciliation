@@ -17,11 +17,10 @@
 **Read both `CLAUDE.md` and `CURSOR_PLAN.md` before editing any code.**
 
 **Next steps (in order):**
-1. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) + `inbound_messages`/`inbound_sessions` tables
+1. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) and async processing loop
 2. Add `tenants.language_preference` column + language preference prompt on first contact
-3. Build inbound intent classifier + action handlers (all roles) + message simulator
-4. Build admin task feed on dashboard (extend dashboard route + `dashboard.html`, base.html untouched)
-5. Wire SMS delivery to all agent outputs; WhatsApp added last
+3. Build admin task feed on dashboard (extend dashboard route + `dashboard.html`, base.html untouched)
+4. Wire SMS delivery to all agent outputs; WhatsApp added last
 
 ---
 

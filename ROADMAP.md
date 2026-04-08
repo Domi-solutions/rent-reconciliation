@@ -215,8 +215,8 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `owner_messages` table (migration: `migrate_add_owner_messages` in `db.py`) — owner portal inbox; stores all SMS notifications + broadcasts
 - [x] `caretakers` table (migration: `migrate_add_caretakers` in `db.py`) — named caretaker accounts; id, property_id, name, phone, password_hash
 - [x] `balance_snapshots` table — daily per-unit balance snapshots; needed for Phase 3 weekly arrears comparison. Schema: id, property_id, unit_id, snapshot_date (YYYY-MM-DD), balance, total_charged, total_paid. UNIQUE(unit_id, snapshot_date). Insert idempotently by scheduler (not dashboard load).
-- [ ] `inbound_messages` table — all inbound messages from any channel; async processing pipeline
-- [ ] `inbound_sessions` table — conversation state (24-hour window); resolves "yes"/"no" replies
+- [x] `inbound_messages` table — all inbound messages from any channel; async processing pipeline
+- [x] `inbound_sessions` table — conversation state (24-hour window); resolves "yes"/"no" replies
 - [ ] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
 - [ ] `property_info` table — local amenities per property: id, property_id, category (pharmacy/grocery/wifi/hospital/gas/etc.), name, details. Admin-managed at onboarding or anytime. Queried when tenant asks Domi about local services.
 - [ ] `tenants.language_preference` column — `'en'` | `'sw'` | NULL. NULL = not yet set; triggers language prompt on first inbound contact. Stored permanently on tenant record.
@@ -335,7 +335,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
 - [x] Admin preview route `GET /agent/digest/preview/<property_id>`
 - [ ] Inbound webhook foundation — `POST /inbound/sms` and `POST /inbound/whatsapp` → write to `inbound_messages`, return 200 immediately
-- [ ] `inbound_messages` + `inbound_sessions` tables + migrations
+- [x] `inbound_messages` + `inbound_sessions` tables + migrations
 - [ ] `tenants.language_preference` column + migration
 - [ ] Payment rejection notification: fires when bank statement processed + claim has no matching reference → SMS to tenant
 - [ ] Scheduled delivery — Monday morning via SMS (WhatsApp added later)
@@ -381,7 +381,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] Initial query set: collections (period/YTD), arrears (by unit/total), maintenance (open issues, aging), occupancy, payment history by unit
 
 **Infrastructure:**
-- [ ] Message simulator admin page (`GET /agent/simulator`) — test all inbound scenarios as any user role
+- [x] Message simulator admin page (`GET /agent/simulator`) — test all inbound scenarios as any user role
 - [ ] Africa's Talking inbound SMS webhook (`POST /inbound/sms`)
 - [ ] WhatsApp Business API credentials + inbound webhook (`POST /inbound/whatsapp`)
 - [ ] Pre-approve all outbound WhatsApp templates (list in `CURSOR_PLAN.md`)

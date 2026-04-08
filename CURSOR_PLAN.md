@@ -4,7 +4,7 @@
 
 **Last updated:** 2026-04-08
 
-**Build progress update:** Phase A, B, and C are now implemented in code (`db.py`, `app.py`, `src/agent/*`, `src/routes/agent_routes.py`, `templates/agent/*`). Next step is Phase D.
+**Build progress update:** Phase A, B, C, and D are now implemented in code (`db.py`, `app.py`, `src/agent/*`, `src/routes/agent_routes.py`, `templates/agent/*`). Next step is Phase E.
 
 - **Product name:** Domi (property intelligence platform). Repo/deploy name: `rent-reconciliation` (unchanged).
 - **Stack:** Python 3.13, Flask 3.0+, SQLite (no ORM), Jinja2 + Bootstrap 5. Deployed on Fly.io (Johannesburg).

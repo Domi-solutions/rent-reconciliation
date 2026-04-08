@@ -29,33 +29,36 @@ Financial intelligence layer for a Kenyan property management agency. Flask 3 + 
 
 ### What was built
 
-- **Phase C complete**:
-  - Implemented real digest/briefing generators in `src/agent/briefings.py`:
-    - `generate_weekly_digest()`
-    - `generate_caretaker_briefing()`
-    - `generate_owner_briefing()`
-    - `generate_admin_checklist()`
-  - Added agent preview routes in `src/routes/agent_routes.py`:
-    - `GET /agent/digest/preview/<property_id>`
-    - `GET /agent/briefing/caretaker/<property_id>/preview`
-    - `GET /agent/briefing/owner/<property_id>/preview`
-    - `GET /agent/checklist/<property_id>/preview`
-    - `POST /agent/trigger/<job_name>`
-  - Registered `agent_bp` in `app.py`
-  - Added `templates/agent/preview_text.html` for browser preview rendering
-  - Updated `weekly_digest_job()` in `src/agent/coordinator.py` to call digest generation
-  - Validation completed: app import check passes, no linter errors
+- **Phase D complete**:
+  - Added D1 migrations in `src/database/db.py`:
+    - `migrate_add_inbound_messages()`
+    - `migrate_add_inbound_sessions()`
+  - Wired both migrations in startup sequence in `app.py`
+  - Implemented D2 LLM wrapper behavior in `src/agent/llm.py` (Anthropic, model mapping, safe error handling)
+  - Implemented D3 classifier in `src/agent/inbound.py` with full intent set and confidence scoring
+  - Implemented D4 action handlers in `src/agent/inbound.py` (DB writes + response text per intent)
+  - Added `process_inbound_message()` flow to classify, act, and update `inbound_messages`
+  - Implemented D5 simulator page:
+    - Route: `GET/POST /agent/simulator` in `src/routes/agent_routes.py`
+    - Template: `templates/agent/simulator.html`
+    - Output includes intent, confidence, extracted fields, action taken, and response
+  - Simulator test coverage completed for:
+    - forwarded M-Pesa SMS
+    - maintenance complaint
+    - balance query
+    - greeting
+    - all pass end-to-end via test client
 
 ### What was confirmed (do not re-implement)
 
 - Existing owner/caretaker/tenant portals remain unchanged by this build
-- Agent previews are admin-only routes under `/agent/*` and render via `base.html`
+- Agent previews and simulator are admin-only routes under `/agent/*` and render via `base.html`
 
 ### Pick up next
 
-1. Build inbound tables + webhooks: `inbound_messages`, `inbound_sessions`, `POST /inbound/sms`, `POST /inbound/whatsapp`
+1. Build inbound webhooks: `POST /inbound/sms`, `POST /inbound/whatsapp` (write inbound row, return 200)
 2. Add language preference column + first-contact language prompt flow
-3. Build inbound intent classifier/actions simulator workflows (Phase D)
+3. Begin Phase E tenant check-ins and sentiment aggregation
 
 ---
 

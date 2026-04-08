@@ -752,3 +752,50 @@ def migrate_add_balance_snapshots():
             "ON balance_snapshots(property_id, snapshot_date)"
         )
         print("Migration complete: balance_snapshots table ready.")
+
+
+def migrate_add_inbound_messages():
+    """Create inbound_messages table for async inbound processing. Idempotent."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS inbound_messages (
+                id TEXT PRIMARY KEY,
+                property_id TEXT,
+                sender_phone TEXT NOT NULL,
+                sender_role TEXT,
+                sender_entity_id TEXT,
+                raw_body TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                processed_at TIMESTAMP,
+                classified_intent TEXT,
+                confidence REAL,
+                action_taken TEXT,
+                response_sent TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inbound_messages_processed "
+            "ON inbound_messages(processed_at)"
+        )
+        print("Migration complete: inbound_messages table ready.")
+
+
+def migrate_add_inbound_sessions():
+    """Create inbound_sessions state table. Idempotent."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS inbound_sessions (
+                phone TEXT PRIMARY KEY,
+                property_id TEXT,
+                last_intent TEXT,
+                awaiting_confirmation TEXT,
+                context_json TEXT,
+                expires_at TIMESTAMP
+            )
+            """
+        )
+        print("Migration complete: inbound_sessions table ready.")

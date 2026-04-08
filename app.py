@@ -70,6 +70,8 @@ from src.database.db import (
     migrate_add_owner_messages,
     migrate_add_caretakers,
     migrate_add_balance_snapshots,
+    migrate_add_inbound_messages,
+    migrate_add_inbound_sessions,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -92,6 +94,8 @@ migrate_add_template_body()
 migrate_add_owner_messages()
 migrate_add_caretakers()
 migrate_add_balance_snapshots()
+migrate_add_inbound_messages()
+migrate_add_inbound_sessions()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
