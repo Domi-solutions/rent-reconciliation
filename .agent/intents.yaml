@@ -1,0 +1,187 @@
+# Domi — Intent Classification Registry
+# Ground truth for the inbound message intent set.
+# Agents: check this before adding any intent handler to avoid duplication.
+# When adding an intent: update this file, add handler in src/agent/inbound.py, update tests.
+
+confidence_rule:
+  threshold: 0.85
+  above: "Execute action immediately, send confirmation to sender"
+  below: "Ask before acting — send clarification request"
+  never: "Silent failures. Every unrecognised message gets a response."
+
+intents:
+
+  # --- Tenant intents ---
+
+  payment_claim:
+    role: tenant
+    description: "Forwarded M-Pesa SMS confirming a payment made"
+    examples:
+      - "Confirmed. Ksh15,000 sent to MOWIN on 3/5/24 at 10:23 AM. Transaction cost, Ksh0. New M-PESA balance is Ksh2,340. Transaction ID: QKL2X4RTYE."
+    action: "Create payment_claims record; mark tenant as likely-paid (pending state)"
+    extracted_fields: [mpesa_ref, amount, date]
+
+  checkin_reply:
+    role: tenant
+    description: "Response to monthly check-in prompt (1/2/3 + optional free text)"
+    examples:
+      - "1"
+      - "2 the tap in the bathroom is dripping"
+      - "3 the security guard is harassing tenants"
+    action: "Write to checkin_responses table; classify free_text category via LLM if present"
+    extracted_fields: [numeric_response, free_text]
+
+  maintenance_report:
+    role: tenant
+    description: "Tenant reporting a new maintenance issue"
+    examples:
+      - "The tap in my bathroom is dripping"
+      - "Our toilet is blocked"
+      - "No water since yesterday"
+    action: "Create maintenance_issues record; route based on priority"
+    extracted_fields: [description, implied_urgency]
+
+  query_balance:
+    role: tenant
+    description: "Tenant asking about their balance or payment status"
+    examples:
+      - "How much do I still owe?"
+      - "Did you receive my payment?"
+      - "What is my balance?"
+    action: "Query unit_balances VIEW; format data-descriptive response"
+    extracted_fields: []
+
+  local_amenity_query:
+    role: tenant
+    description: "Tenant asking about nearby services"
+    examples:
+      - "Where is the nearest pharmacy?"
+      - "Which wifi provider do you recommend?"
+      - "Is there a hospital nearby?"
+    action: "Query property_info table for matching category; respond with details"
+    extracted_fields: [category]
+
+  greeting:
+    role: tenant
+    description: "General greeting or opening message"
+    examples:
+      - "Hello"
+      - "Hi Domi"
+      - "Good morning"
+    action: "Respond with available help options in tenant's language preference"
+    extracted_fields: []
+
+  # --- Caretaker intents ---
+
+  maintenance_resolve:
+    role: caretaker
+    description: "Caretaker reporting a maintenance issue as resolved"
+    examples:
+      - "Fixed the tap in B7"
+      - "Plumber came and sorted the bathroom in A3"
+    action: "Close maintenance_issues record; log resolution note; notify tenant if tenant-raised"
+    extracted_fields: [unit_reference, description]
+
+  followup_note:
+    role: caretaker
+    description: "Caretaker logging a follow-up note on a unit"
+    examples:
+      - "A3 guy says he'll pay Friday"
+      - "Unit B7 tenant travelling, back Monday"
+    action: "Log note against unit with implied date; store in audit context"
+    extracted_fields: [unit_reference, note_text, implied_date]
+
+  occupancy_update:
+    role: caretaker
+    description: "Caretaker reporting a tenant moving in or out"
+    examples:
+      - "New tenant in F1 from 1st April"
+      - "Unit C4 is now vacant, tenant left yesterday"
+    action: "Flag to admin for manual update; log note"
+    extracted_fields: [unit_reference, direction, implied_date]
+
+  payment_claim:
+    role: caretaker
+    description: "Caretaker submitting a payment claim on behalf of tenant"
+    examples:
+      - "A7 paid — QKL2X4RTYE 15000"
+    action: "Create payment_claims record with source='caretaker'"
+    extracted_fields: [unit_reference, mpesa_ref, amount]
+
+  escalation_request:
+    role: caretaker
+    description: "Caretaker requesting supplies, repairs, or other resources"
+    examples:
+      - "We need a new pump for the water tank"
+      - "The electrician says we need 3 circuit breakers"
+    action: "Route per caretaker_request_routing config; log in owner report regardless"
+    extracted_fields: [description, category]
+
+  issue_acknowledgment:
+    role: caretaker
+    description: "Caretaker confirming receipt of a forwarded issue"
+    examples:
+      - "Ok noted"
+      - "On it"
+      - "Will check tomorrow morning"
+    action: "Clear pending acknowledgment flag on maintenance issue"
+    extracted_fields: []
+
+  # --- Owner intents ---
+
+  owner_instruction:
+    role: owner
+    description: "Owner giving an instruction to be routed to caretaker"
+    examples:
+      - "Follow up on A3 urgently"
+      - "Tell the caretaker to sort the gate by end of week"
+    action: "Log instruction; route to caretaker via route_message(); confirm to owner"
+    extracted_fields: [instruction_text, target_unit]
+
+  query_collections:
+    role: owner
+    description: "Owner querying collection figures"
+    examples:
+      - "How much has been collected this month?"
+      - "What's the total verified income so far?"
+    action: "Query payments + rent_charges for current period; format data-descriptive response"
+    extracted_fields: [period]
+
+  query_arrears:
+    role: owner
+    description: "Owner asking about arrears"
+    examples:
+      - "Which units haven't paid?"
+      - "How much is outstanding?"
+      - "Who owes the most?"
+    action: "Query unit_balances VIEW; format ranked list"
+    extracted_fields: []
+
+  query_maintenance:
+    role: owner
+    description: "Owner asking about open maintenance issues"
+    examples:
+      - "What maintenance issues are open?"
+      - "Any urgent issues?"
+    action: "Query maintenance_issues WHERE status='open'; format list"
+    extracted_fields: [priority_filter]
+
+  # --- Cross-role intents ---
+
+  confirmation:
+    role: any
+    description: "Affirmative or negative reply to a pending confirmation request"
+    examples:
+      - "yes"
+      - "no"
+      - "skip"
+      - "ok"
+    action: "Read inbound_sessions.awaiting_confirmation; execute or cancel pending action"
+    extracted_fields: [decision]
+
+  unknown:
+    role: any
+    description: "Anything that doesn't match a known intent at sufficient confidence"
+    examples: []
+    action: "Respond with 'I didn't quite understand that. You can...' + context-appropriate help options"
+    note: "Never drop silently. Every unrecognised message gets a polite response."

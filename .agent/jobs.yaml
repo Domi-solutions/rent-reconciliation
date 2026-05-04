@@ -1,0 +1,73 @@
+# Domi — Scheduled Jobs Registry
+# Ground truth for all APScheduler jobs.
+# Agents: check this before adding any job to avoid duplicates or schedule conflicts.
+# When adding a job: update this file AND register in app.py in the same commit.
+# All times are EAT (East Africa Time = UTC+3).
+# status: live = running in production | planned = not yet built
+
+scheduler:
+  type: APScheduler BackgroundScheduler
+  job_store: memory (default — missed jobs not recovered on restart)
+  note: "Known limitation — missed jobs are silently lost if process restarts. SQLAlchemyJobStore is the planned upgrade for persistence."
+  timezone: UTC (note: EAT = UTC+3; schedule times below are EAT-intended, set as UTC offsets)
+
+jobs:
+
+  daily_snapshot_job:
+    status: live
+    function: src/agent/coordinator.py::daily_snapshot_job
+    trigger: "cron, hour=1, minute=0 (1am EAT)"
+    owns: "Writes to balance_snapshots table. INSERT OR IGNORE — idempotent."
+    description: "For each active unit across all properties: snapshot current balance from unit_balances VIEW."
+    prerequisite_for: weekly_digest_job (arrears comparison requires snapshots)
+
+  anomaly_check_job:
+    status: live
+    function: src/agent/coordinator.py::anomaly_check_job
+    trigger: "cron, hour=6, minute=0 (6am EAT)"
+    owns: "Reads rent_charges, balance_snapshots. Writes to audit_log and triggers notifications."
+    description: "Detect water charge spikes (>30% above 3-month avg), vacancy duration flags, arrears threshold crossings."
+
+  morning_briefings_job:
+    status: live
+    function: src/agent/coordinator.py::morning_briefings_job
+    trigger: "cron, hour=7, minute=0 (7am EAT)"
+    owns: "Generates and delivers caretaker daily briefing via route_message()."
+    description: "Batch routine issues, nudges, anomalies into one morning message per caretaker. Urgent issues bypass this — forwarded immediately when raised."
+
+  weekly_digest_job:
+    status: live
+    function: src/agent/coordinator.py::weekly_digest_job
+    trigger: "cron, day_of_week=mon, hour=8, minute=0 (Monday 8am EAT)"
+    owns: "Reads balance_snapshots for arrears comparison. Delivers via route_message()."
+    description: "Generate weekly digest for owners: payment velocity, arrears changes, claim aging, occupancy events. Brevity is the signal — stable = silence."
+    requires: balance_snapshots rows from prior week
+
+  monthly_checkins_job:
+    status: live
+    function: src/agent/coordinator.py::monthly_checkins_job
+    trigger: "cron, day=1, hour=9, minute=0 (1st of month 9am EAT)"
+    owns: "Writes to messages table (message_type='checkin'). Idempotent per tenant+period."
+    description: "Send monthly check-in SMS to all active tenants with phones: 'How is everything? Reply 1/2/3 + optional comment.'"
+
+  process_inbound_queue:
+    status: planned
+    function: src/agent/coordinator.py::process_inbound_queue (to be written)
+    trigger: "interval, every 60 seconds"
+    owns: "Reads inbound_messages WHERE processed_at IS NULL. Classifies intent, runs action handler, sends response."
+    description: "Background processor for inbound SMS/WhatsApp messages. LLM inference always happens here, never in the webhook handler."
+
+  process_payment_queue:
+    status: planned
+    function: src/agent/coordinator.py::process_payment_queue (to be written)
+    trigger: "interval, every 60 seconds"
+    owns: "Reads payment_transactions WHERE processing_status = 'pending'. Creates payment records, runs FIFO allocator, sends SMS confirmation."
+    description: "Background processor for Daraja and Pesapal payment callbacks."
+    note: "Includes deduplication check on external_reference before processing."
+
+  disbursement_job:
+    status: planned
+    function: src/payments/disbursements.py::scheduled_disbursement_job (to be written)
+    trigger: "cron, day=10, hour=9, minute=0 (10th of month 9am EAT)"
+    owns: "Reads payment_transactions for the month. Creates disbursements record. Triggers B2C payout."
+    description: "Monthly landlord disbursement: calculate net (total collected minus fee), execute payout."

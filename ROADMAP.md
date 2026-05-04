@@ -441,17 +441,78 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 
 ---
 
+## Layer F: The Payment Rail (Property Fintech — Money in Transit)
+
+**Decision locked: 2026-05-04**
+
+Domi is a **property fintech platform**, not a property management tool. This is a strategic pivot that changes the revenue model, the product stickiness, and the build sequence.
+
+### The Model
+
+```
+Tenant pays M-Pesa → Domi Paybill (STK Push or self-initiated)
+                   → Card (Pesapal hosted checkout)
+Domi holds funds
+Domi disburses to landlord net of management fee
+Fee is embedded in disbursement spread — not a visible line item
+```
+
+**Why this is the right model:**
+- Landlord receiving KES 290,000 doesn't feel the same as landlord paying an 8% invoice
+- Tenants use the M-Pesa Paybill flow they already know from KPLC and Nairobi Water
+- Switching away from Domi requires changing payment instructions for all tenants — very high friction
+- Domi becomes infrastructure, not software. Infrastructure doesn't get cancelled.
+
+### Tenant Payment Experience
+
+- Tenant portal gains a payment tab (existing token-based portal, extended — not replaced)
+- **STK Push:** tenant enters phone + amount → M-Pesa prompt sent to their phone → they enter PIN → done
+- **Card:** Pesapal hosted checkout → redirect back to portal on completion
+- **Partial payments:** first-class feature — tenant can pay KES 5,000 of KES 15,000 due; FIFO allocator handles it correctly already
+- Payment history shows what each payment was applied to (FIFO transparency)
+- SMS + email confirmation on every payment
+
+### Legacy Reconciliation Flow (kept permanently)
+
+Bank statement PDF + SMS claim workflow stays active. Tenants who pay directly to the owner's bank account continue to use proof-of-payment. Both flows write to the same `payments` table and run through the same FIFO allocator. Source field (`payment_transactions.source`) distinguishes origin.
+
+### Payment Rail Checklist
+
+**Prerequisites:**
+- [ ] Admin authentication — `GET/POST /login`, `before_request` hook, exempt paths. Must be done before any payment code is written.
+- [ ] Legal structure review — merchant model vs CBK PSP license. Engage Africa's Talking compliance or Kenyan fintech counsel.
+- [ ] Safaricom Paybill + Daraja application — via Africa's Talking Payments. Timeline: 2-4 weeks.
+- [ ] WhatsApp Business API application (apply now — 2-6 week lead time, gates Phase H)
+
+**Phase G — Build:**
+- [ ] `src/payments/` module: `daraja.py`, `pesapal.py`, `disbursements.py`
+- [ ] `payment_transactions` table + `migrate_add_payment_transactions()` — raw callback storage
+- [ ] `disbursements` table + `migrate_add_disbursements()` — landlord payout records
+- [ ] `POST /inbound/payment/mpesa` — Daraja callback handler (write-and-return-200)
+- [ ] `POST /inbound/payment/pesapal` — Pesapal IPN handler (same pattern)
+- [ ] Background worker: process `payment_transactions WHERE processing_status = 'pending'`
+- [ ] Tenant portal auth upgrade — 4-digit PIN for payment tab only (`tenants.portal_pin_hash`)
+- [ ] Tenant portal payment UI — STK Push form + Pesapal card checkout
+- [ ] Payment status polling endpoint — `GET /tenant/<token>/pay/status/<checkout_request_id>`
+- [ ] Disbursement engine — `calculate_disbursement()`, `execute_disbursement()`
+- [ ] Disbursement scheduler job — 10th of each month
+- [ ] Landlord disbursement statement — extend owner report tab
+- [ ] Payment source badge on admin/caretaker views (Paybill / Card / Manual)
+- [ ] `properties.management_fee_rate` column (default 0.08) — migration required
+- [ ] Update `.agent/schema.yaml`, `.agent/routes.yaml`, `.agent/jobs.yaml` after each addition
+
+---
+
 ## Business Context
 
 - Property management agency in Kenya, 2-3 person team
 - **Product name: Domi** — derived from *domus* (Latin: home). Warm, neutral, non-intrusive.
 - Currently: 1 property (Mowin Apartments, 44 units, property ID: PROP-45ED445A)
 - Target: 3-5 properties near-term; 15+ at scale
-- Revenue model: not locked down (likely 8-10% of verified collections — aligns product revenue with landlord success)
-- Kenya market: M-Pesa dominant, WhatsApp is the primary communication channel for all user types
-- The intelligence + push delivery IS the sales differentiator vs. spreadsheets and WhatsApp group chats
-- No social media presence yet — newsletter (Phase 7) is the content/SEO/LinkedIn strategy
-- **WhatsApp Business API application must be started immediately** — Meta approval has 2-6 week lead time; apply via Africa's Talking (existing relationship). This gates Phase 6.
+- **Revenue model (locked 2026-05-04):** Money-in-transit fintech model. Fee embedded in landlord disbursement spread. Target 8% management fee. Tenant pays → Domi holds → landlord receives net.
+- Kenya market: M-Pesa dominant, WhatsApp is primary communication channel for all user types
+- The payment rail + intelligence layer IS the differentiator — spreadsheets cannot do either
+- **WhatsApp Business API application must be started immediately** — Meta approval has 2-6 week lead time; apply via Africa's Talking. This gates Phase H.
 
 ### WhatsApp Strategy
 - One WhatsApp Business number for the entire platform (not per property)
@@ -460,12 +521,12 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - All proactive outbound messages require pre-approved Meta templates (utility category)
 - SMS via Africa's Talking remains the fallback for users without WhatsApp
 - Quality rating protection: only high-value, relevant messages; opt-out always available
-- Cost at scale: ~$0.065/conversation (Africa pricing tier) — manageable and bundled into service fee
+- Cost at scale: ~$0.065/conversation (Africa pricing tier) — manageable, bundled into service fee
 
 ### Scaling Path
 - 1-5 properties: SQLite + APScheduler + single Fly.io worker
-- 5-15 properties: PostgreSQL on Fly.io + Redis/RQ job queue + second worker for agent jobs
-- 15+ properties: `src/agent/` extracted to separate Fly.io service; dedicated inbound processor
+- 5-15 properties: PostgreSQL on Fly.io + Redis/RQ job queue + second worker for agent and payment jobs
+- 15+ properties: `src/agent/` and `src/payments/` extracted to separate Fly.io services; dedicated inbound processor
 
 ---
 
@@ -474,8 +535,9 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 After completing any work on this project:
 
 1. **Update the checkboxes above** — mark completed items as `[x]`
-2. **If you added new files**, update the project structure in `CLAUDE.md`
-3. **If you added new routes**, document them in `CLAUDE.md` under the appropriate section
-4. **If you added new database tables/columns**, document in `CLAUDE.md` under "Database Tables" and ensure migration function exists in `db.py`
-5. **If you modified the viewer**, note changes under the Phase 1/2 sections above
-6. **Respect the data-descriptive language rule** — review all user-facing strings before marking work complete
+2. **Update `.agent/schema.yaml`** if you added tables or columns
+3. **Update `.agent/routes.yaml`** if you added routes or blueprints
+4. **Update `.agent/jobs.yaml`** if you added scheduled jobs
+5. **Update `CLAUDE.md`** — technical additions only, never restructure
+6. **Update `AGENTS.md`** — overwrite "Last Session" with what you built and what's next
+7. **Respect the data-descriptive language rule** — review all user-facing strings before marking work complete

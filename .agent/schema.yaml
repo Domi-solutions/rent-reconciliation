@@ -1,0 +1,435 @@
+# Domi — Database Schema Registry
+# Ground truth for all tables and columns.
+# Agents: use this file for precise column lookups. Do NOT rely on CLAUDE.md prose for column names.
+# When adding a table or column: update this file in the same commit as the migration.
+# status: live = deployed to production | planned = not yet built
+
+tables:
+
+  properties:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      name: {type: TEXT, required: true}
+      address: {type: TEXT}
+      owner_name: {type: TEXT}
+      owner_phone: {type: TEXT}
+      owner_email: {type: TEXT}
+      owner_id: {type: TEXT, fk: owners.id, added_by: migrate_add_owners}
+      rent_due_day: {type: INTEGER, default: 5, added_by: migrate_add_rent_due_day}
+      management_fee_rate: {type: REAL, default: 0.08, added_by: migrate_add_payment_transactions, status: planned}
+      status: {type: TEXT, default: active}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  units:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_number: {type: TEXT, required: true}
+      monthly_rent: {type: DECIMAL(10,2), required: true}
+      service_charge: {type: DECIMAL(10,2), default: 0}
+      apartment_size: {type: TEXT, default: '', added_by: migrate_add_apartment_size}
+      status: {type: TEXT, default: occupied, values: [occupied, vacant, office]}
+      status_changed_at: {type: TIMESTAMP, added_by: migrate_add_status_changed_at}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    constraints:
+      - UNIQUE(property_id, unit_number)
+
+  tenants:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id}
+      name: {type: TEXT, required: true}
+      phone: {type: TEXT}
+      email: {type: TEXT}
+      move_in_date: {type: DATE}
+      move_out_date: {type: DATE}
+      status: {type: TEXT, default: active}
+      access_token: {type: TEXT, unique: true, added_by: migrate_add_tenant_access_token}
+      language_preference: {type: TEXT, values: [en, sw, null], note: "NULL triggers language prompt on first inbound", status: planned}
+      flagged: {type: BOOLEAN, default: false, added_by: migrate_add_tenant_flagging, status: planned}
+      flagged_reason: {type: TEXT, nullable: true, status: planned}
+      flagged_at: {type: TIMESTAMP, nullable: true, status: planned}
+      portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "bcrypt hash of 4-digit portal PIN for payment tab", status: planned}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  bank_statements:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      filename: {type: TEXT, required: true}
+      file_path: {type: TEXT, required: true}
+      period_start: {type: DATE}
+      period_end: {type: DATE}
+      opening_balance: {type: DECIMAL(12,2)}
+      closing_balance: {type: DECIMAL(12,2)}
+      total_transactions: {type: INTEGER}
+      rent_transactions: {type: INTEGER}
+      status: {type: TEXT, default: active}
+      uploaded_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  bank_transactions:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      statement_id: {type: TEXT, fk: bank_statements.id, required: true}
+      mpesa_ref: {type: TEXT}
+      amount: {type: DECIMAL(10,2), required: true}
+      txn_type: {type: TEXT, required: true}
+      sender_name: {type: TEXT}
+      txn_date: {type: DATE}
+      raw_text: {type: TEXT}
+      unit_hint: {type: TEXT, added_by: migrate_add_unit_hint}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    indexes:
+      - idx_bank_txn_ref ON (mpesa_ref)
+      - idx_bank_txn_stmt ON (statement_id)
+
+  payment_claims:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      mpesa_ref: {type: TEXT, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      claimed_amount: {type: DECIMAL(10,2)}
+      raw_message: {type: TEXT}
+      source: {type: TEXT, default: web, values: [web, caretaker, whatsapp, sms]}
+      status: {type: TEXT, default: pending, values: [pending, verified, rejected]}
+      verified_at: {type: TIMESTAMP}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    constraints:
+      - UNIQUE(property_id, mpesa_ref)
+
+  payments:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      claim_id: {type: TEXT, fk: payment_claims.id}
+      bank_txn_id: {type: TEXT, fk: bank_transactions.id, required: true}
+      statement_id: {type: TEXT, fk: bank_statements.id, required: true}
+      amount: {type: DECIMAL(10,2), required: true}
+      payment_date: {type: DATE, required: true}
+      assignment_type: {type: TEXT, required: true}
+      assignment_reason: {type: TEXT}
+      assigned_by: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  rent_charges:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      period: {type: TEXT, required: true, note: "YYYY-MM or 'ARREARS'"}
+      charge_type: {type: TEXT, default: rent, values: [rent, service, water], added_by: migrate_add_charge_type}
+      amount: {type: DECIMAL(10,2), required: true}
+      due_date: {type: DATE, added_by: migrate_set_rent_charge_due_dates}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    constraints:
+      - UNIQUE(unit_id, period, charge_type)
+
+  payment_allocations:
+    status: live
+    migration: migrate_add_payment_allocations
+    note: "FIFO allocation records. ON DELETE CASCADE on payment_id."
+    columns:
+      id: {type: TEXT, pk: true}
+      payment_id: {type: TEXT, fk: "payments(id) ON DELETE CASCADE", required: true}
+      charge_id: {type: TEXT, fk: rent_charges.id, required: true}
+      amount: {type: DECIMAL(10,2), required: true}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  audit_log:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: INTEGER, pk: true, autoincrement: true}
+      timestamp: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      user_id: {type: TEXT}
+      action: {type: TEXT, required: true}
+      entity_type: {type: TEXT}
+      entity_id: {type: TEXT}
+      details: {type: TEXT}
+      ip_address: {type: TEXT}
+
+  owners:
+    status: live
+    migration: migrate_add_owners
+    columns:
+      id: {type: TEXT, pk: true}
+      name: {type: TEXT, required: true}
+      phone: {type: TEXT}
+      email: {type: TEXT}
+      password_hash: {type: TEXT}
+      access_token: {type: TEXT, unique: true}
+      notes: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  property_owners:
+    status: live
+    migration: migrate_add_property_owners
+    note: "M:M junction — one owner can have multiple properties"
+    columns:
+      property_id: {type: TEXT, fk: properties.id}
+      owner_id: {type: TEXT, fk: owners.id}
+    constraints:
+      - PRIMARY KEY(property_id, owner_id)
+
+  messages:
+    status: live
+    migration: migrate_add_messaging
+    note: "Per-tenant in-app messages. batch_id groups broadcasts."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      tenant_id: {type: TEXT, fk: tenants.id, required: true}
+      batch_id: {type: TEXT}
+      subject: {type: TEXT, required: true}
+      body: {type: TEXT, required: true}
+      template_body: {type: TEXT, added_by: migrate_add_template_body, note: "Unsubstituted template for broadcasts"}
+      message_type: {type: TEXT, required: true, values: [reminder, broadcast, notice, checkin]}
+      delivery_channel: {type: TEXT, default: portal, added_by: migrate_add_sms_delivery}
+      delivery_status: {type: TEXT, default: delivered}
+      read_at: {type: TIMESTAMP}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  message_templates:
+    status: live
+    migration: migrate_add_messaging
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, nullable: true, note: "NULL = system default"}
+      template_key: {type: TEXT, required: true}
+      subject: {type: TEXT, required: true}
+      body: {type: TEXT, required: true}
+      enabled: {type: INTEGER, default: 1}
+      created_at: {type: TIMESTAMP}
+      updated_at: {type: TIMESTAMP}
+    constraints:
+      - UNIQUE(property_id, template_key)
+
+  reminder_settings:
+    status: live
+    migration: migrate_add_messaging
+    note: "Legacy hardcoded reminder keys. Coexists with reminder_schedules."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      template_key: {type: TEXT, required: true}
+      days_before_due: {type: INTEGER, required: true}
+      enabled: {type: INTEGER, default: 1}
+      created_at: {type: TIMESTAMP}
+    constraints:
+      - UNIQUE(property_id, template_key)
+
+  reminder_schedules:
+    status: live
+    migration: migrate_add_reminder_schedules
+    note: "Flexible per-property schedules. Additive to reminder_settings."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      label: {type: TEXT}
+      template_key: {type: TEXT, required: true}
+      days_before_due: {type: INTEGER, required: true}
+      send_to: {type: TEXT, default: all, values: [all, arrears]}
+      enabled: {type: INTEGER, default: 1}
+
+  owner_messages:
+    status: live
+    migration: migrate_add_owner_messages
+    note: "Owner portal inbox. SELECT all columns — SQLite silently returns NULL for omitted ones."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id}
+      owner_id: {type: TEXT, fk: owners.id}
+      subject: {type: TEXT}
+      body: {type: TEXT}
+      template_body: {type: TEXT, note: "Unsubstituted template for broadcasts"}
+      message_type: {type: TEXT, values: [notification, broadcast, reminder]}
+      channel: {type: TEXT}
+      recipient_count: {type: INTEGER}
+      sent_by: {type: TEXT, note: "Caretaker name, 'Admin', or 'System'"}
+      read_at: {type: TIMESTAMP}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  caretakers:
+    status: live
+    migration: migrate_add_caretakers
+    note: "Named caretaker accounts per property. Name doubles as login username."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      name: {type: TEXT, required: true}
+      phone: {type: TEXT}
+      password_hash: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  maintenance_issues:
+    status: live
+    migration: migrate_add_maintenance
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id}
+      source: {type: TEXT, values: [tenant, caretaker]}
+      raised_by_tenant_id: {type: TEXT, fk: tenants.id}
+      category: {type: TEXT}
+      description: {type: TEXT}
+      priority: {type: TEXT, default: routine, values: [urgent, routine], status: planned}
+      status: {type: TEXT, default: open, values: [open, resolved]}
+      resolved_at: {type: TIMESTAMP}
+      resolved_note: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  report_settings:
+    status: live
+    migration: schema.sql (base)
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, unique: true}
+      frequency: {type: TEXT, default: monthly}
+      send_day: {type: INTEGER, default: 1}
+      recipient_email: {type: TEXT}
+      recipient_phone: {type: TEXT}
+      enabled: {type: INTEGER, default: 0}
+      last_sent_at: {type: TIMESTAMP}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  landlord_reports:
+    status: live
+    migration: migrate_add_landlord_reports
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      period_start: {type: DATE, required: true}
+      period_end: {type: DATE, required: true}
+      report_type: {type: TEXT, default: manual}
+      report_data: {type: TEXT, required: true, note: "JSON blob"}
+      sent_via: {type: TEXT}
+      sent_to: {type: TEXT}
+      sent_at: {type: TIMESTAMP}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  balance_snapshots:
+    status: live
+    migration: migrate_add_balance_snapshots
+    note: "Daily per-unit balance snapshots. Prerequisite for weekly digest arrears comparison."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      snapshot_date: {type: TEXT, required: true, note: "YYYY-MM-DD"}
+      balance: {type: REAL, required: true}
+      total_charged: {type: REAL, required: true}
+      total_paid: {type: REAL, required: true}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    constraints:
+      - UNIQUE(unit_id, snapshot_date)
+
+  inbound_messages:
+    status: live
+    migration: migrate_add_inbound_messages
+    note: "Every inbound message lands here first. Processing is always async."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT}
+      sender_phone: {type: TEXT, required: true}
+      sender_role: {type: TEXT, values: [tenant, caretaker, owner, admin, unknown]}
+      sender_entity_id: {type: TEXT}
+      raw_body: {type: TEXT, required: true}
+      channel: {type: TEXT, required: true, values: [sms, whatsapp]}
+      received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      processed_at: {type: TIMESTAMP}
+      classified_intent: {type: TEXT}
+      confidence: {type: REAL}
+      action_taken: {type: TEXT}
+      response_sent: {type: TEXT}
+
+  inbound_sessions:
+    status: live
+    migration: migrate_add_inbound_sessions
+    note: "Conversation state within 24h window. Resolves yes/no/skip replies."
+    columns:
+      phone: {type: TEXT, pk: true}
+      property_id: {type: TEXT}
+      last_intent: {type: TEXT}
+      awaiting_confirmation: {type: TEXT}
+      context_json: {type: TEXT}
+      expires_at: {type: TIMESTAMP}
+
+  checkin_responses:
+    status: live
+    migration: migrate_add_checkin_responses
+    columns:
+      id: {type: TEXT, pk: true}
+      tenant_id: {type: TEXT, fk: tenants.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      period: {type: TEXT, required: true, note: "YYYY-MM"}
+      numeric_response: {type: INTEGER, values: [1, 2, 3]}
+      free_text: {type: TEXT}
+      classified_category: {type: TEXT, values: [maintenance, noise, security, water, general, null]}
+      received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  payment_transactions:
+    status: planned
+    migration: migrate_add_payment_transactions (to be written)
+    note: "Raw Daraja/Pesapal callbacks before processing. UNIQUE on external_reference for deduplication."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT}
+      unit_id: {type: TEXT, fk: units.id}
+      tenant_id: {type: TEXT, fk: tenants.id}
+      source: {type: TEXT, required: true, values: [daraja, pesapal, manual]}
+      external_reference: {type: TEXT, unique: true, note: "checkout_request_id or Pesapal ref; deduplication key"}
+      phone: {type: TEXT}
+      amount: {type: REAL, required: true}
+      currency: {type: TEXT, default: KES}
+      raw_callback: {type: TEXT, note: "Full JSON blob from provider"}
+      received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      processing_status: {type: TEXT, default: pending, values: [pending, completed, failed]}
+      processed_at: {type: TIMESTAMP}
+      error_detail: {type: TEXT}
+      payment_id: {type: TEXT, fk: payments.id, note: "Set when processed successfully"}
+
+  disbursements:
+    status: planned
+    migration: migrate_add_disbursements (to be written)
+    note: "Landlord payout records. One row per disbursement run per property."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      period: {type: TEXT, required: true}
+      total_collected: {type: REAL, required: true}
+      fee_rate: {type: REAL, required: true}
+      fee_amount: {type: REAL, required: true}
+      net_amount: {type: REAL, required: true}
+      status: {type: TEXT, default: pending, values: [pending, processing, completed, failed]}
+      method: {type: TEXT, values: [mpesa_b2c, bank_transfer]}
+      recipient_account: {type: TEXT}
+      daraja_transaction_id: {type: TEXT}
+      disbursed_at: {type: TIMESTAMP}
+      notes: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+views:
+  unit_balances:
+    status: live
+    note: "Calculated view — never stored. Always use this for balance queries."
+    columns: [unit_id, property_id, unit_number, monthly_rent, tenant_id, tenant_name, tenant_phone, total_charged, total_paid, balance]

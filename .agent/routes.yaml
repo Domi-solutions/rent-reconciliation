@@ -1,0 +1,144 @@
+# Domi — Route Registry
+# Ground truth for all Flask blueprints and URL prefixes.
+# Agents: check this before adding any route to avoid conflicts.
+# When adding a blueprint or route: update this file in the same commit.
+# status: live = deployed | planned = not yet built
+
+blueprints:
+
+  admin:
+    file: app.py (inline routes, no blueprint)
+    prefix: /
+    auth: session['admin_authenticated'] (planned — Prereq 1)
+    status: live
+    key_routes:
+      - "GET / — dashboard"
+      - "GET /properties — property list/selector"
+      - "GET /properties/select/<property_id> — set active property"
+      - "GET /units — unit list"
+      - "GET /tenants — tenant list"
+      - "POST /charges/generate — generate rent+service charges"
+      - "POST /charges/water — upload water readings"
+      - "POST /statements/upload — upload bank statement PDF"
+      - "POST /claims/submit — submit M-Pesa claim"
+      - "POST /payments/verify — verify claims against bank statement"
+      - "GET /owners — owner management"
+      - "GET /caretakers — caretaker management"
+      - "GET /login — login form (planned)"
+      - "POST /login — authenticate admin (planned)"
+      - "GET /logout — clear session (planned)"
+
+  viewer:
+    file: src/routes/viewer_routes.py
+    prefix: /view
+    auth: session['viewer_authenticated'] + property_owners check
+    status: live
+    key_routes:
+      - "GET /view/ — property list (filtered by owner)"
+      - "GET /view/login — viewer login"
+      - "POST /view/login — authenticate"
+      - "GET /view/<property_id> — owner dashboard"
+      - "GET /view/<property_id>/arrears"
+      - "GET /view/<property_id>/payments"
+      - "GET /view/<property_id>/reports"
+      - "GET /view/<property_id>/reports/<report_id>"
+      - "GET /view/<property_id>/maintenance"
+      - "GET /view/<property_id>/notifications — owner inbox"
+
+  tenant:
+    file: src/routes/tenant_routes.py
+    prefix: /tenant
+    auth: token in URL (access_token column); no session
+    status: live
+    exempt_from_admin_auth: true
+    key_routes:
+      - "GET /tenant/<token> — overview"
+      - "GET /tenant/<token>/charges"
+      - "GET /tenant/<token>/payments"
+      - "GET /tenant/<token>/messages"
+      - "GET /tenant/<token>/maintenance"
+      - "POST /tenant/<token>/maintenance/new"
+      - "POST /tenant/<token>/pay/stk — initiate STK Push (planned, Phase G)"
+      - "GET /tenant/<token>/pay/status/<checkout_request_id> — poll payment status (planned)"
+
+  caretaker:
+    file: src/routes/caretaker_routes.py
+    prefix: /caretaker
+    auth: named DB account (caretakers table) OR CARETAKER_PASSWORD env var
+    status: live
+    exempt_from_admin_auth: true
+    key_routes:
+      - "GET /caretaker/login"
+      - "POST /caretaker/login"
+      - "GET /caretaker/<property_id> — dashboard"
+      - "GET /caretaker/<property_id>/arrears"
+      - "GET /caretaker/<property_id>/tenants"
+      - "GET /caretaker/<property_id>/issues"
+      - "POST /caretaker/<property_id>/issues/new"
+      - "POST /caretaker/<property_id>/issues/<id>/resolve"
+      - "GET /caretaker/<property_id>/log-payment"
+      - "POST /caretaker/<property_id>/log-payment"
+
+  messaging:
+    file: src/routes/messaging_routes.py
+    prefix: /messages
+    auth: admin session
+    status: live
+    key_routes:
+      - "GET /messages — messaging dashboard"
+      - "GET/POST /messages/broadcast"
+      - "GET /messages/templates"
+      - "GET/POST /messages/templates/<id>/edit"
+      - "GET /messages/reminders"
+      - "GET /messages/schedules"
+
+  reports:
+    file: src/routes/report_routes.py
+    prefix: /reports
+    auth: admin session
+    status: live
+    key_routes:
+      - "GET /reports — report history"
+      - "GET/POST /reports/generate"
+      - "GET /reports/<id>"
+      - "GET /reports/<id>/caretaker"
+
+  agent:
+    file: src/routes/agent_routes.py
+    prefix: /agent
+    auth: admin session
+    status: live
+    key_routes:
+      - "GET /agent/simulator — message simulator"
+      - "GET /agent/digest/preview/<property_id>"
+      - "GET /agent/briefing/caretaker/<property_id>/preview"
+      - "GET /agent/briefing/owner/<property_id>/preview"
+      - "GET /agent/checklist/<property_id>/preview"
+      - "POST /agent/trigger/<job_name> — manual job trigger (dev)"
+
+  test:
+    file: src/routes/test_routes.py
+    prefix: /test
+    auth: none (dev/testing only)
+    status: live
+    note: "Parser and CRUD testing routes. Remove or gate before multi-client production."
+
+  payment:
+    file: src/routes/payment_routes.py (to be created)
+    prefix: /inbound/payment
+    auth: none (webhook endpoints — verified by provider signature)
+    status: planned
+    exempt_from_admin_auth: true
+    key_routes:
+      - "POST /inbound/payment/mpesa — Daraja C2B callback (write-and-return-200)"
+      - "POST /inbound/payment/pesapal — Pesapal IPN (write-and-return-200)"
+
+  inbound:
+    file: app.py or dedicated blueprint (to be decided)
+    prefix: /inbound
+    auth: none (webhook endpoints)
+    status: planned
+    exempt_from_admin_auth: true
+    key_routes:
+      - "POST /inbound/sms — Africa's Talking inbound SMS"
+      - "POST /inbound/whatsapp — WhatsApp inbound"

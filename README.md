@@ -44,7 +44,7 @@ export PATH="$HOME/.fly/bin:$PATH"
 fly deploy
 ```
 
-See `DEPLOY_GUIDE.md` for first-time setup.
+First-time Fly.io setup: create app (`fly apps create rent-reconciliation`), create volume (`fly volumes create data_vol --region jnb --size 1`), set secrets (`fly secrets set SECRET_KEY=... ADMIN_PASSWORD=... VIEWER_PASSWORD=...`), then deploy.
 
 ## For AI agents
 

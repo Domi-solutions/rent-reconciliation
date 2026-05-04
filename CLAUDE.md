@@ -8,19 +8,25 @@
 
 **Status:** Core engine, dashboards (The Pulse), monthly reports (The Ledger), tenant/owner/caretaker portals, SMS delivery (Africa's Talking sandbox), and named caretaker accounts are all complete and in production. The AI coordinator layer, conversational inbound parsing, and WhatsApp delivery are planned next.
 
+**Strategic direction (locked 2026-05-04):** Domi is a property fintech platform. Tenants pay rent via M-Pesa STK Push or card through Domi. Domi holds funds and disburses to landlords net of management fee. Fee embedded in disbursement spread. See `ROADMAP.md` "Layer F: The Payment Rail" for full spec.
+
 **Canonical docs — read in this order:**
-- `CLAUDE.md` (this file) — technical reference: schema, routes, auth models, patterns, conventions
+- `.agent/schema.yaml` — ground truth for all DB tables and columns (use this, not the prose below, for precise lookups)
+- `.agent/routes.yaml` — ground truth for all routes and blueprints
+- `.agent/jobs.yaml` — ground truth for all scheduled jobs
+- `CLAUDE.md` (this file) — technical patterns, conventions, business rules
 - `ROADMAP.md` — product vision, phase checklist, what's done vs not
 - `CURSOR_PLAN.md` — current work focus, next steps, implementation notes
+- `CURSOR_PATTERNS.md` — failure log; read before writing any code
 - `README.md` — how to run and deploy
 
-**Read both `CLAUDE.md` and `CURSOR_PLAN.md` before editing any code.**
+**Read `AGENTS.md` first, then `CURSOR_PATTERNS.md`, then this file before editing any code.**
 
 **Next steps (in order):**
-1. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) and async processing loop
-2. Add `tenants.language_preference` column + language preference prompt on first contact
-3. Build admin task feed on dashboard (extend dashboard route + `dashboard.html`, base.html untouched)
-4. Wire WhatsApp delivery after SMS flows are stable
+1. Admin authentication — `GET/POST /login`, `before_request` hook, exempt paths (see `CURSOR_PLAN.md` Prereq 1)
+2. Legal structure review + Paybill/Daraja application (external — run in parallel)
+3. Build Phase G (Payment Rail) — full spec in `CURSOR_PLAN.md`
+4. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) — Phase H
 
 ---
 
@@ -500,6 +506,94 @@ Admin uses **session-based** property selection. The currently selected property
 **Viewer Routes:** Separate blueprint (`/view/*`) — never modify `base.html` for viewer changes. Uses `unit_balances` VIEW which aggregates all charge types.
 
 **Water Parser:** Reuses `parse_currency()` from `excel_parser.py` — do not duplicate. Skips rows with water_charge = 0.
+
+## Fintech Architecture (Payment Rail — Phase G)
+
+**Strategic model:** Money-in-transit. Tenants pay via Domi Paybill. Domi holds and disburses to landlords net of management fee.
+
+### New Module: `src/payments/`
+
+```
+src/payments/
+├── __init__.py
+├── daraja.py        # Daraja STK Push (initiate payment), B2C (disburse to landlord)
+├── pesapal.py       # Pesapal card checkout integration
+└── disbursements.py # calculate_disbursement(), execute_disbursement()
+```
+
+**Rule:** Payment modules never import from `src/agent/` or route files. They write to DB and return. Agent and route code reads those tables.
+
+### New Blueprint: `src/routes/payment_routes.py`
+
+`payment_bp = Blueprint('payment', __name__, url_prefix='/inbound/payment')`
+
+Routes:
+- `POST /inbound/payment/mpesa` — Daraja callback (write `payment_transactions`, return 200)
+- `POST /inbound/payment/pesapal` — Pesapal IPN (same pattern)
+- `GET /tenant/<token>/pay/status/<checkout_request_id>` — polling endpoint for STK Push status
+
+Exempt from admin auth. Never block on processing — write-and-return-200 always (R15).
+
+### New Tables (Fintech Layer)
+
+**`payment_transactions`** — raw Daraja/Pesapal callbacks before processing:
+- `id`, `property_id`, `unit_id`, `tenant_id`
+- `source` — `'daraja'` | `'pesapal'` | `'manual'`
+- `external_reference` (UNIQUE) — checkout_request_id or Pesapal ref; deduplication key
+- `phone`, `amount`, `currency` (default `'KES'`), `raw_callback` (full JSON)
+- `received_at`, `processing_status` (`'pending'`|`'completed'`|`'failed'`), `processed_at`, `error_detail`
+- `payment_id` — FK to `payments(id)`, set when processed
+
+**`disbursements`** — landlord payouts:
+- `id`, `property_id`, `period`
+- `total_collected`, `fee_rate`, `fee_amount`, `net_amount`
+- `status` (`'pending'`|`'processing'`|`'completed'`|`'failed'`)
+- `method` (`'mpesa_b2c'`|`'bank_transfer'`), `recipient_account`, `daraja_transaction_id`
+- `disbursed_at`, `notes`, `created_at`
+
+**New columns on existing tables:**
+- `properties.management_fee_rate` — REAL, default 0.08
+- `tenants.portal_pin_hash` — TEXT, nullable; set when tenant creates payment PIN
+
+### New Environment Variables
+
+```
+DARAJA_CONSUMER_KEY      Daraja API key
+DARAJA_CONSUMER_SECRET   Daraja API secret
+DARAJA_PASSKEY           STK Push passkey (Safaricom)
+DARAJA_SHORTCODE         Paybill number
+DARAJA_CALLBACK_URL      Public URL for payment callbacks (e.g. https://rent-reconciliation.fly.dev/inbound/payment/mpesa)
+DARAJA_ENV               'sandbox' | 'production'
+PESAPAL_CONSUMER_KEY     Pesapal API key
+PESAPAL_CONSUMER_SECRET  Pesapal API secret
+PESAPAL_ENV              'sandbox' | 'production'
+RESEND_API_KEY           Email delivery (payment confirmations, receipts)
+```
+
+### Payment Flow (Daraja STK Push)
+
+```
+1. Tenant opens portal payment tab
+2. Enters phone + amount → POST /tenant/<token>/pay/stk
+3. Server calls daraja.stk_push() → returns checkout_request_id
+4. Frontend polls GET /tenant/<token>/pay/status/<checkout_request_id> every 3s
+5. Tenant confirms on their phone (M-Pesa PIN)
+6. Daraja fires POST /inbound/payment/mpesa callback
+7. Handler writes to payment_transactions, returns 200
+8. Background worker (runs every 60s) picks up pending transactions:
+   - Looks up unit by account_ref
+   - Creates payment record in payments table
+   - Runs FIFO allocator
+   - Sends SMS confirmation ("Payment confirmed.")
+   - Sets processing_status = 'completed'
+9. Status poll returns 'completed' → portal shows confirmation
+```
+
+### FIFO Transparency (tenant-facing)
+
+When a payment is confirmed, the SMS and portal confirmation must show what it was applied to:
+"KES 10,000 confirmed — applied: KES 5,000 to Oct service charge, KES 5,000 to Nov rent."
+Data is in `payment_allocations` table. This is required, not optional. Tenants must see where their money went.
 
 ## Local Development
 
