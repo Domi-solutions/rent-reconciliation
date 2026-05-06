@@ -18,7 +18,7 @@ tables:
       owner_email: {type: TEXT}
       owner_id: {type: TEXT, fk: owners.id, added_by: migrate_add_owners}
       rent_due_day: {type: INTEGER, default: 5, added_by: migrate_add_rent_due_day}
-      management_fee_rate: {type: REAL, default: 0.08, added_by: migrate_add_payment_transactions, status: planned}
+      management_fee_rate: {type: REAL, default: 0.08, added_by: migrate_add_payment_transactions}
       status: {type: TEXT, default: active}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
@@ -52,11 +52,11 @@ tables:
       move_out_date: {type: DATE}
       status: {type: TEXT, default: active}
       access_token: {type: TEXT, unique: true, added_by: migrate_add_tenant_access_token}
-      language_preference: {type: TEXT, values: [en, sw, null], note: "NULL triggers language prompt on first inbound", status: planned}
+      language_preference: {type: TEXT, values: [en, sw, null], note: "NULL triggers language prompt on first inbound", added_by: migrate_add_language_preference}
       flagged: {type: BOOLEAN, default: false, added_by: migrate_add_tenant_flagging, status: planned}
       flagged_reason: {type: TEXT, nullable: true, status: planned}
       flagged_at: {type: TIMESTAMP, nullable: true, status: planned}
-      portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "bcrypt hash of 4-digit portal PIN for payment tab", status: planned}
+      portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "werkzeug pbkdf2 hash of 4-digit portal PIN for payment tab"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   bank_statements:
@@ -119,13 +119,14 @@ tables:
       property_id: {type: TEXT, fk: properties.id, required: true}
       unit_id: {type: TEXT, fk: units.id, required: true}
       claim_id: {type: TEXT, fk: payment_claims.id}
-      bank_txn_id: {type: TEXT, fk: bank_transactions.id, required: true}
-      statement_id: {type: TEXT, fk: bank_statements.id, required: true}
+      bank_txn_id: {type: TEXT, fk: bank_transactions.id, note: "NULL for Daraja/Pesapal payments"}
+      statement_id: {type: TEXT, fk: bank_statements.id, note: "NULL for Daraja/Pesapal payments"}
       amount: {type: DECIMAL(10,2), required: true}
       payment_date: {type: DATE, required: true}
-      assignment_type: {type: TEXT, required: true}
+      assignment_type: {type: TEXT, required: true, values: [verified, manual, daraja, pesapal]}
       assignment_reason: {type: TEXT}
       assigned_by: {type: TEXT}
+      source: {type: TEXT, default: manual, values: [manual, daraja, pesapal], added_by: migrate_add_payment_transactions}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   rent_charges:
@@ -388,8 +389,8 @@ tables:
       received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   payment_transactions:
-    status: planned
-    migration: migrate_add_payment_transactions (to be written)
+    status: live
+    migration: migrate_add_payment_transactions
     note: "Raw Daraja/Pesapal callbacks before processing. UNIQUE on external_reference for deduplication."
     columns:
       id: {type: TEXT, pk: true}
@@ -409,8 +410,8 @@ tables:
       payment_id: {type: TEXT, fk: payments.id, note: "Set when processed successfully"}
 
   disbursements:
-    status: planned
-    migration: migrate_add_disbursements (to be written)
+    status: live
+    migration: migrate_add_payment_transactions
     note: "Landlord payout records. One row per disbursement run per property."
     columns:
       id: {type: TEXT, pk: true}

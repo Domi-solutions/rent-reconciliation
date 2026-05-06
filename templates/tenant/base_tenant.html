@@ -21,6 +21,7 @@
         <a class="viewer-nav-tab {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('tenant.payments', token=token) }}">Payments</a>
         <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">Messages</a>
         <a class="viewer-nav-tab {% if active_tab == 'maintenance' %}active{% endif %}" href="{{ url_for('tenant.maintenance', token=token) }}">Maintenance</a>
+        <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}">Pay</a>
       </nav>
     </div>
   </header>

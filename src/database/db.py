@@ -824,3 +824,157 @@ def migrate_add_checkin_responses():
             "ON checkin_responses(property_id, period)"
         )
         print("Migration complete: checkin_responses table ready.")
+
+
+def migrate_add_payment_transactions():
+    """Phase G: payment_transactions, disbursements, payments.source, management_fee_rate,
+    portal_pin_hash, and make payments.bank_txn_id nullable for Daraja payments. Idempotent."""
+    with get_connection() as conn:
+        # 1. payment_transactions — raw Daraja/Pesapal callbacks before processing
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payment_transactions (
+                id TEXT PRIMARY KEY,
+                property_id TEXT,
+                unit_id TEXT,
+                tenant_id TEXT,
+                source TEXT NOT NULL,
+                external_reference TEXT UNIQUE,
+                phone TEXT,
+                amount REAL NOT NULL,
+                currency TEXT DEFAULT 'KES',
+                raw_callback TEXT,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                processing_status TEXT DEFAULT 'pending',
+                processed_at TIMESTAMP,
+                error_detail TEXT,
+                payment_id TEXT REFERENCES payments(id),
+                FOREIGN KEY (property_id) REFERENCES properties(id),
+                FOREIGN KEY (unit_id) REFERENCES units(id),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ptxn_status ON payment_transactions(processing_status)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ptxn_ext_ref ON payment_transactions(external_reference)")
+
+        # 2. disbursements — monthly landlord payouts
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS disbursements (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                period TEXT NOT NULL,
+                total_collected REAL NOT NULL,
+                fee_rate REAL NOT NULL,
+                fee_amount REAL NOT NULL,
+                net_amount REAL NOT NULL,
+                status TEXT DEFAULT 'pending',
+                method TEXT,
+                recipient_account TEXT,
+                daraja_transaction_id TEXT,
+                disbursed_at TIMESTAMP,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_disb_property_period ON disbursements(property_id, period)")
+
+        # 3. management_fee_rate on properties
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if 'management_fee_rate' not in prop_cols:
+            conn.execute("ALTER TABLE properties ADD COLUMN management_fee_rate REAL DEFAULT 0.08")
+
+        # 4. portal_pin_hash on tenants
+        tenant_cols = [r[1] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'portal_pin_hash' not in tenant_cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN portal_pin_hash TEXT")
+
+        # 5. source column on payments (distinguishes daraja/pesapal/manual origin)
+        payment_cols = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(payments)").fetchall()}
+        if 'source' not in payment_cols:
+            conn.execute("ALTER TABLE payments ADD COLUMN source TEXT DEFAULT 'manual'")
+            payment_cols['source'] = 0  # just added, now nullable
+
+        # 6. Make bank_txn_id and statement_id nullable in payments so Daraja payments
+        #    (which have no bank statement) can be recorded without FK violation.
+        #    SQLite requires a full table rebuild to drop NOT NULL constraints.
+        if payment_cols.get('bank_txn_id') == 1:  # 1 = NOT NULL, needs rebuilding
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("DROP VIEW IF EXISTS unit_balances")
+            conn.execute("DROP TABLE IF EXISTS payments_new")
+            conn.execute("""
+                CREATE TABLE payments_new (
+                    id TEXT PRIMARY KEY,
+                    property_id TEXT NOT NULL,
+                    unit_id TEXT NOT NULL,
+                    claim_id TEXT,
+                    bank_txn_id TEXT,
+                    statement_id TEXT,
+                    amount DECIMAL(10,2) NOT NULL,
+                    payment_date DATE NOT NULL,
+                    assignment_type TEXT NOT NULL,
+                    assignment_reason TEXT,
+                    assigned_by TEXT,
+                    source TEXT DEFAULT 'manual',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (property_id) REFERENCES properties(id),
+                    FOREIGN KEY (unit_id) REFERENCES units(id),
+                    FOREIGN KEY (claim_id) REFERENCES payment_claims(id),
+                    FOREIGN KEY (bank_txn_id) REFERENCES bank_transactions(id),
+                    FOREIGN KEY (statement_id) REFERENCES bank_statements(id)
+                )
+            """)
+            conn.execute("""
+                INSERT INTO payments_new
+                    (id, property_id, unit_id, claim_id, bank_txn_id, statement_id,
+                     amount, payment_date, assignment_type, assignment_reason, assigned_by, source, created_at)
+                SELECT id, property_id, unit_id, claim_id, bank_txn_id, statement_id,
+                       amount, payment_date, assignment_type, assignment_reason, assigned_by,
+                       COALESCE(source, 'manual'), created_at
+                FROM payments
+            """)
+            conn.execute("DROP TABLE payments")
+            conn.execute("ALTER TABLE payments_new RENAME TO payments")
+            # Recreate indexes; partial index ensures uniqueness only for non-NULL bank_txn_id
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_bank_txn_payment "
+                "ON payments(bank_txn_id) WHERE bank_txn_id IS NOT NULL"
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_unit ON payments(unit_id)")
+            conn.execute("PRAGMA foreign_keys = ON")
+            # Recreate unit_balances VIEW (same definition as schema.sql)
+            conn.execute("""
+                CREATE VIEW IF NOT EXISTS unit_balances AS
+                SELECT
+                    u.id AS unit_id,
+                    u.property_id,
+                    u.unit_number,
+                    u.monthly_rent,
+                    t.id AS tenant_id,
+                    t.name AS tenant_name,
+                    t.phone AS tenant_phone,
+                    COALESCE(charges.total, 0) AS total_charged,
+                    COALESCE(payments_sum.total, 0) AS total_paid,
+                    COALESCE(charges.total, 0) - COALESCE(payments_sum.total, 0) AS balance
+                FROM units u
+                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                LEFT JOIN (
+                    SELECT unit_id, SUM(amount) AS total
+                    FROM rent_charges
+                    GROUP BY unit_id
+                ) charges ON u.id = charges.unit_id
+                LEFT JOIN (
+                    SELECT unit_id, SUM(amount) AS total
+                    FROM payments
+                    GROUP BY unit_id
+                ) payments_sum ON u.id = payments_sum.unit_id
+            """)
+
+        print("Migration complete: payment_transactions, disbursements, payments.source ready.")
+
+
+def migrate_add_language_preference():
+    """Add language_preference column to tenants. Idempotent."""
+    with get_connection() as conn:
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'language_preference' not in cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN language_preference TEXT")
+        print("Migration complete: tenants.language_preference ready.")

@@ -56,6 +56,15 @@
         {% else %}
           <span class="status-paid">Verified</span>
         {% endif %}
+        {% if p.status == 'verified' %}
+          {% if p.source == 'daraja' %}
+            <div class="data-row-meta mt-1" style="color: #0d6efd;">Paybill</div>
+          {% elif p.source == 'pesapal' %}
+            <div class="data-row-meta mt-1" style="color: #6f42c1;">Card</div>
+          {% else %}
+            <div class="data-row-meta mt-1">Manual</div>
+          {% endif %}
+        {% endif %}
       </div>
     </div>
   </div>

@@ -334,11 +334,11 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Delivery router abstraction (`src/agent/router.py`) — portal / SMS adapters wired; WhatsApp stub
 - [x] `src/agent/briefings.py` — `generate_weekly_digest(conn, property_id)`: payment velocity (7d), arrears state changes (vs last snapshot), claim aging (5+ days), occupancy changes
 - [x] Admin preview route `GET /agent/digest/preview/<property_id>`
-- [ ] Inbound webhook foundation — `POST /inbound/sms` and `POST /inbound/whatsapp` → write to `inbound_messages`, return 200 immediately
+- [x] Inbound webhook foundation — `POST /inbound/sms` and `POST /inbound/whatsapp` → write to `inbound_messages`, return 200 immediately; sender resolved by phone; processing dispatched in background thread (`src/routes/inbound_routes.py`)
 - [x] `inbound_messages` + `inbound_sessions` tables + migrations
-- [ ] `tenants.language_preference` column + migration
-- [ ] Payment rejection notification: fires when bank statement processed + claim has no matching reference → SMS to tenant
-- [ ] Scheduled delivery — Monday morning via SMS (WhatsApp added later)
+- [x] `tenants.language_preference` column + migration (`migrate_add_language_preference`)
+- [x] Payment rejection notification: fires when bank statement processed + claim has no matching reference → SMS to tenant
+- [x] Scheduled delivery — weekly digest sent to property owners via SMS every Monday 8am (`weekly_digest_job` updated)
 
 ### Phase 4: The Conversation — All Roles
 *Pulled forward from Layer 6 — core to the product value proposition.*
@@ -479,27 +479,27 @@ Bank statement PDF + SMS claim workflow stays active. Tenants who pay directly t
 ### Payment Rail Checklist
 
 **Prerequisites:**
-- [ ] Admin authentication — `GET/POST /login`, `before_request` hook, exempt paths. Must be done before any payment code is written.
+- [x] Admin authentication — `GET/POST /login`, `before_request` hook, exempt paths. Must be done before any payment code is written.
 - [ ] Legal structure review — merchant model vs CBK PSP license. Engage Africa's Talking compliance or Kenyan fintech counsel.
 - [ ] Safaricom Paybill + Daraja application — via Africa's Talking Payments. Timeline: 2-4 weeks.
 - [ ] WhatsApp Business API application (apply now — 2-6 week lead time, gates Phase H)
 
 **Phase G — Build:**
-- [ ] `src/payments/` module: `daraja.py`, `pesapal.py`, `disbursements.py`
-- [ ] `payment_transactions` table + `migrate_add_payment_transactions()` — raw callback storage
-- [ ] `disbursements` table + `migrate_add_disbursements()` — landlord payout records
-- [ ] `POST /inbound/payment/mpesa` — Daraja callback handler (write-and-return-200)
-- [ ] `POST /inbound/payment/pesapal` — Pesapal IPN handler (same pattern)
-- [ ] Background worker: process `payment_transactions WHERE processing_status = 'pending'`
-- [ ] Tenant portal auth upgrade — 4-digit PIN for payment tab only (`tenants.portal_pin_hash`)
-- [ ] Tenant portal payment UI — STK Push form + Pesapal card checkout
-- [ ] Payment status polling endpoint — `GET /tenant/<token>/pay/status/<checkout_request_id>`
-- [ ] Disbursement engine — `calculate_disbursement()`, `execute_disbursement()`
-- [ ] Disbursement scheduler job — 10th of each month
-- [ ] Landlord disbursement statement — extend owner report tab
-- [ ] Payment source badge on admin/caretaker views (Paybill / Card / Manual)
-- [ ] `properties.management_fee_rate` column (default 0.08) — migration required
-- [ ] Update `.agent/schema.yaml`, `.agent/routes.yaml`, `.agent/jobs.yaml` after each addition
+- [x] `src/payments/` module: `daraja.py`, `pesapal.py`, `disbursements.py`
+- [x] `payment_transactions` table + `migrate_add_payment_transactions()` — raw callback storage
+- [x] `disbursements` table — landlord payout records (in migrate_add_payment_transactions)
+- [x] `POST /inbound/payment/mpesa` — Daraja callback handler (write-and-return-200)
+- [x] `POST /inbound/payment/pesapal` — Pesapal IPN handler (same pattern)
+- [x] Background worker: process `payment_transactions WHERE processing_status = 'pending'`
+- [x] Tenant portal auth upgrade — 4-digit PIN for payment tab only (`tenants.portal_pin_hash`)
+- [x] Tenant portal payment UI — STK Push form (Pesapal card checkout — stub, pending credentials)
+- [x] Payment status polling endpoint — `GET /tenant/<token>/pay/status/<checkout_request_id>`
+- [x] Disbursement engine — `calculate_disbursement()`, `execute_disbursement()`
+- [x] Disbursement scheduler job — 10th of each month
+- [x] Landlord disbursement statement — extend owner report tab
+- [x] Payment source badge on admin/caretaker views (Paybill / Card / Manual)
+- [x] `properties.management_fee_rate` column (default 0.08) — migration required
+- [x] Update `.agent/schema.yaml`, `.agent/routes.yaml`, `.agent/jobs.yaml` after each addition
 
 ---
 

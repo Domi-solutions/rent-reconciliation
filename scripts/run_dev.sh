@@ -45,7 +45,7 @@ echo "========================================"
 echo "  LOCAL DEV — using data/dev.db"
 echo "  Production database is NOT affected"
 echo "  Admin password: disabled (dev mode)"
-echo "  URL: http://localhost:5001"
+echo "  URL: http://localhost:${PORT:-5050}"
 echo "========================================"
 echo ""
 

@@ -28,13 +28,17 @@ from src.routes.viewer_routes import viewer_bp
 from src.routes.report_routes import report_bp
 from src.routes.caretaker_routes import caretaker_bp
 from src.routes.agent_routes import agent_bp
+from src.routes.payment_routes import payment_bp
+from src.routes.inbound_routes import inbound_bp
 from src.agent.coordinator import (
     daily_snapshot_job,
     morning_briefings_job,
     weekly_digest_job,
     anomaly_check_job,
     monthly_checkins_job,
+    process_payment_queue,
 )
+from src.payments.disbursements import scheduled_disbursement_job
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
@@ -74,6 +78,8 @@ from src.database.db import (
     migrate_add_inbound_messages,
     migrate_add_inbound_sessions,
     migrate_add_checkin_responses,
+    migrate_add_payment_transactions,
+    migrate_add_language_preference,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -99,6 +105,8 @@ migrate_add_balance_snapshots()
 migrate_add_inbound_messages()
 migrate_add_inbound_sessions()
 migrate_add_checkin_responses()
+migrate_add_payment_transactions()
+migrate_add_language_preference()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -111,6 +119,8 @@ app.register_blueprint(tenant_bp)
 app.register_blueprint(messaging_bp)
 app.register_blueprint(caretaker_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(payment_bp)
+app.register_blueprint(inbound_bp)
 
 
 scheduler = BackgroundScheduler(daemon=True)
@@ -119,6 +129,8 @@ scheduler.add_job(func=morning_briefings_job, trigger='cron', hour=7, minute=0, 
 scheduler.add_job(func=weekly_digest_job, trigger='cron', day_of_week='mon', hour=8, minute=0, id='weekly_digest_job', replace_existing=True)
 scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='anomaly_check_job', replace_existing=True)
 scheduler.add_job(func=monthly_checkins_job, trigger='cron', day=1, hour=9, minute=0, id='monthly_checkins_job', replace_existing=True)
+scheduler.add_job(func=process_payment_queue, trigger='interval', seconds=60, id='process_payment_queue', replace_existing=True)
+scheduler.add_job(func=scheduled_disbursement_job, trigger='cron', day=10, hour=9, minute=0, id='disbursement_job', replace_existing=True)
 
 _running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 _is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
@@ -144,6 +156,8 @@ def require_admin_auth():
     if request.path.startswith('/tenant'):
         return None
     if request.path.startswith('/caretaker'):
+        return None
+    if request.path.startswith('/inbound'):
         return None
     if not os.environ.get('ADMIN_PASSWORD'):
         return None
@@ -1458,6 +1472,7 @@ def verify_payments(statement_id):
 
         bank_by_ref = {row['mpesa_ref']: row for row in bank_txns if row['mpesa_ref']}
         verified_count = 0
+        verified_claim_ids = set()
 
         for claim in pending_claims:
             ref = claim['mpesa_ref']
@@ -1495,6 +1510,7 @@ def verify_payments(statement_id):
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('payment_verified', 'payment', payment_id, details, 'admin'),
             )
+            verified_claim_ids.add(claim['id'])
             verified_count += 1
 
             try:
@@ -1518,6 +1534,27 @@ def verify_payments(statement_id):
                     )
                     from src.messaging.delivery import send_sms
                     send_sms([{'phone': _tenant['phone']}], _sms)
+            except Exception:
+                pass
+
+        # Notify tenants whose claims were not on this statement
+        for claim in pending_claims:
+            if claim['id'] in verified_claim_ids:
+                continue
+            if not claim.get('mpesa_ref'):
+                continue
+            try:
+                _rej_tenant = conn.execute(
+                    "SELECT name, phone FROM tenants WHERE unit_id = ? AND status = 'active'",
+                    (claim['unit_id'],),
+                ).fetchone()
+                if _rej_tenant and _rej_tenant['phone']:
+                    _rej_sms = (
+                        f"Hi {_rej_tenant['name']}, reference {claim['mpesa_ref']} "
+                        "was not found on this statement. Please contact us or provide proof of payment."
+                    )
+                    from src.messaging.delivery import send_sms
+                    send_sms([{'phone': _rej_tenant['phone']}], _rej_sms)
             except Exception:
                 pass
 
@@ -2471,12 +2508,13 @@ def review():
         if tab == 'confirmed':
             confirmed = conn.execute("""
                 SELECT p.id, p.amount, p.payment_date, p.assignment_type, p.assignment_reason,
-                       u.unit_number, t.name AS tenant_name, bt.mpesa_ref, bt.txn_date
+                       p.source, u.unit_number, t.name AS tenant_name,
+                       COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref, bt.txn_date
                 FROM payments p
                 JOIN units u ON p.unit_id = u.id
                 LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-                JOIN bank_transactions bt ON p.bank_txn_id = bt.id
-                WHERE p.property_id = ? AND p.claim_id IS NOT NULL
+                LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
+                WHERE p.property_id = ?
                 ORDER BY p.payment_date DESC, p.id
             """, (property_id,)).fetchall()
 
@@ -2846,4 +2884,5 @@ def tools_test_excel():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get('PORT', 5050))
+    app.run(debug=True, port=port)

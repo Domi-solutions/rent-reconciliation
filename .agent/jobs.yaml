@@ -50,24 +50,24 @@ jobs:
     owns: "Writes to messages table (message_type='checkin'). Idempotent per tenant+period."
     description: "Send monthly check-in SMS to all active tenants with phones: 'How is everything? Reply 1/2/3 + optional comment.'"
 
-  process_inbound_queue:
-    status: planned
-    function: src/agent/coordinator.py::process_inbound_queue (to be written)
-    trigger: "interval, every 60 seconds"
-    owns: "Reads inbound_messages WHERE processed_at IS NULL. Classifies intent, runs action handler, sends response."
-    description: "Background processor for inbound SMS/WhatsApp messages. LLM inference always happens here, never in the webhook handler."
+  process_inbound_message (threaded):
+    status: live
+    function: src/agent/inbound.py::process_inbound_message (dispatched via threading.Thread from webhook handler)
+    trigger: "on-demand — fired immediately after each inbound webhook write"
+    owns: "Reads inbound_messages by ID. Classifies intent, runs action handler, updates processed_at + response_sent."
+    description: "Background thread (not APScheduler) dispatched by POST /inbound/sms and POST /inbound/whatsapp after writing to inbound_messages. LLM inference never blocks the 200 response."
 
   process_payment_queue:
-    status: planned
-    function: src/agent/coordinator.py::process_payment_queue (to be written)
+    status: live
+    function: src/agent/coordinator.py::process_payment_queue
     trigger: "interval, every 60 seconds"
     owns: "Reads payment_transactions WHERE processing_status = 'pending'. Creates payment records, runs FIFO allocator, sends SMS confirmation."
     description: "Background processor for Daraja and Pesapal payment callbacks."
     note: "Includes deduplication check on external_reference before processing."
 
   disbursement_job:
-    status: planned
-    function: src/payments/disbursements.py::scheduled_disbursement_job (to be written)
+    status: live
+    function: src/payments/disbursements.py::scheduled_disbursement_job
     trigger: "cron, day=10, hour=9, minute=0 (10th of month 9am EAT)"
     owns: "Reads payment_transactions for the month. Creates disbursements record. Triggers B2C payout."
     description: "Monthly landlord disbursement: calculate net (total collected minus fee), execute payout."

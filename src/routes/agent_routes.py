@@ -13,6 +13,7 @@ from src.agent.coordinator import (
     daily_snapshot_job,
     monthly_checkins_job,
     morning_briefings_job,
+    process_payment_queue,
     weekly_digest_job,
 )
 from src.agent.inbound import process_inbound_message
@@ -115,6 +116,7 @@ def trigger_job(job_name):
         "morning_briefings_job": morning_briefings_job,
         "weekly_digest_job": weekly_digest_job,
         "monthly_checkins_job": monthly_checkins_job,
+        "process_payment_queue": process_payment_queue,
     }
     fn = jobs.get(job_name)
     if not fn:

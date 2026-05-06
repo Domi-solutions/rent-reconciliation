@@ -9,7 +9,7 @@ blueprints:
   admin:
     file: app.py (inline routes, no blueprint)
     prefix: /
-    auth: session['admin_authenticated'] (planned — Prereq 1)
+    auth: session['admin_authenticated']
     status: live
     key_routes:
       - "GET / — dashboard"
@@ -24,9 +24,9 @@ blueprints:
       - "POST /payments/verify — verify claims against bank statement"
       - "GET /owners — owner management"
       - "GET /caretakers — caretaker management"
-      - "GET /login — login form (planned)"
-      - "POST /login — authenticate admin (planned)"
-      - "GET /logout — clear session (planned)"
+      - "GET /login — login form"
+      - "POST /login — authenticate admin"
+      - "GET /logout — clear session"
 
   viewer:
     file: src/routes/viewer_routes.py
@@ -58,8 +58,11 @@ blueprints:
       - "GET /tenant/<token>/messages"
       - "GET /tenant/<token>/maintenance"
       - "POST /tenant/<token>/maintenance/new"
-      - "POST /tenant/<token>/pay/stk — initiate STK Push (planned, Phase G)"
-      - "GET /tenant/<token>/pay/status/<checkout_request_id> — poll payment status (planned)"
+      - "GET /tenant/<token>/pay — payment tab (PIN-gated)"
+      - "POST /tenant/<token>/pay/pin/create — create 4-digit PIN"
+      - "POST /tenant/<token>/pay/pin/verify — verify PIN, set session"
+      - "POST /tenant/<token>/pay/stk — initiate STK Push"
+      - "GET /tenant/<token>/pay/status/<checkout_request_id> — poll payment status (JSON)"
 
   caretaker:
     file: src/routes/caretaker_routes.py
@@ -124,21 +127,22 @@ blueprints:
     note: "Parser and CRUD testing routes. Remove or gate before multi-client production."
 
   payment:
-    file: src/routes/payment_routes.py (to be created)
+    file: src/routes/payment_routes.py
     prefix: /inbound/payment
     auth: none (webhook endpoints — verified by provider signature)
-    status: planned
+    status: live
     exempt_from_admin_auth: true
     key_routes:
       - "POST /inbound/payment/mpesa — Daraja C2B callback (write-and-return-200)"
       - "POST /inbound/payment/pesapal — Pesapal IPN (write-and-return-200)"
 
   inbound:
-    file: app.py or dedicated blueprint (to be decided)
+    file: src/routes/inbound_routes.py
     prefix: /inbound
     auth: none (webhook endpoints)
-    status: planned
+    status: live
     exempt_from_admin_auth: true
+    note: "Resolves sender identity by phone (caretaker → owner → tenant → unknown). Dispatches process_inbound_message in background thread."
     key_routes:
-      - "POST /inbound/sms — Africa's Talking inbound SMS"
-      - "POST /inbound/whatsapp — WhatsApp inbound"
+      - "POST /inbound/sms — Africa's Talking inbound SMS (write-and-return-200)"
+      - "POST /inbound/whatsapp — WhatsApp inbound stub (write-and-return-200; full payload parsing when credentials live)"

@@ -1,7 +1,9 @@
 """Tenant portal: read-only access via shareable token URL. No session or password."""
 
-from flask import Blueprint, render_template, request, redirect, url_for
+from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
+from src.payments.daraja import stk_push
 
 tenant_bp = Blueprint('tenant', __name__, url_prefix='/tenant')
 
@@ -255,6 +257,188 @@ def maintenance(token):
         property=prop,
         issues=issues,
     )
+
+
+@tenant_bp.route('/<token>/pay', methods=['GET'])
+def pay(token):
+    """Payment tab. PIN-gated: create PIN if none set, verify if set, show form if verified."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        tenant_row = conn.execute(
+            "SELECT portal_pin_hash FROM tenants WHERE id = ?", (tenant['id'],)
+        ).fetchone()
+        pin_hash = tenant_row['portal_pin_hash'] if tenant_row else None
+
+        balance_row = conn.execute(
+            "SELECT balance FROM unit_balances WHERE unit_id = ?", (unit['id'],)
+        ).fetchone()
+        balance = float(balance_row['balance']) if balance_row else 0.0
+
+    pin_verified = session.get(f'pay_auth_{token}', False)
+    pin_exists = bool(pin_hash)
+    error = request.args.get('error')
+
+    return render_template(
+        'tenant/pay.html',
+        token=token,
+        tenant=tenant,
+        unit=unit,
+        property=prop,
+        active_tab='pay',
+        pin_exists=pin_exists,
+        pin_verified=pin_verified,
+        balance=balance,
+        error=error,
+    )
+
+
+@tenant_bp.route('/<token>/pay/pin/create', methods=['POST'])
+def pay_pin_create(token):
+    """Create the 4-digit payment PIN."""
+    pin = (request.form.get('pin') or '').strip()
+    pin_confirm = (request.form.get('pin_confirm') or '').strip()
+
+    if not pin.isdigit() or len(pin) != 4:
+        return redirect(url_for('tenant.pay', token=token, error='PIN must be exactly 4 digits'))
+    if pin != pin_confirm:
+        return redirect(url_for('tenant.pay', token=token, error='PINs do not match'))
+
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        existing = conn.execute(
+            "SELECT portal_pin_hash FROM tenants WHERE id = ?", (tenant['id'],)
+        ).fetchone()
+        if existing and existing['portal_pin_hash']:
+            return redirect(url_for('tenant.pay', token=token, error='PIN already set'))
+        pin_hash = generate_password_hash(pin)
+        conn.execute(
+            "UPDATE tenants SET portal_pin_hash = ? WHERE id = ?",
+            (pin_hash, tenant['id']),
+        )
+
+    session[f'pay_auth_{token}'] = True
+    return redirect(url_for('tenant.pay', token=token))
+
+
+@tenant_bp.route('/<token>/pay/pin/verify', methods=['POST'])
+def pay_pin_verify(token):
+    """Verify the 4-digit payment PIN."""
+    pin = (request.form.get('pin') or '').strip()
+
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        row = conn.execute(
+            "SELECT portal_pin_hash FROM tenants WHERE id = ?", (tenant['id'],)
+        ).fetchone()
+        pin_hash = row['portal_pin_hash'] if row else None
+
+    if not pin_hash or not check_password_hash(pin_hash, pin):
+        return redirect(url_for('tenant.pay', token=token, error='Incorrect PIN'))
+
+    session[f'pay_auth_{token}'] = True
+    return redirect(url_for('tenant.pay', token=token))
+
+
+@tenant_bp.route('/<token>/pay/stk', methods=['POST'])
+def pay_stk(token):
+    """Initiate M-Pesa STK Push. Returns JSON. Requires PIN verified in session."""
+    if not session.get(f'pay_auth_{token}'):
+        return jsonify({'success': False, 'error': 'PIN verification required'}), 403
+
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return jsonify({'success': False, 'error': 'Invalid token'}), 400
+        tenant, unit, prop = ctx
+
+    phone = (request.form.get('phone') or tenant.get('phone') or '').strip()
+    try:
+        amount = int(float(request.form.get('amount') or 0))
+    except (ValueError, TypeError):
+        amount = 0
+
+    if amount <= 0:
+        return jsonify({'success': False, 'error': 'Enter a valid amount'})
+    if not phone:
+        return jsonify({'success': False, 'error': 'Phone number required'})
+
+    description = f"Rent — Unit {unit['unit_number']}"
+    result = stk_push(phone, amount, unit['unit_number'], description)
+
+    if result['success']:
+        checkout_request_id = result['checkout_request_id']
+        # Pre-create payment_transactions record so callback can update it
+        with get_connection() as conn:
+            existing = conn.execute(
+                "SELECT id FROM payment_transactions WHERE external_reference = ?",
+                (checkout_request_id,),
+            ).fetchone()
+            if not existing:
+                txn_id = generate_id('PTXN')
+                conn.execute(
+                    """
+                    INSERT INTO payment_transactions
+                        (id, property_id, unit_id, tenant_id, source,
+                         external_reference, phone, amount, processing_status)
+                    VALUES (?, ?, ?, ?, 'daraja', ?, ?, ?, 'pending')
+                    """,
+                    (
+                        txn_id,
+                        prop['id'],
+                        unit['id'],
+                        tenant['id'],
+                        checkout_request_id,
+                        phone,
+                        float(amount),
+                    ),
+                )
+        return jsonify({'success': True, 'checkout_request_id': checkout_request_id})
+
+    return jsonify({'success': False, 'error': result.get('error', 'Payment initiation failed')})
+
+
+@tenant_bp.route('/<token>/pay/status/<checkout_request_id>')
+def pay_status(token, checkout_request_id):
+    """Poll payment status. Returns JSON {status, message}."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return jsonify({'status': 'error', 'message': 'Invalid token'}), 400
+
+        row = conn.execute(
+            """
+            SELECT processing_status, error_detail, amount
+            FROM payment_transactions
+            WHERE external_reference = ?
+            """,
+            (checkout_request_id,),
+        ).fetchone()
+
+    if not row:
+        return jsonify({'status': 'not_found', 'message': 'Payment not found'})
+
+    status = row['processing_status']
+    if status == 'completed':
+        amount_fmt = f"{float(row['amount']):,.0f}"
+        return jsonify({
+            'status': 'completed',
+            'message': f"KES {amount_fmt} confirmed.",
+        })
+    if status == 'failed':
+        return jsonify({
+            'status': 'failed',
+            'message': row['error_detail'] or 'Payment was not completed',
+        })
+    return jsonify({'status': 'pending', 'message': 'Waiting for confirmation...'})
 
 
 @tenant_bp.route('/<token>/maintenance/new', methods=['POST'])

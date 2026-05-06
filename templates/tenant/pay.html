@@ -1,0 +1,183 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Pay — {{ unit.unit_number }}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <div class="viewer-section-title">Pay Rent</div>
+  <p class="text-muted" style="font-size: 0.9rem;">
+    Outstanding balance: <strong>KES {{ "{:,.0f}".format(balance) }}</strong>
+  </p>
+</div>
+
+{% if error %}
+<div class="alert alert-danger py-2">{{ error }}</div>
+{% endif %}
+
+{# ── State 1: No PIN set — create one ── #}
+{% if not pin_exists %}
+<div class="card shadow-sm mb-4" style="max-width: 420px;">
+  <div class="card-body p-4">
+    <h6 class="mb-3">Create a payment PIN</h6>
+    <p class="text-muted" style="font-size: 0.875rem;">
+      Set a 4-digit PIN to authorise payments from this portal.
+      You will enter it each session before paying.
+    </p>
+    <form method="POST" action="{{ url_for('tenant.pay_pin_create', token=token) }}">
+      <div class="mb-3">
+        <label class="form-label">4-digit PIN</label>
+        <input type="password" name="pin" inputmode="numeric" maxlength="4"
+               pattern="\d{4}" class="form-control" required autocomplete="new-password">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Confirm PIN</label>
+        <input type="password" name="pin_confirm" inputmode="numeric" maxlength="4"
+               pattern="\d{4}" class="form-control" required autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary w-100">Create PIN</button>
+    </form>
+  </div>
+</div>
+
+{# ── State 2: PIN exists but not verified this session ── #}
+{% elif pin_exists and not pin_verified %}
+<div class="card shadow-sm mb-4" style="max-width: 380px;">
+  <div class="card-body p-4">
+    <h6 class="mb-3">Enter your payment PIN</h6>
+    <form method="POST" action="{{ url_for('tenant.pay_pin_verify', token=token) }}">
+      <div class="mb-3">
+        <input type="password" name="pin" inputmode="numeric" maxlength="4"
+               pattern="\d{4}" class="form-control form-control-lg text-center"
+               placeholder="····" required autofocus autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary w-100">Verify PIN</button>
+    </form>
+  </div>
+</div>
+
+{# ── State 3: PIN verified — show payment form ── #}
+{% else %}
+<div class="card shadow-sm mb-4" style="max-width: 460px;">
+  <div class="card-body p-4">
+    <h6 class="mb-3">Pay via M-Pesa</h6>
+    <form id="stkForm">
+      <div class="mb-3">
+        <label class="form-label">M-Pesa phone number</label>
+        <input type="tel" name="phone" id="payPhone" class="form-control"
+               value="{{ tenant.phone or '' }}" placeholder="07XX XXX XXX" required>
+        <div class="form-text">M-Pesa prompt will be sent to this number.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Amount (KES)</label>
+        <input type="number" name="amount" id="payAmount" class="form-control"
+               min="1" step="1"
+               value="{{ [balance|int, 0]|max if balance > 0 else '' }}"
+               placeholder="e.g. 15000" required>
+      </div>
+      <button type="submit" class="btn btn-success w-100" id="stkBtn">
+        Send M-Pesa prompt
+      </button>
+    </form>
+
+    {# Status display — hidden until STK Push initiated #}
+    <div id="stkStatus" class="mt-3 d-none">
+      <div class="alert" id="stkAlert" role="alert">
+        <div id="stkSpinner" class="d-flex align-items-center gap-2">
+          <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+          <span id="stkMessage">Waiting for confirmation...</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-muted mt-3 mb-0" style="font-size: 0.8rem;">
+      Check your phone — enter your M-Pesa PIN when prompted.
+      Payment is recorded automatically once confirmed.
+    </p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4" style="max-width: 460px;">
+  <div class="card-body p-3">
+    <div class="text-muted" style="font-size: 0.85rem;">
+      <strong>Pay by card</strong> — coming soon.
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if pin_verified %}
+<script>
+  const form = document.getElementById('stkForm');
+  const btn = document.getElementById('stkBtn');
+  const statusDiv = document.getElementById('stkStatus');
+  const alert = document.getElementById('stkAlert');
+  const message = document.getElementById('stkMessage');
+  const spinner = document.getElementById('stkSpinner');
+  let pollInterval = null;
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    const data = new FormData(form);
+    const resp = await fetch('{{ url_for("tenant.pay_stk", token=token) }}', {
+      method: 'POST', body: data,
+    });
+    const result = await resp.json();
+
+    statusDiv.classList.remove('d-none');
+    if (!result.success) {
+      alert.className = 'alert alert-danger';
+      spinner.querySelector('.spinner-border')?.remove();
+      message.textContent = result.error || 'Could not initiate payment.';
+      btn.disabled = false;
+      btn.textContent = 'Send M-Pesa prompt';
+      return;
+    }
+
+    alert.className = 'alert alert-info';
+    message.textContent = 'Check your phone and enter your M-Pesa PIN...';
+    form.style.opacity = '0.4';
+    form.style.pointerEvents = 'none';
+
+    const checkoutId = result.checkout_request_id;
+    pollInterval = setInterval(() => pollStatus(checkoutId), 3000);
+  });
+
+  async function pollStatus(checkoutId) {
+    try {
+      const resp = await fetch(
+        '{{ url_for("tenant.pay_status", token=token, checkout_request_id="__ID__") }}'
+          .replace('__ID__', encodeURIComponent(checkoutId))
+      );
+      const data = await resp.json();
+
+      if (data.status === 'completed') {
+        clearInterval(pollInterval);
+        alert.className = 'alert alert-success';
+        const spinnerEl = spinner.querySelector('.spinner-border');
+        if (spinnerEl) spinnerEl.remove();
+        message.textContent = data.message;
+        btn.textContent = 'Done';
+        // Reload after 3s so payments tab reflects the new balance
+        setTimeout(() => location.reload(), 3000);
+      } else if (data.status === 'failed') {
+        clearInterval(pollInterval);
+        alert.className = 'alert alert-danger';
+        const spinnerEl = spinner.querySelector('.spinner-border');
+        if (spinnerEl) spinnerEl.remove();
+        message.textContent = data.message || 'Payment was not completed.';
+        btn.disabled = false;
+        btn.textContent = 'Try again';
+        form.style.opacity = '';
+        form.style.pointerEvents = '';
+      }
+    } catch (_) {
+      // Network error — keep polling
+    }
+  }
+</script>
+{% endif %}
+{% endblock %}

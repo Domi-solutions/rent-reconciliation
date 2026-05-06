@@ -305,10 +305,13 @@ def property_payments(property_id):
         if not access:
             abort(403)
 
-        # Verified payments
+        # Verified payments (bank statement + Daraja/Pesapal)
         verified = conn.execute("""
             SELECT p.amount, p.payment_date as date, u.unit_number,
-                   t.name as tenant_name, bt.mpesa_ref, 'verified' as status
+                   t.name as tenant_name,
+                   COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref,
+                   p.source,
+                   'verified' as status
             FROM payments p
             JOIN units u ON u.id = p.unit_id
             LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
@@ -795,9 +798,19 @@ def property_reports(property_id):
                 'total_arrears': report_data.get('arrears', {}).get('total_arrears', 0),
             })
 
+        disbursements = conn.execute("""
+            SELECT period, total_collected, fee_rate, fee_amount, net_amount,
+                   status, disbursed_at, created_at
+            FROM disbursements
+            WHERE property_id = ?
+            ORDER BY period DESC
+        """, (property_id,)).fetchall()
+        disbursements = [dict(d) for d in disbursements]
+
     return render_template('viewer/reports.html',
                           property=prop,
                           reports=reports_with_summary,
+                          disbursements=disbursements,
                           active_tab='reports')
 
 
