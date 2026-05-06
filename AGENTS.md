@@ -26,40 +26,57 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude (strategy + workspace cleanup)
-**Date:** 2026-05-04
+**Who:** Claude (Phase G + Phase 3 completion, competitive research, deploy)
+**Date:** 2026-05-06
 
-### What was decided
+### What was completed
 
-- **Strategic pivot:** Domi is now a property fintech (money-in-transit model). Detailed in `CURSOR_PLAN.md` Phase G and `ROADMAP.md` "Payment Rail" section.
-- **Tenant experience:** STK Push (phone + amount on portal → M-Pesa prompt) + card (Pesapal). Partial payments are first-class. Legacy bank statement reconciliation kept during transition.
-- **Workspace cleaned:** `DEPLOY_GUIDE.md` deleted (outdated tutorial). All docs updated and locked to reflect current state.
-- **YAML registries created:** `.agent/schema.yaml`, `.agent/routes.yaml`, `.agent/jobs.yaml`, `.agent/intents.yaml`, `.agent/env.yaml` — use these for precise lookups, not CLAUDE.md prose.
+**Phase G — Payment Rail (all items complete):**
+- `src/payments/daraja.py` — STK Push initiation + B2C disbursement
+- `src/payments/pesapal.py` — card checkout integration
+- `src/payments/disbursements.py` — `calculate_disbursement()`, `execute_disbursement()`, `scheduled_disbursement_job()`
+- `src/routes/payment_routes.py` — Daraja C2B + Pesapal IPN webhooks (write-and-return-200)
+- `src/routes/tenant_routes.py` — PIN-gated pay tab: `GET /tenant/<token>/pay`, PIN create/verify, STK Push, poll
+- `templates/tenant/pay.html` — tenant payment UI
+- `process_payment_queue` — 60s FIFO processor; FIFO SMS confirmation with allocation breakdown
+- `disbursement_job` — 10th of month 9am; pending → processing → completed/failed lifecycle
+- Disbursement statement shown in owner viewer payments tab (`viewer/payments.html`)
+- Source badges (Admin / Caretaker / System) on owner notifications page
 
-### What was confirmed (do not re-implement)
+**Phase 3 — Signal + Inbound Foundation (all items complete):**
+- `src/routes/inbound_routes.py` — `POST /inbound/sms` + `POST /inbound/whatsapp`; write-and-return-200; background thread dispatch
+- `src/agent/inbound.py` — `process_inbound_message()`; intent classifier; action handlers; `classify_intent()`
+- `src/agent/state.py` — `inbound_sessions` conversation state (24h TTL)
+- `src/agent/responder.py` — response message generator
+- `weekly_digest_job()` updated to deliver via `route_message()` to all owners with phones (Monday 8am)
+- Payment rejection SMS: fires after `verify_payments()` for claims not matched on bank statement
+- `migrate_add_language_preference()` — `tenants.language_preference TEXT` column
 
-- Phases A–E (agent infrastructure, balance snapshots, APScheduler, simulator, inbound tables, check-ins) are complete and deployed.
-- All portals (tenant, owner, caretaker), messaging, reports — complete.
+**Fixed:** `sqlite3.IntegrityError: FOREIGN KEY constraint failed` in `migrate_add_payment_transactions()` — wrapped table rebuild with `PRAGMA foreign_keys = OFF` / `ON` (orphaned FK refs in dev DB).
+
+**Deployed** to Fly.io (Johannesburg). AT sandbox mode — live credentials pending.
+
+### What was decided (do not revisit)
+
+- Fintech model locked: Domi holds tenant payments, disburses net of 8% management fee. Money-in-transit, not pass-through.
+- Inbound processing: `threading.Thread` (fire-and-forget) rather than APScheduler queue job — simpler, no polling needed.
+- Competitive landscape: Domi does not compete with Nyumba Zetu (upmarket PM SaaS) — it competes with the profession of property manager, targeting individual landlords who currently use a management company + caretaker.
 
 ### Pick up next
 
-**Prereq 1 — Admin auth (do this first, ~2 days):**
-- `GET/POST /login` at `app.py` level
-- `before_request` hook checking `session['admin_authenticated']`
-- Exempt: `/login`, `/logout`, `/tenant/*`, `/view/*`, `/caretaker/*`, `/inbound/*`, `/static/*`
-- Dev mode: if `ADMIN_PASSWORD` not set, skip check entirely (no change to `run_dev.sh`)
-- Pattern: see viewer auth in `src/routes/viewer_routes.py`
+**Phase 4 — The Conversation (All Roles).** Full spec in `ROADMAP.md` Phase 4 section.
 
-**Prereq 2 — Legal structure (external, run in parallel):**
-- Engage Kenyan fintech legal counsel or Africa's Talking compliance
-- Question: merchant model vs PSP license under CBK
+Infrastructure first (these unblock everything else):
+1. Africa's Talking dashboard — point inbound SMS to `https://rent-reconciliation.fly.dev/inbound/sms`
+2. Wire `src/agent/inbound.py` intent classifier to actual LLM (`call_llm` in `llm.py`) — currently stubbed
+3. Implement tenant intent handlers: `checkin_reply`, `payment_claim`, `query_balance`, `complaint_submission`
+4. `tenants.flagged` + `tenants.flagged_reason` + `tenants.flagged_at` columns + migration (falsification detection)
+5. `maintenance_issues.priority` column + migration
+6. `property_info` table + migration + admin management UI (needed for `local_amenity_query`)
 
-**Prereq 3 — Paybill + Daraja application (external, run in parallel):**
-- Apply via Africa's Talking Payments or Safaricom Business
-- Timeline: 2-4 weeks
-- One Paybill for all properties, unit number as account reference
+Caretaker and owner handlers follow after tenant handlers are stable.
 
-**After all three prereqs:** Build Phase G (Payment Rail) — full spec in `CURSOR_PLAN.md`.
+**Note on credentials:** When AT_USERNAME flips from sandbox to live, 5 message types fire to real phones immediately. Read `memory/project_go_live_messaging_checklist.md` in Claude memory before flipping.
 
 ---
 
