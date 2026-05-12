@@ -129,17 +129,23 @@ def errors():
 
 @platform_bp.route("/orgs/new", methods=["POST"])
 def create_org():
-    """Create a new organisation, optionally setting its admin login password."""
+    """Create a new organisation. Email is the login identifier — must be unique."""
     from werkzeug.security import generate_password_hash
     name = request.form.get("name", "").strip()
-    slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
-    contact_email = request.form.get("contact_email", "").strip() or None
+    contact_email = request.form.get("contact_email", "").strip().lower() or None
     contact_phone = request.form.get("contact_phone", "").strip() or None
+    slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
     password = request.form.get("password", "").strip()
     if not name:
         flash("Organisation name is required.", "danger")
         return redirect(url_for("platform.dashboard"))
+    if not contact_email:
+        flash("A login email is required.", "danger")
+        return redirect(url_for("platform.dashboard"))
     with get_connection() as conn:
+        if conn.execute("SELECT id FROM organizations WHERE LOWER(contact_email) = ?", (contact_email,)).fetchone():
+            flash(f"Email '{contact_email}' is already in use by another organisation.", "danger")
+            return redirect(url_for("platform.dashboard"))
         if slug and conn.execute("SELECT id FROM organizations WHERE slug = ?", (slug,)).fetchone():
             flash(f"Slug '{slug}' is already taken.", "danger")
             return redirect(url_for("platform.dashboard"))
@@ -149,7 +155,7 @@ def create_org():
             (org_id, name, slug or None, contact_email, contact_phone,
              generate_password_hash(password) if password else None),
         )
-    flash(f"Organisation '{name}' created." + (" Login password set." if password else " No password set yet."), "success")
+    flash(f"Organisation '{name}' created." + (" Login password set." if password else " No login password set yet."), "success")
     return redirect(url_for("platform.dashboard"))
 
 
@@ -171,6 +177,30 @@ def set_org_password(org_id):
             (generate_password_hash(password), org_id),
         )
     flash(f"Password updated for '{org['name']}'.", "success")
+    return redirect(url_for("platform.dashboard"))
+
+
+@platform_bp.route("/orgs/<org_id>/set-email", methods=["POST"])
+def set_org_email(org_id):
+    """Update the login email for an organisation."""
+    email = request.form.get("email", "").strip().lower()
+    if not email:
+        flash("Email cannot be empty.", "danger")
+        return redirect(url_for("platform.dashboard"))
+    with get_connection() as conn:
+        org = conn.execute("SELECT name FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            flash("Organisation not found.", "danger")
+            return redirect(url_for("platform.dashboard"))
+        conflict = conn.execute(
+            "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
+            (email, org_id),
+        ).fetchone()
+        if conflict:
+            flash(f"Email '{email}' is already used by another organisation.", "danger")
+            return redirect(url_for("platform.dashboard"))
+        conn.execute("UPDATE organizations SET contact_email = ? WHERE id = ?", (email, org_id))
+    flash(f"Login email updated for '{org['name']}'.", "success")
     return redirect(url_for("platform.dashboard"))
 
 

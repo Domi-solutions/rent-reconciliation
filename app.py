@@ -336,24 +336,20 @@ def inject_property_context():
 
 @app.route('/login', methods=['GET', 'POST'])
 def admin_login():
-    """Admin login. Org-specific password takes precedence; global ADMIN_PASSWORD is the master key."""
+    """Admin login. Email + password identifies the org; global ADMIN_PASSWORD is the master key."""
     from werkzeug.security import check_password_hash
-    with get_connection() as conn:
-        orgs = conn.execute(
-            "SELECT id, name FROM organizations WHERE is_active = 1 AND admin_password_hash IS NOT NULL ORDER BY name"
-        ).fetchall()
 
     if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
-        org_id = request.form.get('org_id', '').strip()
         next_url = request.form.get('next') or request.args.get('next') or url_for('dashboard')
 
-        # Try org-specific password first
-        if org_id:
+        # Email-based org login
+        if email:
             with get_connection() as conn:
                 org = conn.execute(
-                    "SELECT id, name, admin_password_hash FROM organizations WHERE id = ? AND is_active = 1",
-                    (org_id,),
+                    "SELECT id, name, admin_password_hash FROM organizations WHERE LOWER(contact_email) = ? AND is_active = 1",
+                    (email,),
                 ).fetchone()
             if org and org['admin_password_hash'] and check_password_hash(org['admin_password_hash'], password):
                 session['admin_authenticated'] = True
@@ -366,12 +362,11 @@ def admin_login():
         global_pw = os.environ.get('ADMIN_PASSWORD')
         if global_pw and password == global_pw:
             session['admin_authenticated'] = True
-            # org_selection_done left unset → will hit org_select if multiple orgs
             return redirect(next_url)
 
-        return render_template('login.html', orgs=orgs, error='Incorrect password.')
+        return render_template('login.html', error='Incorrect email or password.')
 
-    return render_template('login.html', orgs=orgs)
+    return render_template('login.html')
 
 
 @app.route('/logout')

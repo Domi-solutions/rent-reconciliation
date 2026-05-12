@@ -55,7 +55,9 @@
           <td>
             <div style="font-weight: 600;">{{ org.name }}</div>
             {% if org.slug %}<div style="font-size: 12px; color: #718096;">{{ org.slug }}</div>{% endif %}
-            {% if org.contact_email %}<div style="font-size: 12px; color: #718096;">{{ org.contact_email }}</div>{% endif %}
+            <div style="font-size: 12px; color: {% if org.contact_email %}#718096{% else %}#e53e3e{% endif %};">
+              {{ org.contact_email or '⚠ No login email' }}
+            </div>
           </td>
           <td>{{ org.property_count }}</td>
           <td>{{ org.unit_count }}</td>
@@ -82,6 +84,18 @@
             <form method="POST" action="{{ url_for('platform.impersonate', org_id=org.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm btn-outline-primary">View as org</button>
             </form>
+            <details class="d-inline-block ms-1" style="position:relative;">
+              <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">Email</summary>
+              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;z-index:100;min-width:260px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
+                <div style="font-size:11px;color:#718096;margin-bottom:8px;">Login email for {{ org.name }}</div>
+                <form method="POST" action="{{ url_for('platform.set_org_email', org_id=org.id) }}"
+                      style="display:flex;gap:6px;align-items:center;">
+                  <input type="email" name="email" class="form-control form-control-sm"
+                         placeholder="{{ org.contact_email or 'email@agency.co.ke' }}" required style="flex:1;">
+                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                </form>
+              </div>
+            </details>
             <details class="d-inline-block ms-1" style="position:relative;">
               <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">
                 {{ 'Change pw' if org.has_password else 'Set pw' }}
@@ -125,26 +139,26 @@
       <form method="POST" action="{{ url_for('platform.create_org') }}">
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+            <label class="form-label fw-semibold">Agency name <span class="text-danger">*</span></label>
             <input type="text" name="name" class="form-control" placeholder="e.g. Alfa Property Management" required>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-semibold">Admin login password <span class="text-danger">*</span></label>
+            <label class="form-label fw-semibold">Login email <span class="text-danger">*</span></label>
+            <input type="email" name="contact_email" class="form-control" placeholder="admin@alfaproperty.co.ke" required>
+            <div class="form-text">The org admin signs in with this email at <code>/login</code>.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
             <input type="password" name="password" class="form-control" required>
-            <div class="form-text">This is the password the org admin uses at <code>/login</code>.</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Slug</label>
-            <input type="text" name="slug" class="form-control" placeholder="e.g. alfa-property (URL-safe, unique)">
-            <div class="form-text">URL-safe identifier. Leave blank to skip.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Contact email</label>
-            <input type="email" name="contact_email" class="form-control" placeholder="admin@alfaproperty.co.ke">
+            <label class="form-label">Phone</label>
+            <input type="text" name="contact_phone" class="form-control" placeholder="+254 7xx xxx xxx">
           </div>
           <div class="mb-2">
-            <label class="form-label">Contact phone</label>
-            <input type="text" name="contact_phone" class="form-control" placeholder="+254 7xx xxx xxx">
+            <label class="form-label">Slug <span style="font-weight:400;color:#718096;">(optional)</span></label>
+            <input type="text" name="slug" class="form-control" placeholder="e.g. alfa-property">
+            <div class="form-text">URL-safe identifier. Auto-generated if left blank.</div>
           </div>
         </div>
         <div class="modal-footer">
