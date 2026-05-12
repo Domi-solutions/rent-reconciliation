@@ -63,7 +63,7 @@ def dashboard():
                 (org["id"],),
             ).fetchone()[0]
             last_activity = conn.execute(
-                """SELECT MAX(a.created_at) FROM audit_log a
+                """SELECT MAX(a.timestamp) FROM audit_log a
                    JOIN properties p ON a.property_id = p.id
                    WHERE p.organization_id = ?""",
                 (org["id"],),
