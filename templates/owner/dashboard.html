@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio — Domi</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .owner-header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .owner-header .brand { font-size: 16px; font-weight: 700; }
+    .stat-card { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #718096; margin-top: 4px; }
+    .prop-card {
+      background: #fff; border-radius: 10px; padding: 20px 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      text-decoration: none; color: inherit; display: block;
+      transition: box-shadow .15s;
+    }
+    .prop-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); color: inherit; }
+    .prop-card .prop-name { font-size: 16px; font-weight: 600; }
+    .prop-meta { font-size: 12px; color: #718096; }
+    .kpi-row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
+    .kpi { }
+    .kpi .val { font-size: 18px; font-weight: 700; }
+    .kpi .lbl { font-size: 11px; color: #718096; text-transform: uppercase; letter-spacing: .04em; }
+  </style>
+</head>
+<body>
+
+<div class="owner-header">
+  <div class="brand">Domi{% if person_name %} <span style="font-weight:400; color:#718096;">— {{ person_name }}</span>{% endif %}</div>
+  <a href="{{ url_for('owner.logout') }}" style="font-size: 13px; color: #718096; text-decoration: none;">Log out</a>
+</div>
+
+<div style="max-width: 900px; margin: 0 auto; padding: 28px 20px 64px;">
+
+  {% if portfolio %}
+  <div class="mb-4">
+    <h5 class="mb-1">Portfolio — {{ portfolio.month_label }}</h5>
+    <div style="font-size: 13px; color: #718096;">Across {{ properties|length }} propert{{ 'y' if properties|length == 1 else 'ies' }}</div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-num">{{ portfolio.total_units }}</div>
+        <div class="stat-label">Total units</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-num">{{ portfolio.occupancy_rate }}%</div>
+        <div class="stat-label">Occupancy</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-num" style="{% if portfolio.collection_rate >= 80 %}color:#2f855a{% elif portfolio.collection_rate >= 50 %}color:#c05621{% else %}color:#c53030{% endif %}">
+          {{ portfolio.collection_rate }}%
+        </div>
+        <div class="stat-label">Collected</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-num" style="{% if portfolio.arrears > 0 %}color:#c53030{% endif %}">
+          KES {{ '{:,.0f}'.format(portfolio.arrears) }}
+        </div>
+        <div class="stat-label">Total arrears</div>
+      </div>
+    </div>
+  </div>
+
+  <h6 class="mb-3" style="font-size: 12px; text-transform: uppercase; letter-spacing:.05em; color:#718096;">Properties</h6>
+  <div class="d-flex flex-column gap-3">
+    {% for prop in properties %}
+    <a href="{{ url_for('owner.property_view', property_id=prop.id) }}" class="prop-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="prop-name">{{ prop.name }}</div>
+          <div class="prop-meta">{{ prop.occupied }} occupied / {{ prop.total }} units</div>
+        </div>
+        <div style="font-size: 13px; color: #a0aec0;">View &rarr;</div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="val" style="{% if prop.collection_rate >= 80 %}color:#2f855a{% elif prop.collection_rate >= 50 %}color:#c05621{% else %}color:#c53030{% endif %}">
+            {{ prop.collection_rate }}%
+          </div>
+          <div class="lbl">Collected</div>
+        </div>
+        <div class="kpi">
+          <div class="val">KES {{ '{:,.0f}'.format(prop.collected) }}</div>
+          <div class="lbl">This month</div>
+        </div>
+        <div class="kpi">
+          <div class="val" style="{% if prop.arrears > 0 %}color:#c53030{% endif %}">
+            KES {{ '{:,.0f}'.format(prop.arrears) }}
+          </div>
+          <div class="lbl">Arrears</div>
+        </div>
+        {% if prop.vacant > 0 %}
+        <div class="kpi">
+          <div class="val" style="color:#c05621;">{{ prop.vacant }}</div>
+          <div class="lbl">Vacant</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if prop.top_arrears %}
+      <div style="margin-top: 10px; font-size: 12px; color: #718096;">
+        Top arrears: <strong>Unit {{ prop.top_arrears.unit_number }}</strong> —
+        KES {{ '{:,.0f}'.format(prop.top_arrears.balance) }}
+      </div>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="stat-card text-center py-5" style="color: #718096;">
+    No properties are linked to your account yet. Contact your property manager.
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

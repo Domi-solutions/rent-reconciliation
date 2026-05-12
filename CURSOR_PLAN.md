@@ -115,18 +115,16 @@ New blueprint: `src/routes/platform_routes.py`, prefix `/platform`
 - [x] Dev mode (no ADMIN_PASSWORD): org selector skipped entirely (unchanged behaviour)
 - [x] Platform impersonate sets `org_selection_done` so operator lands cleanly in the org
 
-#### Phase 4 — Owner Holistic View
-New blueprint additions to `src/routes/viewer_routes.py` (or new `src/routes/owner_routes.py`)
-- [ ] `GET /owner/login` + `POST /owner/login` — phone + password lookup in `persons` table
-- [ ] `GET /owner/logout`
-- [ ] `GET /owner/dashboard` — aggregate across all properties in `property_owners` where `owner.person_id = session['person_id']`
-  - Total portfolio: units, occupied, vacant, expected income, collected, arrears
-  - Per-property card: name, collection %, top arrears unit
-- [ ] `GET /owner/<property_id>/` — individual property view (existing `/view/<property_id>/dashboard` logic, same template)
-- [ ] All existing `/view/<property_id>/*` routes remain — add `person_id`-based auth as alternative to token auth
-- [ ] `POST /owner/register` — admin creates owner → creates `persons` row + `owners` row, links via `person_id`
-- [ ] Update owners management page (`/owners`) to set `person_id` when creating owners
-- [ ] Commit: `git commit -m "Phase 4 complete: owner holistic dashboard"`
+#### Phase 4 — Owner Holistic View ✅ COMPLETE
+New blueprint: `src/routes/owner_routes.py`, prefix `/owner`
+- [x] `GET/POST /owner/login` — phone + password lookup in `persons` table; session['person_id'] + person_role='owner'
+- [x] `GET /owner/logout`
+- [x] `GET /owner/dashboard` — portfolio aggregate + per-property cards (collection %, arrears, top arrears unit)
+- [x] `GET /owner/<property_id>/` — verifies person owns property via persons→owners→property_owners; sets session['owner_id'] and bridges to existing viewer
+- [x] `/owner/*` exempted from admin before_request
+- [x] `create_owner` route updated: creates persons row when phone provided; domi_password field sets persons.password_hash
+- [x] `manage_owners` query includes person_id; owners list shows "Domi Login" badge when person_id linked
+- [x] owners.html: Domi Login password field added to create modal
 
 #### Phase 5 — Tenant Holistic View
 - [ ] `GET /tenant/login` + `POST /tenant/login` — phone lookup → find all `tenants` rows with same `person_id` → if one, redirect to token; if multiple, show holistic dashboard

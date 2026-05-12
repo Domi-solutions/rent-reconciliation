@@ -31,6 +31,7 @@ from src.routes.agent_routes import agent_bp
 from src.routes.payment_routes import payment_bp
 from src.routes.inbound_routes import inbound_bp
 from src.routes.platform_routes import platform_bp
+from src.routes.owner_routes import owner_bp
 from src.agent.coordinator import (
     daily_snapshot_job,
     morning_briefings_job,
@@ -129,6 +130,7 @@ app.register_blueprint(agent_bp)
 app.register_blueprint(payment_bp)
 app.register_blueprint(inbound_bp)
 app.register_blueprint(platform_bp)
+app.register_blueprint(owner_bp)
 
 
 scheduler = BackgroundScheduler(daemon=True)
@@ -168,6 +170,8 @@ def require_admin_auth():
     if request.path.startswith('/inbound'):
         return None
     if request.path.startswith('/platform'):
+        return None
+    if request.path.startswith('/owner'):
         return None
     if not os.environ.get('ADMIN_PASSWORD'):
         return None
@@ -937,6 +941,7 @@ def manage_owners():
         owners = conn.execute("""
             SELECT o.id, o.name, o.phone, o.email, o.access_token,
                    o.password_hash IS NOT NULL as has_password,
+                   o.person_id,
                    o.created_at,
                    COUNT(p.id) as property_count
             FROM owners o
@@ -961,23 +966,56 @@ def manage_owners():
 
 @app.route('/owners/new', methods=['POST'])
 def create_owner():
-    """Create a new owner record."""
+    """Create a new owner record. If phone is provided, create/link a persons row for Domi Login."""
     from werkzeug.security import generate_password_hash
     import secrets as _secrets
     name = request.form.get('name', '').strip()
     phone = request.form.get('phone', '').strip()
     email = request.form.get('email', '').strip()
     password = request.form.get('password', '').strip()
+    domi_password = request.form.get('domi_password', '').strip()
     if not name:
         flash('Name is required.', 'error')
         return redirect(url_for('manage_owners'))
     property_id = request.form.get('property_id', '').strip()
     owner_id = _secrets.token_hex(8)
     password_hash = generate_password_hash(password) if password else None
+
+    # Normalize phone for persons lookup
+    phone_norm = None
+    if phone:
+        if phone.startswith('07') or phone.startswith('01'):
+            phone_norm = '+254' + phone[1:]
+        elif phone.startswith('254'):
+            phone_norm = '+' + phone
+        else:
+            phone_norm = phone
+
     with get_connection() as conn:
+        # Create or link persons row if phone is provided
+        person_id = None
+        if phone_norm:
+            existing = conn.execute(
+                "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
+            ).fetchone()
+            if existing:
+                person_id = existing['id']
+                if domi_password:
+                    conn.execute(
+                        "UPDATE persons SET password_hash = ? WHERE id = ?",
+                        (generate_password_hash(domi_password), person_id),
+                    )
+            else:
+                person_id = generate_id('PERS')
+                conn.execute(
+                    "INSERT INTO persons (id, name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
+                    (person_id, name, phone_norm, email or None,
+                     generate_password_hash(domi_password) if domi_password else None),
+                )
+
         conn.execute(
-            "INSERT INTO owners (id, name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
-            (owner_id, name, phone or None, email or None, password_hash),
+            "INSERT INTO owners (id, name, phone, email, password_hash, person_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (owner_id, name, phone or None, email or None, password_hash, person_id),
         )
         if property_id:
             jid = generate_id('POWN')
@@ -988,9 +1026,10 @@ def create_owner():
             conn.execute("UPDATE properties SET owner_id = ? WHERE id = ? AND owner_id IS NULL", (owner_id, property_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('owner_created', 'owner', owner_id, f"Owner: {name}", 'admin'),
+            ('owner_created', 'owner', owner_id,
+             f"Owner: {name}" + (" | Domi Login: enabled" if person_id and domi_password else ""), 'admin'),
         )
-    flash(f"Owner '{name}' created.", 'success')
+    flash(f"Owner '{name}' created." + (" Domi Login enabled." if person_id and domi_password else ""), 'success')
     return redirect(url_for('manage_owners'))
 
 

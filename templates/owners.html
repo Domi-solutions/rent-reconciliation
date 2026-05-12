@@ -47,6 +47,9 @@
         {% else %}
           <span class="badge bg-warning text-dark" style="font-size: 11px;">No password</span>
         {% endif %}
+        {% if owner.person_id %}
+          <span class="badge bg-primary" style="font-size: 11px;" title="Owner can log in at /owner/login">Domi Login</span>
+        {% endif %}
         <button class="topbar-btn-ghost btn-sm" data-bs-toggle="collapse" data-bs-target="#owner-actions-{{ loop.index }}">
           Manage
         </button>
@@ -155,8 +158,13 @@
             <input type="email" name="email" class="form-control" placeholder="owner@example.com">
           </div>
           <div class="mb-3">
-            <label class="form-label">Initial password <span style="font-size: 12px; color: var(--ink-3);">(optional — can set later)</span></label>
+            <label class="form-label">Token-link password <span style="font-size: 12px; color: var(--ink-3);">(for /view/o/token login)</span></label>
             <input type="password" name="password" class="form-control" placeholder="Leave blank to set later">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Domi Login password <span style="font-size: 12px; color: var(--ink-3);">(for /owner/login — requires phone)</span></label>
+            <input type="password" name="domi_password" class="form-control" placeholder="Leave blank to skip">
+            <div class="form-text">Owner logs in with their phone number + this password at <code>/owner/login</code>.</div>
           </div>
           <div class="mb-2">
             <label class="form-label">Assign property <span style="font-size: 12px; color: var(--ink-3);">(optional)</span></label>
