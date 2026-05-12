@@ -124,6 +124,47 @@ def errors():
     )
 
 
+@platform_bp.route("/orgs/new", methods=["POST"])
+def create_org():
+    """Create a new organisation."""
+    name = request.form.get("name", "").strip()
+    slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
+    contact_email = request.form.get("contact_email", "").strip() or None
+    contact_phone = request.form.get("contact_phone", "").strip() or None
+    if not name:
+        flash("Organisation name is required.", "danger")
+        return redirect(url_for("platform.dashboard"))
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM organizations WHERE slug = ?", (slug,)
+        ).fetchone() if slug else None
+        if existing:
+            flash(f"Slug '{slug}' is already taken.", "danger")
+            return redirect(url_for("platform.dashboard"))
+        org_id = generate_id("ORG")
+        conn.execute(
+            "INSERT INTO organizations (id, name, slug, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?)",
+            (org_id, name, slug or None, contact_email, contact_phone),
+        )
+    flash(f"Organisation '{name}' created.", "success")
+    return redirect(url_for("platform.dashboard"))
+
+
+@platform_bp.route("/orgs/<org_id>/toggle", methods=["POST"])
+def toggle_org(org_id):
+    """Activate or deactivate an organisation."""
+    with get_connection() as conn:
+        org = conn.execute("SELECT id, name, is_active FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            flash("Organisation not found.", "danger")
+            return redirect(url_for("platform.dashboard"))
+        new_state = 0 if org["is_active"] else 1
+        conn.execute("UPDATE organizations SET is_active = ? WHERE id = ?", (new_state, org_id))
+    state_label = "activated" if new_state else "deactivated"
+    flash(f"'{org['name']}' {state_label}.", "success")
+    return redirect(url_for("platform.dashboard"))
+
+
 @platform_bp.route("/impersonate/<org_id>", methods=["POST"])
 def impersonate(org_id):
     with get_connection() as conn:

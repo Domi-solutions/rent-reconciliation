@@ -136,20 +136,40 @@ New blueprint: `src/routes/owner_routes.py`, prefix `/owner`
 - [x] Existing `/tenant/<token>` routes fully unchanged
 
 #### Phase 6 — Data Entry + Test Run
-- [ ] Create 2 organizations (Agency A, Agency B)
-- [ ] Create Owner A person + owner record, assign to Org 1 properties
-- [ ] Create Owner B person + owner record, assign to Org 2 properties
-- [ ] Create Property 1 + 2 (Org 1, Owner A)
-- [ ] Create Property 3 + 4 (Org 2, Owner B)
-- [ ] Import units + tenants for all 4 properties
-- [ ] Create Tenant X person, link to their unit in P1 AND unit in P3
+**Seeded (scripts/seed_phase6.py — run against dev.db, verified):**
+- [x] 2 organisations: Agency Alfa (agency-alfa), Agency Beta (agency-beta)
+- [x] Owner A: Amara Waweru (+254701000001 / ownerA123) — persons + owner linked
+- [x] Owner B: Benjamin Omondi (+254701000002 / ownerB123) — persons + owner linked
+- [x] Property 1+2 (Agency Alfa, Owner A): Riverside Courts, Garden View Apartments
+- [x] Property 3+4 (Agency Beta, Owner B): Parklands Estate, Westlands Flats
+- [x] 6 units + 5 tenants per property (1 unit vacant in P2+P4)
+- [x] Tenant X: Xenia Kamau (+254701000010 / tenantX123) — unit A6 (Riverside) + unit C6 (Parklands)
+
+**Platform additions (also in this commit):**
+- [x] POST /platform/orgs/new — org creation modal on platform dashboard
+- [x] POST /platform/orgs/<org_id>/toggle — activate/deactivate org
+- [x] Fixed tenant dashboard bug: u.id now selected directly (removed redundant subquery)
+
+**Requires manual run to verify (live app):**
 - [ ] Walk bank statement workflow end-to-end (at least one property)
 - [ ] Test SMS sandbox (broadcasts, reminders, payment confirmation)
 - [ ] Test Daraja sandbox STK Push
 - [ ] Test disbursement calculation
-- [ ] Verify platform admin sees all orgs + errors
-- [ ] Verify Owner A holistic view shows P1+P2 aggregate
-- [ ] Verify Tenant X holistic view shows both units
+- [ ] Verify platform admin sees all orgs + errors at /platform/
+- [ ] Verify Owner A holistic view at /owner/dashboard shows P1+P2 aggregate
+- [ ] Verify Tenant X holistic view at /tenant/dashboard shows both units
+
+**How to run the full test:**
+```bash
+# Seed dev DB (already done — re-run resets data)
+DATABASE_PATH=data/dev.db ./venv/bin/python scripts/seed_phase6.py
+
+# Start dev server
+./scripts/run_dev.sh
+
+# Env vars needed for extended testing:
+PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.sh
+```
 
 ---
 

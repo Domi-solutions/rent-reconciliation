@@ -100,7 +100,7 @@ def dashboard():
     with get_connection() as conn:
         units = conn.execute(
             """SELECT t.id AS tenant_id, t.name AS tenant_name, t.access_token,
-                      u.unit_number, u.monthly_rent, u.service_charge,
+                      u.id AS unit_id, u.unit_number,
                       p.name AS property_name, p.id AS property_id,
                       COALESCE(ub.total_charged, 0) AS total_charged,
                       COALESCE(ub.total_paid, 0) AS total_paid,
@@ -117,17 +117,13 @@ def dashboard():
         unit_details = []
         for row in units:
             last_payment = conn.execute(
-                """SELECT amount, payment_date FROM payments
-                   WHERE unit_id = (SELECT id FROM units WHERE unit_number = ? AND property_id = ?)
-                   ORDER BY payment_date DESC LIMIT 1""",
-                (row["unit_number"], row["property_id"]),
+                "SELECT amount, payment_date FROM payments WHERE unit_id = ? ORDER BY payment_date DESC LIMIT 1",
+                (row["unit_id"],),
             ).fetchone()
 
             pending = float(conn.execute(
-                """SELECT COALESCE(SUM(claimed_amount), 0) FROM payment_claims
-                   WHERE unit_id = (SELECT id FROM units WHERE unit_number = ? AND property_id = ?)
-                   AND status = 'pending'""",
-                (row["unit_number"], row["property_id"]),
+                "SELECT COALESCE(SUM(claimed_amount), 0) FROM payment_claims WHERE unit_id = ? AND status = 'pending'",
+                (row["unit_id"],),
             ).fetchone()[0])
 
             unit_details.append({
