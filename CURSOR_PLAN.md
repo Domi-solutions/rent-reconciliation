@@ -1,8 +1,161 @@
 # Domi — Implementation Plan
 
+## Architecture Redesign — Multi-Org / Person Identity Layer
+**Decided:** 2026-05-12 | **Status:** IN PROGRESS — schema design complete, code not yet written
+
+### Why this is being built now
+Four real properties are ready to enter the system. Two are owned by Owner A (managed by Agency 1), two by Owner B (managed by Agency 2). One tenant rents units in two different properties across both agencies. The current schema has no org layer and no person identity — retrofitting this after data entry would touch every query. Build it first.
+
+### Exact scenario to implement
+```
+Organization 1 (Agency A): manages Property 1 + Property 2 (both owned by Owner A)
+Organization 2 (Agency B): manages Property 3 + Property 4 (both owned by Owner B)
+Owner A: holistic dashboard (P1+P2 aggregate) + individual property drilldown
+Owner B: holistic dashboard (P3+P4 aggregate) + individual property drilldown
+Tenant X: unit in P1 AND unit in P3 — one login, sees both obligations
+Platform admin (Domi operator): sees all orgs, all errors, login-as-org
+```
+
+### New tables — exact DDL
+
+```sql
+-- organizations: one row per agency using Domi
+CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE,                        -- URL-safe identifier
+    admin_password_hash TEXT,                -- bcrypt hash; NULL = dev mode open
+    contact_email TEXT,
+    contact_phone TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- persons: human identity — shared across roles and properties
+CREATE TABLE IF NOT EXISTS persons (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT,                              -- normalized +2547xx
+    email TEXT,
+    password_hash TEXT,                      -- bcrypt; for owner + tenant credential login
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- platform_errors: surfaced to platform admin without users calling
+CREATE TABLE IF NOT EXISTS platform_errors (
+    id TEXT PRIMARY KEY,
+    error_type TEXT,                         -- '500' | 'warning' | 'payment_failed' etc.
+    route TEXT,
+    method TEXT,
+    org_id TEXT,
+    property_id TEXT,
+    user_role TEXT,                          -- 'admin' | 'owner' | 'caretaker' | 'tenant' | 'platform'
+    message TEXT,
+    traceback TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Column additions to existing tables
+
+```sql
+-- properties: which org manages this property
+ALTER TABLE properties ADD COLUMN organization_id TEXT REFERENCES organizations(id);
+
+-- owners: link to person identity (enables holistic multi-property owner view)
+ALTER TABLE owners ADD COLUMN person_id TEXT REFERENCES persons(id);
+
+-- tenants: link to person identity (enables multi-unit holistic tenant view)
+ALTER TABLE tenants ADD COLUMN person_id TEXT REFERENCES persons(id);
+```
+
+All additions are **nullable** — existing rows are unaffected.
+
+### New auth routes (locked)
+
+| Role | Login route | Session key | Portal |
+|---|---|---|---|
+| Platform (Domi operator) | `POST /platform/login` | `session['platform_admin']` | `/platform/` |
+| Org admin | `POST /login` (existing) — now picks org | `session['org_id']` + `session['admin_authenticated']` | `/` scoped to org |
+| Owner | `POST /owner/login` | `session['person_id']` + role='owner' | `/owner/dashboard` + `/owner/<property_id>/` |
+| Caretaker | Existing `/caretaker/<property_id>/login` | Unchanged | `/caretaker/<property_id>/` |
+| Tenant holistic | `POST /tenant/login` | `session['person_id']` + role='tenant' | `/tenant/dashboard` |
+| Tenant single-unit | Token in URL (existing) | None | `/tenant/<token>` |
+
+### Build sequence — 6 phases
+
+#### Phase 1 — Schema Foundations (start here)
+- [ ] `migrate_add_organizations()` in `src/database/db.py`
+- [ ] `migrate_add_persons()` in `src/database/db.py`
+- [ ] `migrate_add_platform_errors()` in `src/database/db.py`
+- [ ] Register all three in `app.py` startup after existing migrations
+- [ ] Verify: `./venv/bin/python -c "from app import app; print('OK')"`
+- [ ] Commit: `git commit -m "Phase 1 complete: organizations, persons, platform_errors schema"`
+
+#### Phase 2 — Platform Admin (`/platform/*`)
+New blueprint: `src/routes/platform_routes.py`, prefix `/platform`
+- [ ] `GET /platform/login` + `POST /platform/login` — auth via `PLATFORM_ADMIN_PASSWORD` env var
+- [ ] `GET /platform/logout`
+- [ ] `before_request` in platform blueprint: check `session['platform_admin']`
+- [ ] `GET /platform/` — dashboard: org list (name, property count, last activity), system health
+- [ ] `GET /platform/errors` — `platform_errors` table, most recent first, filterable by type
+- [ ] `POST /platform/impersonate/<org_id>` — sets `session['org_id']` + `session['admin_authenticated']`, redirects to `/`
+- [ ] Wire `@app.errorhandler(500)` in `app.py` → write to `platform_errors` table
+- [ ] Template dir: `templates/platform/` — `base_platform.html`, `dashboard.html`, `errors.html`
+- [ ] Exempt `/platform/*` from org admin `before_request` check
+- [ ] Commit: `git commit -m "Phase 2 complete: platform admin portal"`
+
+#### Phase 3 — Org Admin Scoping
+- [ ] Admin login (`POST /login`) now shows org selector if multiple orgs exist; sets `session['org_id']`
+- [ ] All property queries in admin routes filter by `session['org_id']` — `WHERE organization_id = ?`
+- [ ] `get_current_property(conn)` updated to also check org scope
+- [ ] Properties page: only shows properties in current org
+- [ ] Creating a property: assigns `organization_id = session['org_id']`
+- [ ] Dev mode (no ADMIN_PASSWORD): org selector skipped, all properties visible (unchanged behaviour)
+- [ ] Commit: `git commit -m "Phase 3 complete: org-scoped admin routes"`
+
+#### Phase 4 — Owner Holistic View
+New blueprint additions to `src/routes/viewer_routes.py` (or new `src/routes/owner_routes.py`)
+- [ ] `GET /owner/login` + `POST /owner/login` — phone + password lookup in `persons` table
+- [ ] `GET /owner/logout`
+- [ ] `GET /owner/dashboard` — aggregate across all properties in `property_owners` where `owner.person_id = session['person_id']`
+  - Total portfolio: units, occupied, vacant, expected income, collected, arrears
+  - Per-property card: name, collection %, top arrears unit
+- [ ] `GET /owner/<property_id>/` — individual property view (existing `/view/<property_id>/dashboard` logic, same template)
+- [ ] All existing `/view/<property_id>/*` routes remain — add `person_id`-based auth as alternative to token auth
+- [ ] `POST /owner/register` — admin creates owner → creates `persons` row + `owners` row, links via `person_id`
+- [ ] Update owners management page (`/owners`) to set `person_id` when creating owners
+- [ ] Commit: `git commit -m "Phase 4 complete: owner holistic dashboard"`
+
+#### Phase 5 — Tenant Holistic View
+- [ ] `GET /tenant/login` + `POST /tenant/login` — phone lookup → find all `tenants` rows with same `person_id` → if one, redirect to token; if multiple, show holistic dashboard
+- [ ] `GET /tenant/dashboard` — all units for this person: property name, unit, balance, charges, last payment
+- [ ] Link multiple tenant records to same person: admin UI on Tenants page — "Link to person" button
+- [ ] When creating a tenant: if phone already exists in `persons`, offer to link
+- [ ] Existing `/tenant/<token>` routes fully unchanged
+- [ ] Commit: `git commit -m "Phase 5 complete: tenant holistic view + multi-unit identity"`
+
+#### Phase 6 — Data Entry + Test Run
+- [ ] Create 2 organizations (Agency A, Agency B)
+- [ ] Create Owner A person + owner record, assign to Org 1 properties
+- [ ] Create Owner B person + owner record, assign to Org 2 properties
+- [ ] Create Property 1 + 2 (Org 1, Owner A)
+- [ ] Create Property 3 + 4 (Org 2, Owner B)
+- [ ] Import units + tenants for all 4 properties
+- [ ] Create Tenant X person, link to their unit in P1 AND unit in P3
+- [ ] Walk bank statement workflow end-to-end (at least one property)
+- [ ] Test SMS sandbox (broadcasts, reminders, payment confirmation)
+- [ ] Test Daraja sandbox STK Push
+- [ ] Test disbursement calculation
+- [ ] Verify platform admin sees all orgs + errors
+- [ ] Verify Owner A holistic view shows P1+P2 aggregate
+- [ ] Verify Tenant X holistic view shows both units
+
+---
+
 ## Project Re-entry Overview (for AI agents)
 
-**Last updated:** 2026-05-04
+**Last updated:** 2026-05-12
 **Product:** Domi — property fintech platform, Kenya. Repo name: `rent-reconciliation` (unchanged).
 **Stack:** Python 3.13, Flask 3.0+, SQLite, APScheduler, Jinja2 + Bootstrap 5. Fly.io (Johannesburg).
 

@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Domi — Property Intelligence Platform
 
 ## AI Re-entry Overview
@@ -20,10 +24,47 @@
 - `README.md` — how to run and deploy
 
 **Next steps (in order):**
-1. Admin authentication — `GET/POST /login`, `before_request` hook, exempt paths (see `CURSOR_PLAN.md` Prereq 1)
-2. Legal structure + Paybill/Daraja application (external — run in parallel)
-3. Build Phase G (Payment Rail) — full spec in `CURSOR_PLAN.md`
-4. Build inbound webhook foundation (`POST /inbound/sms`, `POST /inbound/whatsapp`) — Phase H
+1. Full end-to-end test + demo run: fresh property → bank statement workflow → SMS sandbox → M-Pesa STK Push sandbox → disbursement sandbox
+2. Phase 4 (The Conversation): LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md` Phase 4 checklist
+3. Phase 5 (The Coordinator): admin task feed, anomaly detection, caretaker morning briefing — see `ROADMAP.md` Phase 5 checklist
+4. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
+5. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
+
+**Phases 0–3 and Phase G are COMPLETE. Do not re-implement anything in those phases.**
+
+---
+
+## Development Commands
+
+```bash
+# Start dev server (port 5001, data/dev.db, no passwords)
+./scripts/run_dev.sh
+
+# Pull production DB from Fly.io to local
+./scripts/download_prod_db.sh
+
+# Reset dev DB from latest prod snapshot
+./scripts/reset_dev_db.sh
+
+# Verify app imports cleanly (run after any structural change)
+./venv/bin/python -c "from app import app; print('OK')"
+
+# Deploy to Fly.io
+export PATH="$HOME/.fly/bin:$PATH"
+fly deploy
+```
+
+**Env vars for local SMS sandbox testing:**
+```bash
+AT_USERNAME=sandbox AT_API_KEY=<your-sandbox-key> ./scripts/run_dev.sh
+```
+
+**Env vars for local M-Pesa (Daraja) sandbox testing:**
+```bash
+DARAJA_ENV=sandbox DARAJA_CONSUMER_KEY=... DARAJA_CONSUMER_SECRET=... ./scripts/run_dev.sh
+```
+
+There are no automated tests. Verification is manual: run the dev server, walk through the workflow, inspect DB state.
 
 ---
 

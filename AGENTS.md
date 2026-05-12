@@ -26,57 +26,81 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude (Phase G + Phase 3 completion, competitive research, deploy)
-**Date:** 2026-05-06
+**Who:** Claude Code (architecture redesign — multi-org, multi-owner holistic views, multi-unit tenant identity)
+**Date:** 2026-05-12
 
-### What was completed
+### What was completed this session
 
-**Phase G — Payment Rail (all items complete):**
-- `src/payments/daraja.py` — STK Push initiation + B2C disbursement
-- `src/payments/pesapal.py` — card checkout integration
-- `src/payments/disbursements.py` — `calculate_disbursement()`, `execute_disbursement()`, `scheduled_disbursement_job()`
-- `src/routes/payment_routes.py` — Daraja C2B + Pesapal IPN webhooks (write-and-return-200)
-- `src/routes/tenant_routes.py` — PIN-gated pay tab: `GET /tenant/<token>/pay`, PIN create/verify, STK Push, poll
-- `templates/tenant/pay.html` — tenant payment UI
-- `process_payment_queue` — 60s FIFO processor; FIFO SMS confirmation with allocation breakdown
-- `disbursement_job` — 10th of month 9am; pending → processing → completed/failed lifecycle
-- Disbursement statement shown in owner viewer payments tab (`viewer/payments.html`)
-- Source badges (Admin / Caretaker / System) on owner notifications page
+- Wiped `data/dev.db` for a clean test run (backup: `data/dev.db.backup_20260512_160834`)
+- Updated `CLAUDE.md`: added development commands section, corrected stale "Next steps"
+- Designed the full multi-org / person identity architecture (locked below + full DDL in CURSOR_PLAN.md)
+- **No code written yet.** This session was architecture design + planning only.
 
-**Phase 3 — Signal + Inbound Foundation (all items complete):**
-- `src/routes/inbound_routes.py` — `POST /inbound/sms` + `POST /inbound/whatsapp`; write-and-return-200; background thread dispatch
-- `src/agent/inbound.py` — `process_inbound_message()`; intent classifier; action handlers; `classify_intent()`
-- `src/agent/state.py` — `inbound_sessions` conversation state (24h TTL)
-- `src/agent/responder.py` — response message generator
-- `weekly_digest_job()` updated to deliver via `route_message()` to all owners with phones (Monday 8am)
-- Payment rejection SMS: fires after `verify_payments()` for claims not matched on bank statement
-- `migrate_add_language_preference()` — `tenants.language_preference TEXT` column
+### What was decided (locked — do not revisit)
 
-**Fixed:** `sqlite3.IntegrityError: FOREIGN KEY constraint failed` in `migrate_add_payment_transactions()` — wrapped table rebuild with `PRAGMA foreign_keys = OFF` / `ON` (orphaned FK refs in dev DB).
+**1. Multi-org architecture is required before any data is entered.**
+Retrofitting an org layer after 4 properties are live would touch every query in the codebase. Do it now.
 
-**Deployed** to Fly.io (Johannesburg). AT sandbox mode — live credentials pending.
+**2. Person identity layer is required for multi-unit tenants.**
+Tenant X rents a unit in Property 1 (Org 1) and a unit in Property 3 (Org 2). Fix: `persons` table + `person_id` FK on `tenants` and `owners`. All existing FK relationships stay intact — additive only.
 
-### What was decided (do not revisit)
+**3. The exact real-world scenario to implement (demo + live):**
+```
+Organization 1 (Agency A) — manages:
+  Property 1  ← owned by Owner A
+  Property 2  ← owned by Owner A
 
-- Fintech model locked: Domi holds tenant payments, disburses net of 8% management fee. Money-in-transit, not pass-through.
-- Inbound processing: `threading.Thread` (fire-and-forget) rather than APScheduler queue job — simpler, no polling needed.
-- Competitive landscape: Domi does not compete with Nyumba Zetu (upmarket PM SaaS) — it competes with the profession of property manager, targeting individual landlords who currently use a management company + caretaker.
+Organization 2 (Agency B) — manages:
+  Property 3  ← owned by Owner B
+  Property 4  ← owned by Owner B
 
-### Pick up next
+Owner A: holistic view across Property 1 + 2, plus individual property drilldown
+Owner B: holistic view across Property 3 + 4, plus individual property drilldown
 
-**Phase 4 — The Conversation (All Roles).** Full spec in `ROADMAP.md` Phase 4 section.
+Tenant X: active unit in Property 1 AND active unit in Property 3
+          single login → sees both units, both balances, all charges holistically
+```
 
-Infrastructure first (these unblock everything else):
-1. Africa's Talking dashboard — point inbound SMS to `https://rent-reconciliation.fly.dev/inbound/sms`
-2. Wire `src/agent/inbound.py` intent classifier to actual LLM (`call_llm` in `llm.py`) — currently stubbed
-3. Implement tenant intent handlers: `checkin_reply`, `payment_claim`, `query_balance`, `complaint_submission`
-4. `tenants.flagged` + `tenants.flagged_reason` + `tenants.flagged_at` columns + migration (falsification detection)
-5. `maintenance_issues.priority` column + migration
-6. `property_info` table + migration + admin management UI (needed for `local_amenity_query`)
+**4. New portals and auth (locked):**
+| Role | Login | Portal |
+|---|---|---|
+| Platform owner (Domi operator) | `PLATFORM_ADMIN_PASSWORD` env var | `/platform/` |
+| Org admin | Per-org password in `organizations.admin_password_hash` | `/` scoped by `session['org_id']` |
+| Owner | Phone + password via `persons` table | `/owner/dashboard` holistic + `/owner/<property_id>/` individual |
+| Caretaker | Existing named accounts | `/caretaker/<property_id>/` — unchanged |
+| Tenant | Phone + PIN (holistic) OR token link (single unit) | `/tenant/dashboard` holistic + `/tenant/<token>` individual |
 
-Caretaker and owner handlers follow after tenant handlers are stable.
+**5. New schema (locked — see CURSOR_PLAN.md for exact DDL):**
+- `organizations` — agency identity + per-org admin credentials
+- `persons` — human identity shared across roles, orgs, properties
+- `platform_errors` — wired to Flask `@app.errorhandler`; platform admin sees all errors without users calling
+- `properties.organization_id` — nullable FK to organizations
+- `tenants.person_id` — nullable FK to persons
+- `owners.person_id` — nullable FK to persons
 
-**Note on credentials:** When AT_USERNAME flips from sandbox to live, 5 message types fire to real phones immediately. Read `memory/project_go_live_messaging_checklist.md` in Claude memory before flipping.
+### Pick up next — Phase 1: Schema Foundations
+
+**Read CURSOR_PLAN.md "Architecture Redesign" section for exact DDL and build sequence.**
+
+Steps in order:
+1. Add `migrate_add_organizations()` in `src/database/db.py`
+2. Add `migrate_add_persons()` in `src/database/db.py`
+3. Add `migrate_add_platform_errors()` in `src/database/db.py`
+4. Register all three in `app.py` startup (after existing migrations, in the order above)
+5. `./venv/bin/python -c "from app import app; print('OK')"` — must pass
+6. `./scripts/run_dev.sh` — app must still function normally
+
+Then Phase 2 (platform admin `/platform/*`), Phase 3 (org scoping), Phase 4 (owner holistic), Phase 5 (tenant holistic), Phase 6 (data entry + test run).
+
+**Commit after each phase:** `git add . && git commit -m "Phase N complete: [description]"`
+
+**Critical rules for this build:**
+- All migrations idempotent: `CREATE TABLE IF NOT EXISTS`; check `PRAGMA table_info` before `ALTER TABLE`
+- `organization_id`, `person_id` columns are nullable on all tables — never break existing null rows
+- Never import from `app.py` inside blueprints — define helpers locally or in a shared util
+- Read `CURSOR_PATTERNS.md` before writing any migration or route code
+
+**Note on credentials:** When AT_USERNAME flips from sandbox to live, 5 message types fire to real phones immediately. Read `memory/project_go_live_messaging_checklist.md` before flipping.
 
 ---
 
