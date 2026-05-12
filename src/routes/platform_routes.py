@@ -48,7 +48,7 @@ def logout():
 def dashboard():
     with get_connection() as conn:
         orgs = conn.execute(
-            "SELECT id, name, slug, contact_email, is_active, created_at FROM organizations ORDER BY created_at DESC"
+            "SELECT id, name, slug, contact_email, is_active, created_at, admin_password_hash IS NOT NULL AS has_password FROM organizations ORDER BY created_at DESC"
         ).fetchall()
 
         org_stats = []
@@ -75,6 +75,7 @@ def dashboard():
                     "slug": org["slug"],
                     "contact_email": org["contact_email"],
                     "is_active": org["is_active"],
+                    "has_password": org["has_password"],
                     "created_at": org["created_at"],
                     "property_count": prop_count,
                     "unit_count": unit_count,
@@ -126,27 +127,48 @@ def errors():
 
 @platform_bp.route("/orgs/new", methods=["POST"])
 def create_org():
-    """Create a new organisation."""
+    """Create a new organisation, optionally setting its admin login password."""
+    from werkzeug.security import generate_password_hash
     name = request.form.get("name", "").strip()
     slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
     contact_email = request.form.get("contact_email", "").strip() or None
     contact_phone = request.form.get("contact_phone", "").strip() or None
+    password = request.form.get("password", "").strip()
     if not name:
         flash("Organisation name is required.", "danger")
         return redirect(url_for("platform.dashboard"))
     with get_connection() as conn:
-        existing = conn.execute(
-            "SELECT id FROM organizations WHERE slug = ?", (slug,)
-        ).fetchone() if slug else None
-        if existing:
+        if slug and conn.execute("SELECT id FROM organizations WHERE slug = ?", (slug,)).fetchone():
             flash(f"Slug '{slug}' is already taken.", "danger")
             return redirect(url_for("platform.dashboard"))
         org_id = generate_id("ORG")
         conn.execute(
-            "INSERT INTO organizations (id, name, slug, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?)",
-            (org_id, name, slug or None, contact_email, contact_phone),
+            "INSERT INTO organizations (id, name, slug, contact_email, contact_phone, admin_password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+            (org_id, name, slug or None, contact_email, contact_phone,
+             generate_password_hash(password) if password else None),
         )
-    flash(f"Organisation '{name}' created.", "success")
+    flash(f"Organisation '{name}' created." + (" Login password set." if password else " No password set yet."), "success")
+    return redirect(url_for("platform.dashboard"))
+
+
+@platform_bp.route("/orgs/<org_id>/set-password", methods=["POST"])
+def set_org_password(org_id):
+    """Set or change an organisation's admin login password."""
+    from werkzeug.security import generate_password_hash
+    password = request.form.get("password", "").strip()
+    if not password:
+        flash("Password cannot be empty.", "danger")
+        return redirect(url_for("platform.dashboard"))
+    with get_connection() as conn:
+        org = conn.execute("SELECT name FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            flash("Organisation not found.", "danger")
+            return redirect(url_for("platform.dashboard"))
+        conn.execute(
+            "UPDATE organizations SET admin_password_hash = ? WHERE id = ?",
+            (generate_password_hash(password), org_id),
+        )
+    flash(f"Password updated for '{org['name']}'.", "success")
     return redirect(url_for("platform.dashboard"))
 
 

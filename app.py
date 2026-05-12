@@ -325,15 +325,42 @@ def inject_property_context():
 
 @app.route('/login', methods=['GET', 'POST'])
 def admin_login():
-    """Admin password login. Shown when ADMIN_PASSWORD is set."""
+    """Admin login. Org-specific password takes precedence; global ADMIN_PASSWORD is the master key."""
+    from werkzeug.security import check_password_hash
+    with get_connection() as conn:
+        orgs = conn.execute(
+            "SELECT id, name FROM organizations WHERE is_active = 1 AND admin_password_hash IS NOT NULL ORDER BY name"
+        ).fetchall()
+
     if request.method == 'POST':
         password = request.form.get('password', '')
-        if password == os.environ.get('ADMIN_PASSWORD'):
+        org_id = request.form.get('org_id', '').strip()
+        next_url = request.form.get('next') or request.args.get('next') or url_for('dashboard')
+
+        # Try org-specific password first
+        if org_id:
+            with get_connection() as conn:
+                org = conn.execute(
+                    "SELECT id, name, admin_password_hash FROM organizations WHERE id = ? AND is_active = 1",
+                    (org_id,),
+                ).fetchone()
+            if org and org['admin_password_hash'] and check_password_hash(org['admin_password_hash'], password):
+                session['admin_authenticated'] = True
+                session['org_id'] = org['id']
+                session['org_selection_done'] = True
+                session.pop('property_id', None)
+                return redirect(next_url)
+
+        # Fall back to global ADMIN_PASSWORD (master key / dev mode)
+        global_pw = os.environ.get('ADMIN_PASSWORD')
+        if global_pw and password == global_pw:
             session['admin_authenticated'] = True
-            next_url = request.form.get('next') or request.args.get('next') or url_for('dashboard')
+            # org_selection_done left unset → will hit org_select if multiple orgs
             return redirect(next_url)
-        return render_template('login.html', error='Invalid password.')
-    return render_template('login.html')
+
+        return render_template('login.html', orgs=orgs, error='Incorrect password.')
+
+    return render_template('login.html', orgs=orgs)
 
 
 @app.route('/logout')

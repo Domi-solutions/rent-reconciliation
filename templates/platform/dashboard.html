@@ -72,11 +72,29 @@
             {% else %}
               <span class="badge bg-secondary-subtle text-secondary">Inactive</span>
             {% endif %}
+            {% if org.has_password %}
+              <span class="badge bg-primary-subtle text-primary ms-1">Login set</span>
+            {% else %}
+              <span class="badge bg-warning-subtle text-warning ms-1">No password</span>
+            {% endif %}
           </td>
           <td class="text-end" style="white-space:nowrap;">
             <form method="POST" action="{{ url_for('platform.impersonate', org_id=org.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm btn-outline-primary">View as org</button>
             </form>
+            <details class="d-inline-block ms-1" style="position:relative;">
+              <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">
+                {{ 'Change pw' if org.has_password else 'Set pw' }}
+              </summary>
+              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;z-index:100;min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
+                <form method="POST" action="{{ url_for('platform.set_org_password', org_id=org.id) }}"
+                      style="display:flex;gap:6px;align-items:center;">
+                  <input type="password" name="password" class="form-control form-control-sm"
+                         placeholder="New password" required style="flex:1;">
+                  <button type="submit" class="btn btn-sm btn-primary">Set</button>
+                </form>
+              </div>
+            </details>
             <form method="POST" action="{{ url_for('platform.toggle_org', org_id=org.id) }}" class="d-inline ms-1">
               <button type="submit" class="btn btn-sm btn-outline-secondary">
                 {{ 'Deactivate' if org.is_active else 'Activate' }}
@@ -111,9 +129,14 @@
             <input type="text" name="name" class="form-control" placeholder="e.g. Alfa Property Management" required>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-semibold">Slug</label>
+            <label class="form-label fw-semibold">Admin login password <span class="text-danger">*</span></label>
+            <input type="password" name="password" class="form-control" required>
+            <div class="form-text">This is the password the org admin uses at <code>/login</code>.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Slug</label>
             <input type="text" name="slug" class="form-control" placeholder="e.g. alfa-property (URL-safe, unique)">
-            <div class="form-text">Used in URLs. Leave blank to skip.</div>
+            <div class="form-text">URL-safe identifier. Leave blank to skip.</div>
           </div>
           <div class="mb-3">
             <label class="form-label">Contact email</label>
