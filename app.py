@@ -30,6 +30,7 @@ from src.routes.caretaker_routes import caretaker_bp
 from src.routes.agent_routes import agent_bp
 from src.routes.payment_routes import payment_bp
 from src.routes.inbound_routes import inbound_bp
+from src.routes.platform_routes import platform_bp
 from src.agent.coordinator import (
     daily_snapshot_job,
     morning_briefings_job,
@@ -127,6 +128,7 @@ app.register_blueprint(caretaker_bp)
 app.register_blueprint(agent_bp)
 app.register_blueprint(payment_bp)
 app.register_blueprint(inbound_bp)
+app.register_blueprint(platform_bp)
 
 
 scheduler = BackgroundScheduler(daemon=True)
@@ -164,6 +166,8 @@ def require_admin_auth():
     if request.path.startswith('/caretaker'):
         return None
     if request.path.startswith('/inbound'):
+        return None
+    if request.path.startswith('/platform'):
         return None
     if not os.environ.get('ADMIN_PASSWORD'):
         return None
@@ -317,6 +321,33 @@ def admin_logout():
     """Clear admin session and redirect to login."""
     session.pop('admin_authenticated', None)
     return redirect(url_for('admin_login'))
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    """Log 500 errors to platform_errors so the operator can see them without users calling."""
+    import traceback as tb
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                """INSERT INTO platform_errors (id, error_type, route, method, org_id, property_id, user_role, message, traceback)
+                   VALUES (?, '500', ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    generate_id("ERR"),
+                    request.path,
+                    request.method,
+                    session.get("org_id"),
+                    session.get("property_id"),
+                    "platform" if session.get("platform_admin") else
+                    "admin" if session.get("admin_authenticated") else
+                    "owner" if session.get("owner_id") else "unknown",
+                    str(e),
+                    tb.format_exc(),
+                ),
+            )
+    except Exception:
+        pass
+    return render_template("500.html"), 500
 
 
 @app.route('/properties')

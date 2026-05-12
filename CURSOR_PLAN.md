@@ -92,18 +92,17 @@ All additions are **nullable** — existing rows are unaffected.
 - [ ] Verify: `./venv/bin/python -c "from app import app; print('OK')"`
 - [ ] Commit: `git commit -m "Phase 1 complete: organizations, persons, platform_errors schema"`
 
-#### Phase 2 — Platform Admin (`/platform/*`)
+#### Phase 2 — Platform Admin (`/platform/*`) ✅ COMPLETE
 New blueprint: `src/routes/platform_routes.py`, prefix `/platform`
-- [ ] `GET /platform/login` + `POST /platform/login` — auth via `PLATFORM_ADMIN_PASSWORD` env var
-- [ ] `GET /platform/logout`
-- [ ] `before_request` in platform blueprint: check `session['platform_admin']`
-- [ ] `GET /platform/` — dashboard: org list (name, property count, last activity), system health
-- [ ] `GET /platform/errors` — `platform_errors` table, most recent first, filterable by type
-- [ ] `POST /platform/impersonate/<org_id>` — sets `session['org_id']` + `session['admin_authenticated']`, redirects to `/`
-- [ ] Wire `@app.errorhandler(500)` in `app.py` → write to `platform_errors` table
-- [ ] Template dir: `templates/platform/` — `base_platform.html`, `dashboard.html`, `errors.html`
-- [ ] Exempt `/platform/*` from org admin `before_request` check
-- [ ] Commit: `git commit -m "Phase 2 complete: platform admin portal"`
+- [x] `GET /platform/login` + `POST /platform/login` — auth via `PLATFORM_ADMIN_PASSWORD` env var
+- [x] `GET /platform/logout`
+- [x] `before_request` in platform blueprint: check `session['platform_admin']`
+- [x] `GET /platform/` — dashboard: org list (name, property count, last activity), system health
+- [x] `GET /platform/errors` — `platform_errors` table, most recent first, filterable by type
+- [x] `POST /platform/impersonate/<org_id>` — sets `session['org_id']` + `session['admin_authenticated']`, redirects to `/`
+- [x] Wire `@app.errorhandler(500)` in `app.py` → write to `platform_errors` table
+- [x] Template dir: `templates/platform/` — `base_platform.html`, `login.html`, `dashboard.html`, `errors.html`
+- [x] Exempt `/platform/*` from org admin `before_request` check
 
 #### Phase 3 — Org Admin Scoping
 - [ ] Admin login (`POST /login`) now shows org selector if multiple orgs exist; sets `session['org_id']`

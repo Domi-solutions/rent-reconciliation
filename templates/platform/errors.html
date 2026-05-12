@@ -1,0 +1,72 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Errors — Domi Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-1">Platform Errors</h4>
+    <div style="font-size: 13px; color: #718096;">Most recent first — last 200</div>
+  </div>
+
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{{ url_for('platform.errors') }}"
+       class="btn btn-sm {% if not selected_type %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+      All
+    </a>
+    {% for t in error_types %}
+    <a href="{{ url_for('platform.errors', type=t) }}"
+       class="btn btn-sm {% if selected_type == t %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+      {{ t }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if errors %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table mb-0" style="font-size: 13px;">
+      <thead class="table-light">
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Route</th>
+          <th>Org / Property</th>
+          <th>Role</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for err in errors %}
+        <tr {% if err.error_type == '500' %}class="table-danger"{% elif err.error_type == 'warning' %}class="table-warning"{% endif %}>
+          <td style="white-space: nowrap; color: #718096;">{{ err.created_at[:16] if err.created_at }}</td>
+          <td><span class="badge bg-secondary">{{ err.error_type }}</span></td>
+          <td style="font-family: monospace; font-size: 12px;">
+            {% if err.method %}{{ err.method }} {% endif %}{{ err.route or '—' }}
+          </td>
+          <td style="font-size: 12px; color: #4a5568;">
+            {{ err.org_id or '' }}{% if err.org_id and err.property_id %} / {% endif %}{{ err.property_id or '' }}
+            {% if not err.org_id and not err.property_id %}—{% endif %}
+          </td>
+          <td style="color: #718096;">{{ err.user_role or '—' }}</td>
+          <td>
+            <div>{{ err.message or '' }}</div>
+            {% if err.traceback %}
+            <details style="margin-top: 4px;">
+              <summary style="cursor: pointer; font-size: 11px; color: #a0aec0;">traceback</summary>
+              <pre style="font-size: 11px; white-space: pre-wrap; background: #f7fafc; padding: 8px; border-radius: 4px; margin-top: 4px;">{{ err.traceback }}</pre>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm p-5 text-center">
+  <div style="color: #718096;">No errors recorded{% if selected_type %} of type "{{ selected_type }}"{% endif %}.</div>
+</div>
+{% endif %}
+{% endblock %}
