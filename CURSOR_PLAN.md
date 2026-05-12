@@ -104,14 +104,16 @@ New blueprint: `src/routes/platform_routes.py`, prefix `/platform`
 - [x] Template dir: `templates/platform/` — `base_platform.html`, `login.html`, `dashboard.html`, `errors.html`
 - [x] Exempt `/platform/*` from org admin `before_request` check
 
-#### Phase 3 — Org Admin Scoping
-- [ ] Admin login (`POST /login`) now shows org selector if multiple orgs exist; sets `session['org_id']`
-- [ ] All property queries in admin routes filter by `session['org_id']` — `WHERE organization_id = ?`
-- [ ] `get_current_property(conn)` updated to also check org scope
-- [ ] Properties page: only shows properties in current org
-- [ ] Creating a property: assigns `organization_id = session['org_id']`
-- [ ] Dev mode (no ADMIN_PASSWORD): org selector skipped, all properties visible (unchanged behaviour)
-- [ ] Commit: `git commit -m "Phase 3 complete: org-scoped admin routes"`
+#### Phase 3 — Org Admin Scoping ✅ COMPLETE
+- [x] `GET/POST /org-select` — org picker shown post-login when multiple orgs exist; auto-selects when 0 or 1 org
+- [x] `before_request` redirects authenticated users without `org_selection_done` to `/org-select`
+- [x] `get_current_property(conn)` in app.py, messaging_routes.py, report_routes.py — filters by `org_id` when set
+- [x] Properties page (`/properties`) filters by `session['org_id']`
+- [x] `select_property` rejects cross-org property switches
+- [x] Creating a property (`/setup`) assigns `organization_id = session.get('org_id')`
+- [x] `inject_property_context` scopes property count to current org
+- [x] Dev mode (no ADMIN_PASSWORD): org selector skipped entirely (unchanged behaviour)
+- [x] Platform impersonate sets `org_selection_done` so operator lands cleanly in the org
 
 #### Phase 4 — Owner Holistic View
 New blueprint additions to `src/routes/viewer_routes.py` (or new `src/routes/owner_routes.py`)

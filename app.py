@@ -156,7 +156,7 @@ def require_admin_auth():
     """Require admin password for all admin routes. Bypass if ADMIN_PASSWORD unset (dev mode)."""
     if request.endpoint is None:
         return None
-    exempt = ('admin_login', 'admin_logout', 'static')
+    exempt = ('admin_login', 'admin_logout', 'org_select', 'static')
     if request.endpoint in exempt:
         return None
     if request.path.startswith('/view'):
@@ -171,9 +171,11 @@ def require_admin_auth():
         return None
     if not os.environ.get('ADMIN_PASSWORD'):
         return None
-    if session.get('admin_authenticated'):
-        return None
-    return redirect(url_for('admin_login', next=request.url))
+    if not session.get('admin_authenticated'):
+        return redirect(url_for('admin_login', next=request.url))
+    if not session.get('org_selection_done'):
+        return redirect(url_for('org_select'))
+    return None
 
 
 def _parse_txn_date_to_iso(date_str):
@@ -266,12 +268,19 @@ def _audit_display_details(conn, row):
 
 
 def get_current_property(conn):
-    """Get the currently selected property from session. Returns row or None."""
+    """Get the currently selected property, scoped to session org if one is set."""
     pid = session.get('property_id')
     if pid:
-        prop = conn.execute(
-            "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
-        ).fetchone()
+        org_id = session.get('org_id')
+        if org_id:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active' AND organization_id = ?",
+                (pid, org_id),
+            ).fetchone()
+        else:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
+            ).fetchone()
         if prop:
             return prop
     session.pop('property_id', None)
@@ -284,9 +293,16 @@ def inject_property_context():
     try:
         with get_connection() as conn:
             prop = get_current_property(conn)
-            count = conn.execute(
-                "SELECT COUNT(*) FROM properties WHERE status = 'active'"
-            ).fetchone()[0]
+            org_id = session.get('org_id')
+            if org_id:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM properties WHERE status = 'active' AND organization_id = ?",
+                    (org_id,),
+                ).fetchone()[0]
+            else:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM properties WHERE status = 'active'"
+                ).fetchone()[0]
 
             unit_count = None
             if prop:
@@ -320,7 +336,43 @@ def admin_login():
 def admin_logout():
     """Clear admin session and redirect to login."""
     session.pop('admin_authenticated', None)
+    session.pop('org_id', None)
+    session.pop('org_selection_done', None)
+    session.pop('property_id', None)
     return redirect(url_for('admin_login'))
+
+
+@app.route('/org-select', methods=['GET', 'POST'])
+def org_select():
+    """Org selection step after login. Auto-selects when 0 or 1 org exists."""
+    if request.method == 'POST':
+        org_id = request.form.get('org_id', '').strip()
+        if org_id:
+            with get_connection() as conn:
+                org = conn.execute(
+                    "SELECT id FROM organizations WHERE id = ? AND is_active = 1", (org_id,)
+                ).fetchone()
+            if org:
+                session['org_id'] = org_id
+                session.pop('property_id', None)
+        session['org_selection_done'] = True
+        return redirect(url_for('property_list'))
+
+    with get_connection() as conn:
+        orgs = conn.execute(
+            "SELECT * FROM organizations WHERE is_active = 1 ORDER BY name"
+        ).fetchall()
+
+    if len(orgs) == 0:
+        session['org_selection_done'] = True
+        return redirect(url_for('property_list'))
+
+    if len(orgs) == 1:
+        session['org_id'] = orgs[0]['id']
+        session['org_selection_done'] = True
+        return redirect(url_for('property_list'))
+
+    return render_template('org_select.html', orgs=orgs)
 
 
 @app.errorhandler(500)
@@ -352,11 +404,18 @@ def handle_500(e):
 
 @app.route('/properties')
 def property_list():
-    """List all properties for admin to select."""
+    """List properties for admin to select, scoped to current org."""
+    org_id = session.get('org_id')
     with get_connection() as conn:
-        properties = conn.execute(
-            "SELECT * FROM properties WHERE status = 'active' ORDER BY name"
-        ).fetchall()
+        if org_id:
+            properties = conn.execute(
+                "SELECT * FROM properties WHERE status = 'active' AND organization_id = ? ORDER BY name",
+                (org_id,),
+            ).fetchall()
+        else:
+            properties = conn.execute(
+                "SELECT * FROM properties WHERE status = 'active' ORDER BY name"
+            ).fetchall()
     if len(properties) == 1:
         session['property_id'] = properties[0]['id']
         return redirect(url_for('dashboard'))
@@ -365,11 +424,15 @@ def property_list():
 
 @app.route('/properties/select/<property_id>')
 def select_property(property_id):
-    """Set the active property in session and redirect to dashboard."""
+    """Set the active property in session, org-scoped."""
+    org_id = session.get('org_id')
     with get_connection() as conn:
         prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
         if not prop:
             flash('Property not found.', 'error')
+            return redirect(url_for('property_list'))
+        if org_id and prop['organization_id'] != org_id:
+            flash('Property not in your organisation.', 'error')
             return redirect(url_for('property_list'))
     session['property_id'] = property_id
     flash(f'Switched to {prop["name"]}', 'info')
@@ -564,8 +627,8 @@ def setup_property():
         property_id = generate_id('PROP')
         with get_connection() as conn:
             conn.execute(
-                "INSERT INTO properties (id, name, address) VALUES (?, ?, ?)",
-                (property_id, name, address),
+                "INSERT INTO properties (id, name, address, organization_id) VALUES (?, ?, ?, ?)",
+                (property_id, name, address, session.get('org_id')),
             )
             details = f'Name: {name}'
             if address:

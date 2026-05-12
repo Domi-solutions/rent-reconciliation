@@ -12,12 +12,19 @@ report_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
 
 def get_current_property(conn):
-    """Get the currently selected property from session. Returns row or None."""
+    """Get the currently selected property, scoped to session org if set."""
     pid = session.get('property_id')
     if pid:
-        prop = conn.execute(
-            "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
-        ).fetchone()
+        org_id = session.get('org_id')
+        if org_id:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active' AND organization_id = ?",
+                (pid, org_id),
+            ).fetchone()
+        else:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
+            ).fetchone()
         if prop:
             return prop
     session.pop('property_id', None)

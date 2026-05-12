@@ -135,5 +135,7 @@ def impersonate(org_id):
         return redirect(url_for("platform.dashboard"))
     session["org_id"] = org["id"]
     session["admin_authenticated"] = True
+    session["org_selection_done"] = True
+    session.pop("property_id", None)
     flash(f"Now viewing as {org['name']}. Return to /platform to switch.", "info")
     return redirect("/")

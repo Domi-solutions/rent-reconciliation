@@ -7,12 +7,19 @@ messaging_bp = Blueprint('messaging', __name__, url_prefix='/messages')
 
 
 def get_current_property(conn):
-    """Current property from session. Returns row or None."""
+    """Current property from session, scoped to session org if set."""
     pid = session.get('property_id')
     if pid:
-        prop = conn.execute(
-            "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
-        ).fetchone()
+        org_id = session.get('org_id')
+        if org_id:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active' AND organization_id = ?",
+                (pid, org_id),
+            ).fetchone()
+        else:
+            prop = conn.execute(
+                "SELECT * FROM properties WHERE id = ? AND status = 'active'", (pid,)
+            ).fetchone()
         if prop:
             return prop
     session.pop('property_id', None)
