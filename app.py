@@ -314,13 +314,24 @@ def inject_property_context():
                     "SELECT COUNT(*) FROM units WHERE property_id = ?", (prop["id"],)
                 ).fetchone()[0]
 
+            if org_id:
+                all_properties = conn.execute(
+                    "SELECT id, name FROM properties WHERE status = 'active' AND organization_id = ? ORDER BY name",
+                    (org_id,),
+                ).fetchall()
+            else:
+                all_properties = conn.execute(
+                    "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
+                ).fetchall()
+
             return {
                 "current_property": prop,
                 "property_count": count,
                 "unit_count": unit_count,
+                "all_properties": all_properties,
             }
     except Exception:
-        return {"current_property": None, "property_count": 0, "unit_count": None}
+        return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": []}
 
 
 @app.route('/login', methods=['GET', 'POST'])
