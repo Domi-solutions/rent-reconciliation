@@ -92,15 +92,17 @@
     </div>
   </div>
   <div class="col-12 col-md-4">
-    <div class="kpi-hero-label">Collected This Month</div>
-    <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
-    <div class="kpi-hero-sub">
-      {% if stats.collection_rate is defined and stats.collection_rate > 0 %}
-        {{ stats.collection_rate }}% of expected monthly income
-      {% else %}
-        verified against bank records
-      {% endif %}
-    </div>
+    <a href="{{ url_for('review', tab='confirmed') }}" class="text-decoration-none" style="display:block;">
+      <div class="kpi-hero-label">Collected This Month</div>
+      <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
+      <div class="kpi-hero-sub">
+        {% if stats.collection_rate is defined and stats.collection_rate > 0 %}
+          {{ stats.collection_rate }}% of expected monthly income
+        {% else %}
+          verified against bank records
+        {% endif %}
+      </div>
+    </a>
   </div>
 </div>
 

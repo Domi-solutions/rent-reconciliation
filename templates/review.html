@@ -34,33 +34,34 @@
 <div class="surface-card">
   <div style="padding: 20px;">
     {% if tab == 'confirmed' %}
-    <div class="page-meta mb-3">Payments verified from a claim and bank transaction; ready for ledger.</div>
     {% if confirmed %}
-    <div class="table-responsive">
-      <table class="table table-sm">
-        <thead><tr><th>Ref</th><th>Amount</th><th>Date</th><th>Unit</th><th>Tenant</th><th>Source</th></tr></thead>
-        <tbody>
-          {% for r in confirmed %}
-          <tr>
-            <td>{{ r.mpesa_ref or '-' }}</td>
-            <td>KES {{ "%.2f"|format(r.amount) }}</td>
-            <td>{{ r.payment_date or r.txn_date or '-' }}</td>
-            <td>{{ r.unit_number }}</td>
-            <td>{{ r.tenant_name or '-' }}</td>
-            <td>
-              {% if r.source == 'daraja' %}
-                <span class="badge" style="background:#0d6efd; font-size:11px;">Paybill</span>
-              {% elif r.source == 'pesapal' %}
-                <span class="badge" style="background:#6f42c1; font-size:11px;">Card</span>
-              {% else %}
-                <span class="badge bg-secondary" style="font-size:11px;">Manual</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    {% for r in confirmed %}
+    <div class="data-row" style="padding: 12px 0; border-bottom: 1px solid var(--border, #e5e7eb);">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div style="font-weight: 600; font-size: 15px; color: var(--ink);">KES {{ "{:,.0f}".format(r.amount) }}</div>
+          <div style="font-size: 13px; color: var(--ink-muted, #6b7280); margin-top: 2px;">
+            {{ r.tenant_name or 'Unknown' }} &middot; Unit {{ r.unit_number }}
+          </div>
+          {% if r.mpesa_ref %}
+          <div style="font-size: 11px; color: #9ca3af; margin-top: 2px; font-family: monospace;">{{ r.mpesa_ref }}</div>
+          {% endif %}
+        </div>
+        <div style="text-align: right; flex-shrink: 0; margin-left: 16px;">
+          <div style="font-size: 12px; color: #9ca3af;">{{ r.payment_date or r.txn_date or '-' }}</div>
+          <div style="margin-top: 4px;">
+            {% if r.source == 'daraja' %}
+              <span class="badge" style="background:#0d6efd; font-size:10px;">Paybill</span>
+            {% elif r.source == 'pesapal' %}
+              <span class="badge" style="background:#6f42c1; font-size:10px;">Card</span>
+            {% else %}
+              <span class="badge bg-secondary" style="font-size:10px;">Bank</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
+    {% endfor %}
     {% else %}
     <div class="empty-state">
       <div class="empty-state-title">No confirmed payments yet</div>
@@ -290,10 +291,53 @@
     {% endif %}
 
     {% if tab == 'parse_errors' %}
-    <div class="empty-state">
-      <div class="empty-state-title">No parse-error log yet</div>
-      <div class="empty-state-sub">When report-payment fails to parse, the error is shown on the form only.</div>
+    {% if parse_errors_list %}
+    <div class="table-responsive">
+      <table class="table table-sm" style="font-size: 13px;">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Bank</th>
+            <th>Type</th>
+            <th>Detail</th>
+            <th>Page</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for err in parse_errors_list %}
+          <tr {% if err.error_type == 'format_unknown' %}class="table-danger"{% elif err.error_type == 'validation' %}class="table-warning"{% endif %}>
+            <td style="font-size:12px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                title="{{ err.filename }}">{{ err.filename }}</td>
+            <td>
+              <span class="badge" style="font-size:10px;
+                background:{% if err.bank_format == 'cooperative' %}#0d6efd{% elif err.bank_format == 'tabular_kes' %}#6f42c1{% else %}#dc3545{% endif %};">
+                {{ err.bank_format or 'unknown' }}
+              </span>
+            </td>
+            <td><span class="badge bg-secondary" style="font-size:10px;">{{ err.error_type }}</span></td>
+            <td style="max-width:260px;">
+              <div style="font-size:12px;">{{ err.error_message or '—' }}</div>
+              {% if err.raw_text %}
+              <details style="margin-top:3px;">
+                <summary style="cursor:pointer; font-size:11px; color:#9ca3af;">raw</summary>
+                <pre style="font-size:11px; white-space:pre-wrap; background:#f8fafc; padding:6px; border-radius:4px; margin-top:4px; max-height:120px; overflow:auto;">{{ err.raw_text }}</pre>
+              </details>
+              {% endif %}
+            </td>
+            <td style="color:#9ca3af; font-size:12px;">{{ err.page_number or '—' }}</td>
+            <td style="color:#9ca3af; font-size:12px; white-space:nowrap;">{{ err.created_at[:10] if err.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No parse errors</div>
+      <div class="empty-state-sub">Upload a bank statement to see any rows the parser could not read.</div>
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>

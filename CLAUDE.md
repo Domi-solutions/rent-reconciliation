@@ -104,10 +104,13 @@ rent-reconciliation/
 │   │   └── state.py          # Conversation session state (inbound_sessions)
 │   ├── parsers/
 │   │   ├── router.py         # Input auto-detection & routing
-│   │   ├── pdf_parser.py     # Bank statement parsing
+│   │   ├── pdf_parser.py     # Bank statement parsing (detect_bank_statement_format → 'cooperative'|'tabular_kes'|'unknown')
 │   │   ├── sms_parser.py     # M-Pesa SMS parsing (exports parse_mpesa_message)
 │   │   ├── excel_parser.py   # Tenant Excel import (exports parse_currency)
-│   │   └── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate)
+│   │   ├── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate)
+│   │   └── banks/
+│   │       ├── __init__.py   # Empty
+│   │       └── registry.py   # BANK_DISPLAY_NAMES, bank_display_name(), SUPPORTED_FORMATS — add new bank here
 │   ├── routes/
 │   │   ├── viewer_routes.py  # /view/*
 │   │   ├── tenant_routes.py  # /tenant/<token>
@@ -142,12 +145,15 @@ rent-reconciliation/
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
 │   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment
+│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html
 │   ├── owners.html
 │   └── caretakers.html
 ├── scripts/
 │   ├── run_dev.sh            # Dev server :5001, data/dev.db, no passwords
 │   ├── download_prod_db.sh   # Pull prod DB → backups/ + data/dev.db
-│   └── reset_dev_db.sh       # Reset dev.db from latest backup
+│   ├── reset_dev_db.sh       # Reset dev.db from latest backup
+│   ├── seed_phase6.py        # Seeds 2 orgs, 4 properties, owners, tenants (Phase 6)
+│   └── seed_demo_payments.py # Seeds 132 rent charges, 12 statements, 56 payments with realistic scenarios
 └── data/
     ├── rent.db               # Default DB
     └── dev.db                # Dev DB (set via DATABASE_PATH env var)
@@ -166,6 +172,8 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
+- `bank_statements` is **org-scoped** (as of 2026-05-12): new uploads set `org_id`, `property_id` is legacy/nullable. Always query by `WHERE org_id = ?` for new code. `bank_format` is stored at upload time (`cooperative`|`tabular_kes`|`unknown`).
+- `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
 
 ---
 
@@ -217,6 +225,18 @@ result = classify_intent(raw_text, sender_role='caretaker')
 from src.parsers.router import parse_input
 result = parse_input(data)  # Auto-detects SMS/PDF/Excel
 ```
+
+**Bank format registry — always use for display names and format lists:**
+```python
+from src.parsers.banks.registry import bank_display_name, SUPPORTED_FORMATS
+label = bank_display_name('cooperative')  # → 'Co-operative Bank'
+label = bank_display_name('unknown')      # → 'Unknown format'
+# To add a new bank: add entry to BANK_DISPLAY_NAMES in registry.py,
+# write parser in src/parsers/banks/<bank>.py,
+# add detection branch in detect_bank_statement_format() in pdf_parser.py
+```
+
+**`detect_bank_statement_format` returns `'unknown'` for unrecognised PDFs** — never silently falls back to `'cooperative'`. An `'unknown'` format is logged as a `format_unknown` parse error and the upload is marked `parse_failed`.
 
 **Migrations — all idempotent, all auto-run at startup in app.py:**
 ```python

@@ -1045,3 +1045,40 @@ def migrate_add_platform_errors():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_perr_created ON platform_errors(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_perr_type ON platform_errors(error_type)")
         print("Migration complete: platform_errors table ready.")
+
+
+def migrate_add_org_scoped_statements():
+    """Add org_id and bank_format to bank_statements for org-level statement ownership. Idempotent."""
+    with get_connection() as conn:
+        for col, typedef in [('org_id', 'TEXT'), ('bank_format', 'TEXT')]:
+            try:
+                conn.execute(f"ALTER TABLE bank_statements ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_stmts_org ON bank_statements(org_id)")
+    print("Migration complete: bank_statements.org_id + bank_format.")
+
+
+def migrate_add_statement_parse_errors():
+    """Create statement_parse_errors table for persisting PDF parse failures. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS statement_parse_errors (
+                id TEXT PRIMARY KEY,
+                org_id TEXT NOT NULL,
+                statement_id TEXT,
+                filename TEXT NOT NULL,
+                file_path TEXT,
+                bank_format TEXT,
+                error_type TEXT NOT NULL,
+                error_message TEXT,
+                raw_text TEXT,
+                page_number INTEGER,
+                txn_index INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_spe_org ON statement_parse_errors(org_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_spe_stmt ON statement_parse_errors(statement_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_spe_created ON statement_parse_errors(created_at)")
+    print("Migration complete: statement_parse_errors table ready.")

@@ -85,6 +85,8 @@ from src.database.db import (
     migrate_add_organizations,
     migrate_add_persons,
     migrate_add_platform_errors,
+    migrate_add_org_scoped_statements,
+    migrate_add_statement_parse_errors,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -115,6 +117,8 @@ migrate_add_language_preference()
 migrate_add_organizations()
 migrate_add_persons()
 migrate_add_platform_errors()
+migrate_add_org_scoped_statements()
+migrate_add_statement_parse_errors()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -581,17 +585,21 @@ def dashboard():
             ORDER BY pc.created_at DESC
         """, (property_id,)).fetchall()
 
-        unassigned = conn.execute("""
+        _dash_org_id = (property_row['organization_id'] if property_row['organization_id'] else None) or session.get('org_id')
+        _stmt_filter = "bs.org_id = ?" if _dash_org_id else "bs.property_id = ?"
+        _stmt_param = _dash_org_id if _dash_org_id else property_id
+
+        unassigned = conn.execute(f"""
             SELECT bt.*
             FROM bank_transactions bt
             JOIN bank_statements bs ON bt.statement_id = bs.id
-            WHERE bs.property_id = ?
+            WHERE {_stmt_filter}
             AND bt.txn_type = 'PAYBILL_CREDIT'
             AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
             ORDER BY bt.txn_date DESC
-        """, (property_id,)).fetchall()
+        """, (_stmt_param,)).fetchall()
 
-        unassigned_stats = conn.execute("""
+        unassigned_stats = conn.execute(f"""
             SELECT
                 COUNT(*) as total_count,
                 COALESCE(SUM(bt.amount), 0) as total_amount,
@@ -599,10 +607,10 @@ def dashboard():
                 COALESCE(SUM(CASE WHEN bt.unit_hint IS NOT NULL AND bt.unit_hint != '' THEN bt.amount ELSE 0 END), 0) as hint_amount
             FROM bank_transactions bt
             JOIN bank_statements bs ON bt.statement_id = bs.id
-            WHERE bs.property_id = ?
+            WHERE {_stmt_filter}
             AND bt.txn_type = 'PAYBILL_CREDIT'
             AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
-        """, (property_id,)).fetchone()
+        """, (_stmt_param,)).fetchone()
 
         recent = conn.execute("""
             SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 10
@@ -1447,26 +1455,44 @@ def report_payment():
 
 @app.route('/statements')
 def manage_statements():
-    """List bank statements."""
+    """List bank statements — org-scoped (all properties in org)."""
+    from src.parsers.banks.registry import bank_display_name as _bank_label
+    org_id = session.get('org_id')
+    if not org_id:
+        return redirect(url_for('property_list'))
+
     with get_connection() as conn:
         property_row = get_current_property(conn)
-        if not property_row:
-            return redirect(url_for('property_list'))
-
         statements = conn.execute("""
-            SELECT * FROM bank_statements WHERE property_id = ? ORDER BY uploaded_at DESC
-        """, (property_row['id'],)).fetchall()
+            SELECT bs.*, COALESCE(bs.bank_format, 'unknown') as bank_format
+            FROM bank_statements bs
+            WHERE bs.org_id = ?
+            ORDER BY bs.uploaded_at DESC
+        """, (org_id,)).fetchall()
+        parse_error_counts = {
+            row[0]: row[1]
+            for row in conn.execute("""
+                SELECT statement_id, COUNT(*) FROM statement_parse_errors
+                WHERE org_id = ? GROUP BY statement_id
+            """, (org_id,)).fetchall()
+        }
 
-        return render_template('statements.html', property=property_row, statements=statements)
+    return render_template(
+        'statements.html',
+        property=property_row,
+        statements=statements,
+        parse_error_counts=parse_error_counts,
+        bank_label=_bank_label,
+    )
 
 
 @app.route('/statements/upload', methods=['GET', 'POST'])
 def upload_statement():
-    """Upload and process bank statement PDF."""
-    with get_connection() as conn:
-        property_row = get_current_property(conn)
-        if not property_row:
-            return redirect(url_for('property_list'))
+    """Upload and process bank statement PDF. Statement is org-scoped, not property-scoped."""
+    from src.parsers.banks.registry import bank_display_name as _bank_label
+    org_id = session.get('org_id')
+    if not org_id:
+        return redirect(url_for('property_list'))
 
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -1487,25 +1513,17 @@ def upload_statement():
 
         try:
             result = parse_bank_statement(file_path)
+            bank_format = result.get('statement_format', 'unknown')
             validation = result.get('validation') or {}
-            if not validation.get('valid'):
-                flash('Statement failed validation: ' + (validation.get('error') or 'Unknown error'), 'error')
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                return redirect(url_for('upload_statement'))
-
             transactions = result.get('transactions') or []
+
             period_start = None
             period_end = None
-            if transactions:
-                dates = []
-                for t in transactions:
-                    iso = _parse_txn_date_to_iso(t.transaction_date) if getattr(t, 'transaction_date', None) else None
-                    if iso:
-                        dates.append(iso)
-                if dates:
-                    period_start = min(dates)
-                    period_end = max(dates)
+            for t in transactions:
+                iso = _parse_txn_date_to_iso(t.transaction_date) if getattr(t, 'transaction_date', None) else None
+                if iso:
+                    period_start = iso if not period_start else min(period_start, iso)
+                    period_end = iso if not period_end else max(period_end, iso)
 
             opening = result.get('opening_balance')
             closing = result.get('closing_balance')
@@ -1515,31 +1533,34 @@ def upload_statement():
                 closing = float(closing)
             summary = result.get('summary') or {}
             paybill_count = summary.get('paybill_credits', 0)
+            parse_error_txns = [t for t in transactions if getattr(t, 'txn_type', '') == 'PARSE_ERROR']
+            stmt_errors = result.get('errors') or []
 
             with get_connection() as conn:
-                property_row = get_current_property(conn)
-                if not property_row:
-                    flash('Please select a property first.', 'error')
-                    return redirect(url_for('property_list'))
-                if period_start and period_end and property_row:
+                # Supersede any overlapping active statements for this org
+                if period_start and period_end:
                     conn.execute("""
                         UPDATE bank_statements SET status = 'superseded'
-                        WHERE property_id = ? AND status = 'active'
+                        WHERE org_id = ? AND status = 'active'
                         AND period_start <= ? AND period_end >= ?
-                    """, (property_row['id'], period_end, period_start))
+                    """, (org_id, period_end, period_start))
 
+                stmt_status = 'active' if validation.get('valid') else 'parse_failed'
                 conn.execute("""
                     INSERT INTO bank_statements
-                    (id, property_id, filename, file_path, period_start, period_end,
-                     opening_balance, closing_balance, total_transactions, rent_transactions, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+                    (id, org_id, filename, file_path, period_start, period_end,
+                     opening_balance, closing_balance, total_transactions, rent_transactions,
+                     bank_format, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    statement_id, property_row['id'], filename, file_path,
+                    statement_id, org_id, filename, file_path,
                     period_start, period_end, opening, closing,
-                    len(transactions), paybill_count,
+                    len(transactions), paybill_count, bank_format, stmt_status,
                 ))
 
                 for txn in transactions:
+                    if getattr(txn, 'txn_type', '') == 'PARSE_ERROR':
+                        continue
                     txn_id = generate_id('TXN')
                     amount = float(txn.amount) if hasattr(txn.amount, '__float__') else float(txn.amount)
                     txn_date = getattr(txn, 'transaction_date', None)
@@ -1560,13 +1581,64 @@ def upload_statement():
                         getattr(txn, 'unit_hint', None),
                     ))
 
+                # Persist per-row parse errors
+                for i, txn in enumerate(parse_error_txns):
+                    err_id = generate_id('PERR')
+                    warnings = getattr(txn, 'parse_warnings', [])
+                    conn.execute("""
+                        INSERT INTO statement_parse_errors
+                        (id, org_id, statement_id, filename, file_path, bank_format,
+                         error_type, error_message, raw_text, page_number, txn_index)
+                        VALUES (?, ?, ?, ?, ?, ?, 'transaction_row', ?, ?, ?, ?)
+                    """, (err_id, org_id, statement_id, filename, file_path, bank_format,
+                          warnings[0] if warnings else 'Parse error',
+                          getattr(txn, 'raw_text', '') or '', getattr(txn, 'page_number', None), i))
+
+                # Persist statement-level errors (balance mismatch, unknown format, etc.)
+                for err_msg in stmt_errors:
+                    err_id = generate_id('PERR')
+                    etype = 'format_unknown' if bank_format == 'unknown' else 'validation'
+                    conn.execute("""
+                        INSERT INTO statement_parse_errors
+                        (id, org_id, statement_id, filename, file_path, bank_format,
+                         error_type, error_message)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (err_id, org_id, statement_id, filename, file_path, bank_format, etype, err_msg))
+
+                if not validation.get('valid') and not stmt_errors:
+                    err_id = generate_id('PERR')
+                    conn.execute("""
+                        INSERT INTO statement_parse_errors
+                        (id, org_id, statement_id, filename, file_path, bank_format,
+                         error_type, error_message)
+                        VALUES (?, ?, ?, ?, ?, ?, 'validation', ?)
+                    """, (err_id, org_id, statement_id, filename, file_path, bank_format,
+                          validation.get('error', 'Validation failed')))
+
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                     ('statement_uploaded', 'statement', statement_id,
-                     f'File: {filename} | {len(transactions)} transactions | {paybill_count} rent', 'admin'),
+                     f'File: {filename} | Format: {_bank_label(bank_format)} | {len(transactions)} txns | {paybill_count} rent | {len(parse_error_txns)} parse errors', 'admin'),
                 )
 
-            flash(f'Statement uploaded! {paybill_count} rent payments found.', 'success')
+            if not validation.get('valid'):
+                flash(
+                    f'Statement saved but could not be fully parsed ({_bank_label(bank_format)}): '
+                    + (validation.get('error') or 'Unknown error')
+                    + ' — visible in Payments → Parse Errors.',
+                    'warning'
+                )
+                return redirect(url_for('manage_statements'))
+
+            if parse_error_txns:
+                flash(
+                    f'Statement uploaded ({_bank_label(bank_format)}). {paybill_count} rent payments found. '
+                    f'{len(parse_error_txns)} rows could not be parsed — see Parse Errors tab.',
+                    'warning'
+                )
+            else:
+                flash(f'Statement uploaded ({_bank_label(bank_format)}). {paybill_count} rent payments found.', 'success')
+
             return redirect(url_for('verify_payments', statement_id=statement_id))
 
         except Exception as e:
@@ -1585,14 +1657,12 @@ def upload_statement():
 @app.route('/statements/<statement_id>/reparse', methods=['POST'])
 def reparse_statement(statement_id):
     """Re-run the PDF parser on an already-uploaded statement, replacing unassigned transactions."""
+    from src.parsers.banks.registry import bank_display_name as _bank_label
+    org_id = session.get('org_id')
     with get_connection() as conn:
-        property_row = get_current_property(conn)
-        if not property_row:
-            return redirect(url_for('property_list'))
-
         stmt = conn.execute(
-            "SELECT * FROM bank_statements WHERE id = ? AND property_id = ?",
-            (statement_id, property_row['id']),
+            "SELECT * FROM bank_statements WHERE id = ? AND (org_id = ? OR property_id IN (SELECT id FROM properties WHERE organization_id = ?))",
+            (statement_id, org_id, org_id),
         ).fetchone()
         if not stmt:
             flash('Statement not found.', 'error')
@@ -1618,6 +1688,7 @@ def reparse_statement(statement_id):
             return redirect(url_for('manage_statements'))
 
         transactions = result.get('transactions') or []
+        bank_format = result.get('statement_format', 'unknown')
         opening = result.get('opening_balance')
         closing = result.get('closing_balance')
         if isinstance(opening, Decimal):
@@ -1626,9 +1697,12 @@ def reparse_statement(statement_id):
             closing = float(closing)
         summary = result.get('summary') or {}
         paybill_count = summary.get('paybill_credits', 0)
+        parse_error_txns = [t for t in transactions if getattr(t, 'txn_type', '') == 'PARSE_ERROR']
 
         with get_connection() as conn:
-            # Get existing mpesa_refs already in DB for this statement (kept because they had payments)
+            stmt_row = conn.execute("SELECT org_id, filename, file_path FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+            effective_org_id = (stmt_row['org_id'] if stmt_row else None) or org_id
+
             existing_refs = {
                 row[0] for row in conn.execute(
                     "SELECT mpesa_ref FROM bank_transactions WHERE statement_id = ? AND mpesa_ref IS NOT NULL",
@@ -1639,6 +1713,8 @@ def reparse_statement(statement_id):
             inserted = 0
             skipped = 0
             for txn in transactions:
+                if getattr(txn, 'txn_type', '') == 'PARSE_ERROR':
+                    continue
                 ref = getattr(txn, 'reference', None)
                 if ref and ref in existing_refs:
                     skipped += 1
@@ -1662,20 +1738,40 @@ def reparse_statement(statement_id):
                 ))
                 inserted += 1
 
-            # Update statement metadata with fresh parse results
+            # Clear old parse errors for this statement and re-log fresh ones
+            conn.execute("DELETE FROM statement_parse_errors WHERE statement_id = ?", (statement_id,))
+            fname = stmt_row['filename'] if stmt_row else filename
+            fpath = stmt_row['file_path'] if stmt_row else file_path
+            for i, txn in enumerate(parse_error_txns):
+                err_id = generate_id('PERR')
+                warnings = getattr(txn, 'parse_warnings', [])
+                conn.execute("""
+                    INSERT INTO statement_parse_errors
+                    (id, org_id, statement_id, filename, file_path, bank_format,
+                     error_type, error_message, raw_text, page_number, txn_index)
+                    VALUES (?, ?, ?, ?, ?, ?, 'transaction_row', ?, ?, ?, ?)
+                """, (err_id, effective_org_id, statement_id, fname, fpath, bank_format,
+                      warnings[0] if warnings else 'Parse error',
+                      getattr(txn, 'raw_text', '') or '', getattr(txn, 'page_number', None), i))
+
+            new_status = 'active' if validation.get('valid') else 'parse_failed'
             conn.execute("""
                 UPDATE bank_statements
-                SET opening_balance = ?, closing_balance = ?, total_transactions = ?, rent_transactions = ?
+                SET opening_balance = ?, closing_balance = ?, total_transactions = ?,
+                    rent_transactions = ?, bank_format = ?, status = ?
                 WHERE id = ?
-            """, (opening, closing, len(transactions), paybill_count, statement_id))
+            """, (opening, closing, len(transactions), paybill_count, bank_format, new_status, statement_id))
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('statement_reparsed', 'statement', statement_id,
-                 f'Inserted: {inserted} | Skipped (assigned): {skipped} | Paybill: {paybill_count}', 'admin'),
+                 f'Format: {_bank_label(bank_format)} | Inserted: {inserted} | Skipped: {skipped} | Paybill: {paybill_count} | Parse errors: {len(parse_error_txns)}', 'admin'),
             )
 
-        flash(f'Re-parsed: {inserted} transactions replaced, {skipped} kept (already assigned).', 'success')
+        msg = f'Re-parsed ({_bank_label(bank_format)}): {inserted} transactions updated, {skipped} kept.'
+        if parse_error_txns:
+            msg += f' {len(parse_error_txns)} rows still have parse errors — see Parse Errors tab.'
+        flash(msg, 'warning' if parse_error_txns else 'success')
         return redirect(url_for('verify_payments', statement_id=statement_id))
 
     except Exception as e:
@@ -1685,15 +1781,31 @@ def reparse_statement(statement_id):
 
 @app.route('/verify/<statement_id>')
 def verify_payments(statement_id):
-    """Auto-verify pending claims against this statement."""
+    """Auto-verify pending claims against this statement. Claims are matched across all org properties."""
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
             return redirect(url_for('property_list'))
 
-        pending_claims = conn.execute("""
-            SELECT * FROM payment_claims WHERE property_id = ? AND status = 'pending'
-        """, (property_row['id'],)).fetchall()
+        # Resolve org — from statement (new flow) or current property (legacy)
+        stmt_meta = conn.execute("SELECT org_id FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+        verify_org_id = (stmt_meta['org_id'] if stmt_meta else None) or session.get('org_id') or (property_row['organization_id'] if property_row['organization_id'] else None)
+
+        if verify_org_id:
+            pending_claims = conn.execute("""
+                SELECT pc.*, u.unit_number, p.id as claim_property_id
+                FROM payment_claims pc
+                JOIN units u ON pc.unit_id = u.id
+                JOIN properties p ON u.property_id = p.id
+                WHERE p.organization_id = ? AND pc.status = 'pending'
+            """, (verify_org_id,)).fetchall()
+        else:
+            pending_claims = conn.execute("""
+                SELECT pc.*, u.unit_number, pc.property_id as claim_property_id
+                FROM payment_claims pc
+                JOIN units u ON pc.unit_id = u.id
+                WHERE pc.property_id = ? AND pc.status = 'pending'
+            """, (property_row['id'],)).fetchall()
 
         bank_txns = conn.execute("""
             SELECT * FROM bank_transactions
@@ -1714,12 +1826,13 @@ def verify_payments(statement_id):
                 continue
 
             payment_id = generate_id('PAY')
+            pay_property_id = (claim['claim_property_id'] if claim['claim_property_id'] else None) or (claim['property_id'] if claim['property_id'] else None) or property_row['id']
             conn.execute("""
                 INSERT INTO payments
                 (id, property_id, unit_id, claim_id, bank_txn_id, statement_id, amount, payment_date, assignment_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto')
             """, (
-                payment_id, property_row['id'], claim['unit_id'], claim['id'],
+                payment_id, pay_property_id, claim['unit_id'], claim['id'],
                 bank_txn['id'], statement_id, bank_txn['amount'], bank_txn['txn_date'] or '',
             ))
             allocate_payment(conn, payment_id, claim['unit_id'], bank_txn['amount'])
@@ -1771,7 +1884,7 @@ def verify_payments(statement_id):
         for claim in pending_claims:
             if claim['id'] in verified_claim_ids:
                 continue
-            if not claim.get('mpesa_ref'):
+            if not claim['mpesa_ref']:
                 continue
             try:
                 _rej_tenant = conn.execute(
@@ -2166,7 +2279,7 @@ def generate_charges():
                 y, m = int(y), int(m)
                 due_month = m + 1 if m < 12 else 1
                 due_year = y if m < 12 else y + 1
-                due_day = int(property_row.get('rent_due_day') or 5)
+                due_day = int(property_row['rent_due_day'] if property_row['rent_due_day'] is not None else 5)
                 if due_day == 0:
                     last_day = _cal.monthrange(due_year, due_month)[1]
                     due_date = f"{due_year:04d}-{due_month:02d}-{last_day:02d}"
@@ -2727,6 +2840,7 @@ def review():
         if not property_row:
             return redirect(url_for('property_list'))
         property_id = property_row['id']
+        review_org_id = (property_row['organization_id'] if property_row['organization_id'] else None) or session.get('org_id')
 
         confirmed = []
         unreported = []
@@ -2734,6 +2848,7 @@ def review():
         unreported_groups = []
         unconfirmed = []
         reversals = []
+        parse_errors_list = []
 
         if tab == 'confirmed':
             confirmed = conn.execute("""
@@ -2749,23 +2864,40 @@ def review():
             """, (property_id,)).fetchall()
 
         if tab == 'unreported':
-            raw_unreported = conn.execute("""
-                SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint
-                FROM bank_transactions bt
-                JOIN bank_statements bs ON bt.statement_id = bs.id
-                WHERE bs.property_id = ?
-                AND bt.txn_type = 'PAYBILL_CREDIT'
-                AND bt.id NOT IN (SELECT bank_txn_id FROM payments)
-                ORDER BY bt.txn_date DESC
-            """, (property_id,)).fetchall()
-
-            # Preload active tenants with unit info for name matching
-            tenant_rows = conn.execute("""
-                SELECT t.id, t.name, t.unit_id, u.unit_number
-                FROM tenants t
-                JOIN units u ON t.unit_id = u.id
-                WHERE t.property_id = ? AND t.status = 'active'
-            """, (property_id,)).fetchall()
+            org_filter = review_org_id or property_id
+            if review_org_id:
+                raw_unreported = conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.org_id = ?
+                    AND bt.txn_type = 'PAYBILL_CREDIT'
+                    AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                    ORDER BY bt.txn_date DESC
+                """, (review_org_id,)).fetchall()
+                tenant_rows = conn.execute("""
+                    SELECT t.id, t.name, t.unit_id, u.unit_number
+                    FROM tenants t
+                    JOIN units u ON t.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND t.status = 'active'
+                """, (review_org_id,)).fetchall()
+            else:
+                raw_unreported = conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.property_id = ?
+                    AND bt.txn_type = 'PAYBILL_CREDIT'
+                    AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                    ORDER BY bt.txn_date DESC
+                """, (property_id,)).fetchall()
+                tenant_rows = conn.execute("""
+                    SELECT t.id, t.name, t.unit_id, u.unit_number
+                    FROM tenants t
+                    JOIN units u ON t.unit_id = u.id
+                    WHERE t.property_id = ? AND t.status = 'active'
+                """, (property_id,)).fetchall()
 
             def _name_tokens(s):
                 if not s:
@@ -2793,16 +2925,21 @@ def review():
             for row in raw_unreported:
                 r = dict(row)
 
-                # Tier 1: unit_hint-based suggestion
+                # Tier 1: unit_hint-based suggestion (org-scoped)
                 unit_hint = (r.get('unit_hint') or '').strip()
                 if unit_hint:
                     hint_key = unit_hint.upper()
-                    matches = conn.execute("""
-                        SELECT id, unit_number
-                        FROM units
-                        WHERE property_id = ?
-                        AND UPPER(TRIM(unit_number)) = ?
-                    """, (property_id, hint_key)).fetchall()
+                    if review_org_id:
+                        matches = conn.execute("""
+                            SELECT u.id, u.unit_number FROM units u
+                            JOIN properties p ON u.property_id = p.id
+                            WHERE p.organization_id = ? AND UPPER(TRIM(u.unit_number)) = ?
+                        """, (review_org_id, hint_key)).fetchall()
+                    else:
+                        matches = conn.execute("""
+                            SELECT id, unit_number FROM units
+                            WHERE property_id = ? AND UPPER(TRIM(unit_number)) = ?
+                        """, (property_id, hint_key)).fetchall()
                     if len(matches) == 1:
                         match = matches[0]
                         r['suggested_unit_id'] = match['id']
@@ -2853,34 +2990,77 @@ def review():
                 }
                 unreported_groups.append(group)
 
-            # Units list for group-assign dropdown
-            group_units = conn.execute("""
-                SELECT u.*, t.name AS tenant_name
-                FROM units u
-                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-                WHERE u.property_id = ?
-                ORDER BY u.unit_number
-            """, (property_id,)).fetchall()
+            # Units list for group-assign dropdown — org-scoped so cross-property assignment works
+            if review_org_id:
+                group_units = conn.execute("""
+                    SELECT u.*, t.name AS tenant_name, p.name AS property_name
+                    FROM units u
+                    LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ?
+                    ORDER BY p.name, u.unit_number
+                """, (review_org_id,)).fetchall()
+            else:
+                group_units = conn.execute("""
+                    SELECT u.*, t.name AS tenant_name, '' AS property_name
+                    FROM units u
+                    LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                    WHERE u.property_id = ?
+                    ORDER BY u.unit_number
+                """, (property_id,)).fetchall()
         else:
             group_units = []
 
         if tab == 'unconfirmed':
-            unconfirmed = conn.execute("""
-                SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.raw_message, pc.created_at, u.unit_number
-                FROM payment_claims pc
-                JOIN units u ON pc.unit_id = u.id
-                WHERE pc.property_id = ? AND pc.status = 'pending'
-                ORDER BY pc.created_at DESC
-            """, (property_id,)).fetchall()
+            if review_org_id:
+                unconfirmed = conn.execute("""
+                    SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.raw_message, pc.created_at,
+                           u.unit_number, p.name AS property_name
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND pc.status = 'pending'
+                    ORDER BY pc.created_at DESC
+                """, (review_org_id,)).fetchall()
+            else:
+                unconfirmed = conn.execute("""
+                    SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.raw_message, pc.created_at,
+                           u.unit_number, '' AS property_name
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    WHERE pc.property_id = ? AND pc.status = 'pending'
+                    ORDER BY pc.created_at DESC
+                """, (property_id,)).fetchall()
 
         if tab == 'reversals':
-            reversals = conn.execute("""
-                SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.raw_text
-                FROM bank_transactions bt
-                JOIN bank_statements bs ON bt.statement_id = bs.id
-                WHERE bs.property_id = ? AND bt.txn_type = 'REVERSAL'
-                ORDER BY bt.txn_date DESC
-            """, (property_id,)).fetchall()
+            if review_org_id:
+                reversals = conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.raw_text
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.org_id = ? AND bt.txn_type = 'REVERSAL'
+                    ORDER BY bt.txn_date DESC
+                """, (review_org_id,)).fetchall()
+            else:
+                reversals = conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.raw_text
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.property_id = ? AND bt.txn_type = 'REVERSAL'
+                    ORDER BY bt.txn_date DESC
+                """, (property_id,)).fetchall()
+
+        if tab == 'parse_errors':
+            if review_org_id:
+                parse_errors_list = conn.execute("""
+                    SELECT spe.id, spe.filename, spe.bank_format, spe.error_type,
+                           spe.error_message, spe.raw_text, spe.page_number, spe.txn_index,
+                           spe.created_at, spe.statement_id
+                    FROM statement_parse_errors spe
+                    WHERE spe.org_id = ?
+                    ORDER BY spe.created_at DESC
+                    LIMIT 300
+                """, (review_org_id,)).fetchall()
 
     return render_template(
         'review.html',
@@ -2893,6 +3073,7 @@ def review():
         group_units=group_units,
         unconfirmed=unconfirmed,
         reversals=reversals,
+        parse_errors_list=parse_errors_list,
     )
 
 

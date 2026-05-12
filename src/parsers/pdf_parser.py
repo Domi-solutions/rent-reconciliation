@@ -1229,7 +1229,7 @@ def detect_bank_statement_format(raw_text: str, page_numbers: List[int]) -> str:
         return 'cooperative'
     if len(segment_tabular_transactions(raw_text, page_numbers)) > 0:
         return 'tabular_kes'
-    return 'cooperative'
+    return 'unknown'
 
 
 def _finalize_bank_statement_result(
@@ -1390,7 +1390,18 @@ def parse_bank_statement(pdf_path: str) -> dict:
         fmt = detect_bank_statement_format(raw_text, page_numbers)
         if fmt == 'tabular_kes':
             return _parse_tabular_kes_from_raw(raw_text, page_numbers)
-        return _parse_cooperative_from_raw(raw_text, page_numbers)
+        if fmt == 'cooperative':
+            return _parse_cooperative_from_raw(raw_text, page_numbers)
+        return {
+            'success': False,
+            'statement_format': 'unknown',
+            'opening_balance': None,
+            'closing_balance': None,
+            'transactions': [],
+            'validation': {'valid': False, 'error': 'Bank statement format not recognised. Supported: Co-operative Bank, KCB.'},
+            'summary': {},
+            'errors': ['Bank statement format not recognised'],
+        }
     except Exception as e:
         return {
             'success': False,

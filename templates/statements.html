@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <div class="page-title">Bank Statements</div>
-    <div class="page-meta">Uploaded PDFs parsed for Paybill credits.</div>
+    <div class="page-meta">Uploaded PDFs — all properties in this organisation.</div>
   </div>
   <a href="{{ url_for('upload_statement') }}" class="btn btn-primary">Upload Statement</a>
 </div>
@@ -13,28 +13,63 @@
     <thead>
       <tr>
         <th>Filename</th>
+        <th>Bank</th>
         <th>Period</th>
         <th>Rent Txns</th>
+        <th>Status</th>
         <th>Uploaded</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for s in statements %}
+      {% set err_count = parse_error_counts.get(s.id, 0) %}
       <tr>
-        <td>{{ s.filename }}</td>
-        <td>{{ s.period_start or '-' }} to {{ s.period_end or '-' }}</td>
+        <td style="font-size:13px;">{{ s.filename }}</td>
+        <td>
+          <span class="badge" style="font-size:10px;
+            background:{% if s.bank_format == 'cooperative' %}#0d6efd
+            {% elif s.bank_format == 'tabular_kes' %}#6f42c1
+            {% else %}#dc3545{% endif %};">
+            {{ bank_label(s.bank_format) }}
+          </span>
+        </td>
+        <td style="font-size:12px; color:#6b7280;">{{ s.period_start or '-' }} → {{ s.period_end or '-' }}</td>
         <td>{{ s.rent_transactions }}</td>
-        <td>{{ s.uploaded_at }}</td>
+        <td>
+          {% if s.status == 'active' %}
+            <span class="badge bg-success-subtle text-success" style="font-size:10px;">Active</span>
+          {% elif s.status == 'parse_failed' %}
+            <span class="badge bg-danger-subtle text-danger" style="font-size:10px;">Parse failed</span>
+          {% elif s.status == 'superseded' %}
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">Superseded</span>
+          {% else %}
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">{{ s.status or '—' }}</span>
+          {% endif %}
+          {% if err_count > 0 %}
+            <a href="{{ url_for('review', tab='parse_errors') }}"
+               class="badge bg-warning-subtle text-warning ms-1" style="font-size:10px; text-decoration:none;">
+              {{ err_count }} parse error{{ 's' if err_count != 1 }}
+            </a>
+          {% endif %}
+        </td>
+        <td style="font-size:12px; color:#6b7280;">{{ s.uploaded_at[:10] if s.uploaded_at }}</td>
         <td class="d-flex gap-2 flex-wrap">
+          {% if s.status != 'parse_failed' %}
           <a href="{{ url_for('verify_payments', statement_id=s.id) }}" class="btn btn-sm btn-outline-primary">Verify Claims</a>
-          <form method="post" action="{{ url_for('reparse_statement', statement_id=s.id) }}" onsubmit="return confirm('Re-parse this statement with the updated parser? Unassigned transactions will be replaced.')">
+          {% endif %}
+          <form method="post" action="{{ url_for('reparse_statement', statement_id=s.id) }}"
+                onsubmit="return confirm('Re-parse this statement? Unassigned transactions will be replaced.')">
             <button type="submit" class="btn btn-sm btn-outline-secondary">Re-parse</button>
           </form>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted" style="padding: 32px 16px; text-align: center;">No statements yet. Upload one above.</td></tr>
+      <tr>
+        <td colspan="7" class="text-muted" style="padding: 32px 16px; text-align: center;">
+          No statements yet. Upload one above.
+        </td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>

@@ -61,10 +61,13 @@ tables:
 
   bank_statements:
     status: live
-    migration: schema.sql (base)
+    migration: schema.sql (base) + migrate_add_org_scoped_statements
+    note: "Org-scoped as of 2026-05-12. New uploads set org_id; property_id is legacy/nullable for new rows."
     columns:
       id: {type: TEXT, pk: true}
-      property_id: {type: TEXT, fk: properties.id, required: true}
+      property_id: {type: TEXT, fk: properties.id, note: "Legacy field; nullable for new org-scoped uploads"}
+      org_id: {type: TEXT, fk: organizations.id, added_by: migrate_add_org_scoped_statements, note: "Set on all new uploads; query by this for multi-property orgs"}
+      bank_format: {type: TEXT, added_by: migrate_add_org_scoped_statements, values: [cooperative, tabular_kes, unknown], note: "Detected format; stored so reparse can skip re-detection"}
       filename: {type: TEXT, required: true}
       file_path: {type: TEXT, required: true}
       period_start: {type: DATE}
@@ -73,8 +76,10 @@ tables:
       closing_balance: {type: DECIMAL(12,2)}
       total_transactions: {type: INTEGER}
       rent_transactions: {type: INTEGER}
-      status: {type: TEXT, default: active}
+      status: {type: TEXT, default: active, values: [active, parse_failed, superseded]}
       uploaded_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    indexes:
+      - idx_stmts_org ON (org_id)
 
   bank_transactions:
     status: live
@@ -428,6 +433,28 @@ tables:
       disbursed_at: {type: TIMESTAMP}
       notes: {type: TEXT}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  statement_parse_errors:
+    status: live
+    migration: migrate_add_statement_parse_errors
+    note: "Every parse failure is logged here. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count)."
+    columns:
+      id: {type: TEXT, pk: true}
+      org_id: {type: TEXT, fk: organizations.id, required: true}
+      statement_id: {type: TEXT, fk: bank_statements.id, note: "NULL if error occurred before statement row created"}
+      filename: {type: TEXT, required: true}
+      file_path: {type: TEXT, note: "Stored path — used by platform PDF download route"}
+      bank_format: {type: TEXT, values: [cooperative, tabular_kes, unknown]}
+      error_type: {type: TEXT, required: true, values: [transaction_row, validation, format_unknown, fatal]}
+      error_message: {type: TEXT}
+      raw_text: {type: TEXT, note: "Raw PDF row text that failed to parse — shown in collapsible in UI"}
+      page_number: {type: INTEGER}
+      txn_index: {type: INTEGER}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    indexes:
+      - idx_spe_org ON (org_id)
+      - idx_spe_stmt ON (statement_id)
+      - idx_spe_created ON (created_at)
 
 views:
   unit_balances:

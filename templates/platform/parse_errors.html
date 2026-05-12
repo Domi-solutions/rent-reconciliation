@@ -1,0 +1,96 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Parse Errors — Domi Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1">Statement Parse Errors</h4>
+    <div style="font-size: 13px; color: #718096;">PDF rows the parser could not read — most recent first</div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{{ url_for('platform.parse_errors_view') }}"
+       class="btn btn-sm {% if not selected_org %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+      All orgs
+    </a>
+    {% for org in orgs %}
+    {% set cnt = counts_by_org.get(org.id, 0) %}
+    {% if cnt > 0 %}
+    <a href="{{ url_for('platform.parse_errors_view', org_id=org.id) }}"
+       class="btn btn-sm {% if selected_org == org.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+      {{ org.name }} <span class="badge bg-danger ms-1" style="font-size:10px;">{{ cnt }}</span>
+    </a>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+{% if parse_errors %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table mb-0" style="font-size: 13px;">
+      <thead class="table-light">
+        <tr>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Time</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Org</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">File</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Bank</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Type</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Detail</th>
+          <th style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for err in parse_errors %}
+        <tr {% if err.error_type == 'format_unknown' %}class="table-danger"{% elif err.error_type == 'validation' %}class="table-warning"{% endif %}>
+          <td style="white-space:nowrap; color:#718096; font-size:12px;">
+            {{ err.created_at[:16] if err.created_at }}
+          </td>
+          <td style="font-weight:600; font-size:12px;">{{ err.org_name }}</td>
+          <td style="font-size:12px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+              title="{{ err.filename }}">
+            {{ err.filename }}
+          </td>
+          <td>
+            <span class="badge" style="font-size:10px;
+              background:{% if err.bank_format == 'cooperative' %}#0d6efd{% elif err.bank_format == 'tabular_kes' %}#6f42c1{% else %}#dc3545{% endif %};">
+              {{ bank_label(err.bank_format) }}
+            </span>
+          </td>
+          <td>
+            <span class="badge bg-secondary" style="font-size:10px;">{{ err.error_type }}</span>
+            {% if err.page_number %}
+            <span style="font-size:11px; color:#718096; margin-left:4px;">p.{{ err.page_number }}</span>
+            {% endif %}
+          </td>
+          <td style="max-width:320px;">
+            <div style="font-size:12px; color:#4a5568;">{{ err.error_message or '—' }}</div>
+            {% if err.raw_text %}
+            <details style="margin-top:4px;">
+              <summary style="cursor:pointer; font-size:11px; color:#a0aec0;">raw text</summary>
+              <pre style="font-size:11px; white-space:pre-wrap; background:#f7fafc; padding:8px; border-radius:4px; margin-top:4px; max-height:160px; overflow:auto;">{{ err.raw_text }}</pre>
+            </details>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            {% if err.statement_id %}
+            <a href="{{ url_for('platform.download_statement_pdf', statement_id=err.statement_id) }}"
+               target="_blank"
+               class="btn btn-sm btn-outline-secondary" style="font-size:11px;">
+              View PDF
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm p-5 text-center">
+  <div style="color:#718096;">
+    No parse errors recorded{% if selected_org %} for this organisation{% endif %}.
+  </div>
+</div>
+{% endif %}
+{% endblock %}

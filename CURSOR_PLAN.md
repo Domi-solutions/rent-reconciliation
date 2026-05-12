@@ -135,6 +135,46 @@ New blueprint: `src/routes/owner_routes.py`, prefix `/owner`
 - [x] tenants.html: "Domi Login" column — shows "Linked" badge if person_id set, inline phone-link form if not
 - [x] Existing `/tenant/<token>` routes fully unchanged
 
+#### Session 7 — Payments Feed UX, Demo Data, Org-Scoped Statements, Parse Error Logging (2026-05-12) ✅ COMPLETE
+
+**Payments feed UX:**
+- [x] "Collected This Month" KPI card on dashboard is now clickable — links to `/review?tab=confirmed`
+- [x] Confirmed tab redesigned as M-Pesa-style scrolling feed (card per payment, amount bold, tenant + unit below, ref in monospace, date + source badge on right)
+- [x] "Manual" badge renamed to "Bank" (source = manual means bank statement assignment)
+
+**Demo data:**
+- [x] `scripts/seed_demo_payments.py` — seeds 132 rent charges (22 units × 3 months: Mar/Apr/May 2025), 12 bank statements, 56 bank transactions, 56 payments, 111 payment allocations across Agency Alfa and Agency Beta properties
+- [x] Realistic scenarios: clean payers, late payers (day 8–11), missed months, partial payments (Agnes Auma 15K of 20.5K; Esther Wambua 18K of 23K), catchup overpayment (Grace Njeri 34K for 2 months), underpayment (Eric Onyango 20K of 28.5K), 1 pending claim
+
+**Org-scoped statements (Option 2):**
+- [x] `migrate_add_org_scoped_statements()` in `db.py` — adds `org_id TEXT` and `bank_format TEXT` to `bank_statements`; index `idx_stmts_org`
+- [x] `upload_statement()` — uses `org_id` from session; stores `bank_format`; keeps file on `parse_failed` (was deleting)
+- [x] `manage_statements()` — queries `WHERE bs.org_id = ?`; passes `parse_error_counts` and `bank_label` to template
+- [x] `reparse_statement()` — org-aware lookup; clears and re-logs parse errors; updates `bank_format`
+- [x] `verify_payments()` — resolves `verify_org_id` from statement's org; queries pending claims across all org properties
+- [x] `review()` — all tabs (unreported/unconfirmed/reversals/parse_errors) org-scoped; `group_units` includes `property_name` for cross-property assignment
+- [x] Dashboard unassigned count queries — org-scoped when `org_id` is in session
+
+**Parse error logging (real, not stub):**
+- [x] `migrate_add_statement_parse_errors()` — creates `statement_parse_errors` table with org_id, statement_id, filename, file_path, bank_format, error_type, error_message, raw_text, page_number, txn_index, created_at
+- [x] `upload_statement()` and `reparse_statement()` — write every `PARSE_ERROR`-type transaction and fatal errors to `statement_parse_errors`
+- [x] Parse Errors tab in `review.html` — replaced stub with real table: filename, bank badge (color-coded), error_type badge, error_message, collapsible raw text, page number, date
+- [x] Platform dashboard — 4th stat card: "Parse errors (7d)" in amber; links to parse errors page
+- [x] `GET /platform/parse-errors` — full parse errors across all orgs; org filter buttons with count badges; View PDF button per row
+- [x] `GET /platform/statements/<id>/pdf` — serves stored PDF via `send_file()` (platform admin only)
+- [x] `templates/platform/parse_errors.html` — new file
+- [x] Platform nav — Parse Errors link added
+
+**Multi-bank parser registry:**
+- [x] `src/parsers/banks/__init__.py` — empty package marker
+- [x] `src/parsers/banks/registry.py` — `BANK_DISPLAY_NAMES`, `bank_display_name()`, `SUPPORTED_FORMATS`
+- [x] `detect_bank_statement_format()` — returns `'unknown'` (not `'cooperative'`) for unrecognised PDFs
+- [x] `parse_bank_statement()` — explicit `format_unknown` branch; fails fast instead of garbled parse
+
+**Bug fixes:**
+- [x] Fixed `AttributeError: 'sqlite3.Row' object has no attribute 'get'` — 6 locations in `app.py`; all `.get()` calls replaced with bracket access + conditional
+- [x] `statements.html` — updated to show bank format badge, parse error count badge (linked), `parse_failed` status badge
+
 #### Phase 6 — Data Entry + Test Run
 **Seeded (scripts/seed_phase6.py — run against dev.db, verified):**
 - [x] 2 organisations: Agency Alfa (agency-alfa), Agency Beta (agency-beta)

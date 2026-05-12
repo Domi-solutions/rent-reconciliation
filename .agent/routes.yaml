@@ -19,7 +19,7 @@ blueprints:
       - "GET /tenants — tenant list"
       - "POST /charges/generate — generate rent+service charges"
       - "POST /charges/water — upload water readings"
-      - "POST /statements/upload — upload bank statement PDF"
+      - "POST /statements/upload — upload bank statement PDF (org-scoped: stored under org_id, not property_id)"
       - "POST /claims/submit — submit M-Pesa claim"
       - "POST /payments/verify — verify claims against bank statement"
       - "GET /owners — owner management"
@@ -135,6 +135,25 @@ blueprints:
     key_routes:
       - "POST /inbound/payment/mpesa — Daraja C2B callback (write-and-return-200)"
       - "POST /inbound/payment/pesapal — Pesapal IPN (write-and-return-200)"
+
+  platform:
+    file: src/routes/platform_routes.py
+    prefix: /platform
+    auth: session['platform_admin'] (PLATFORM_ADMIN_PASSWORD env var)
+    status: live
+    key_routes:
+      - "GET /platform/login"
+      - "POST /platform/login"
+      - "GET /platform/logout"
+      - "GET /platform/ — org list dashboard (property/unit counts, last activity, parse error count)"
+      - "GET /platform/errors — platform_errors table (500s, warnings)"
+      - "POST /platform/impersonate/<org_id> — sets org session, redirects to /dashboard"
+      - "POST /platform/orgs/new — create new organisation"
+      - "POST /platform/orgs/<org_id>/toggle — activate / deactivate org"
+      - "POST /platform/orgs/<org_id>/set-email — set org login email"
+      - "POST /platform/orgs/<org_id>/set-password — set org admin password"
+      - "GET /platform/parse-errors — all parse errors across all orgs; ?org_id= filter"
+      - "GET /platform/statements/<statement_id>/pdf — serve stored PDF file via send_file()"
 
   inbound:
     file: src/routes/inbound_routes.py

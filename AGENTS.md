@@ -26,81 +26,61 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude Code (architecture redesign — multi-org, multi-owner holistic views, multi-unit tenant identity)
+**Who:** Claude Code (payments feed, demo data, org-scoped statements, parse error logging, parser registry)
 **Date:** 2026-05-12
 
 ### What was completed this session
 
-- Wiped `data/dev.db` for a clean test run (backup: `data/dev.db.backup_20260512_160834`)
-- Updated `CLAUDE.md`: added development commands section, corrected stale "Next steps"
-- Designed the full multi-org / person identity architecture (locked below + full DDL in CURSOR_PLAN.md)
-- **No code written yet.** This session was architecture design + planning only.
+**Payments feed UX:**
+- "Collected This Month" card on dashboard is now clickable → `/review?tab=confirmed`
+- Confirmed tab redesigned as scrolling M-Pesa-style feed (amount bold, tenant/unit/ref/badge per row)
+- "Manual" badge renamed to "Bank"
 
-### What was decided (locked — do not revisit)
+**Demo data:**
+- `scripts/seed_demo_payments.py` — 132 rent charges, 12 statements, 56 payments, realistic scenarios (clean payers, late, missed month, partial, catchup, underpay) across Agency Alfa and Agency Beta
 
-**1. Multi-org architecture is required before any data is entered.**
-Retrofitting an org layer after 4 properties are live would touch every query in the codebase. Do it now.
+**Org-scoped bank statements:**
+- `bank_statements` now has `org_id` and `bank_format` columns (migration: `migrate_add_org_scoped_statements`)
+- Upload/reparse/verify/review routes all query by `org_id`, not `property_id`
+- One statement upload covers all properties in the org
 
-**2. Person identity layer is required for multi-unit tenants.**
-Tenant X rents a unit in Property 1 (Org 1) and a unit in Property 3 (Org 2). Fix: `persons` table + `person_id` FK on `tenants` and `owners`. All existing FK relationships stay intact — additive only.
+**Parse error logging (real, not stub):**
+- `statement_parse_errors` table — every parse failure logged with org_id, statement_id, filename, file_path, bank_format, error_type, error_message, raw_text, page_number
+- Parse Errors tab in review.html shows real data from DB
+- Platform dashboard: 4th stat card (7d parse error count, amber)
+- `GET /platform/parse-errors` — all errors across all orgs, org filter, View PDF button
+- `GET /platform/statements/<id>/pdf` — serves stored PDF via `send_file()`
+- `templates/platform/parse_errors.html` — new full-page table
 
-**3. The exact real-world scenario to implement (demo + live):**
-```
-Organization 1 (Agency A) — manages:
-  Property 1  ← owned by Owner A
-  Property 2  ← owned by Owner A
+**Multi-bank parser registry:**
+- `src/parsers/banks/registry.py` — `BANK_DISPLAY_NAMES`, `bank_display_name()`, `SUPPORTED_FORMATS`
+- `detect_bank_statement_format()` now returns `'unknown'` instead of silently falling back to `'cooperative'`
+- Unknown format → `format_unknown` parse error logged → statement marked `parse_failed`
+- Adding a new bank = one file in `src/parsers/banks/` + one entry in `registry.py` + one detection branch in `pdf_parser.py`
 
-Organization 2 (Agency B) — manages:
-  Property 3  ← owned by Owner B
-  Property 4  ← owned by Owner B
+**Bug fix:**
+- Fixed `AttributeError: 'sqlite3.Row' object has no attribute 'get'` — 6 locations in `app.py`; `.get()` replaced with bracket access + conditional throughout
 
-Owner A: holistic view across Property 1 + 2, plus individual property drilldown
-Owner B: holistic view across Property 3 + 4, plus individual property drilldown
+### Pick up next
 
-Tenant X: active unit in Property 1 AND active unit in Property 3
-          single login → sees both units, both balances, all charges holistically
-```
+1. **Full end-to-end test run:** upload a real bank statement for one of the demo properties, verify claims auto-match, check parse errors surface correctly, confirm payments show in the feed.
+2. **Phase 4 (The Conversation):** LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md`
+3. **Phase 5 (The Coordinator):** admin task feed, anomaly detection, caretaker morning briefing
+4. **Phase H:** WhatsApp live channel (gated on Meta approval — apply now)
+5. When ready to flip AT_USERNAME to live: read `memory/project_go_live_messaging_checklist.md` first
 
-**4. New portals and auth (locked):**
-| Role | Login | Portal |
-|---|---|---|
-| Platform owner (Domi operator) | `PLATFORM_ADMIN_PASSWORD` env var | `/platform/` |
-| Org admin | Per-org password in `organizations.admin_password_hash` | `/` scoped by `session['org_id']` |
-| Owner | Phone + password via `persons` table | `/owner/dashboard` holistic + `/owner/<property_id>/` individual |
-| Caretaker | Existing named accounts | `/caretaker/<property_id>/` — unchanged |
-| Tenant | Phone + PIN (holistic) OR token link (single unit) | `/tenant/dashboard` holistic + `/tenant/<token>` individual |
-
-**5. New schema (locked — see CURSOR_PLAN.md for exact DDL):**
-- `organizations` — agency identity + per-org admin credentials
-- `persons` — human identity shared across roles, orgs, properties
-- `platform_errors` — wired to Flask `@app.errorhandler`; platform admin sees all errors without users calling
-- `properties.organization_id` — nullable FK to organizations
-- `tenants.person_id` — nullable FK to persons
-- `owners.person_id` — nullable FK to persons
-
-### Pick up next — Phase 1: Schema Foundations
-
-**Read CURSOR_PLAN.md "Architecture Redesign" section for exact DDL and build sequence.**
-
-Steps in order:
-1. Add `migrate_add_organizations()` in `src/database/db.py`
-2. Add `migrate_add_persons()` in `src/database/db.py`
-3. Add `migrate_add_platform_errors()` in `src/database/db.py`
-4. Register all three in `app.py` startup (after existing migrations, in the order above)
-5. `./venv/bin/python -c "from app import app; print('OK')"` — must pass
-6. `./scripts/run_dev.sh` — app must still function normally
-
-Then Phase 2 (platform admin `/platform/*`), Phase 3 (org scoping), Phase 4 (owner holistic), Phase 5 (tenant holistic), Phase 6 (data entry + test run).
-
-**Commit after each phase:** `git add . && git commit -m "Phase N complete: [description]"`
-
-**Critical rules for this build:**
-- All migrations idempotent: `CREATE TABLE IF NOT EXISTS`; check `PRAGMA table_info` before `ALTER TABLE`
-- `organization_id`, `person_id` columns are nullable on all tables — never break existing null rows
-- Never import from `app.py` inside blueprints — define helpers locally or in a shared util
-- Read `CURSOR_PATTERNS.md` before writing any migration or route code
-
-**Note on credentials:** When AT_USERNAME flips from sandbox to live, 5 message types fire to real phones immediately. Read `memory/project_go_live_messaging_checklist.md` before flipping.
+### Key files changed this session
+- `app.py` — upload_statement, manage_statements, reparse_statement, verify_payments, review, dashboard routes
+- `src/database/db.py` — migrate_add_org_scoped_statements, migrate_add_statement_parse_errors
+- `src/parsers/pdf_parser.py` — detect_bank_statement_format returns 'unknown'; parse_bank_statement fails fast on unknown
+- `src/parsers/banks/__init__.py`, `src/parsers/banks/registry.py` — new bank format registry
+- `src/routes/platform_routes.py` — parse_errors_view, download_statement_pdf, dashboard parse error count
+- `templates/platform/parse_errors.html` — new
+- `templates/platform/dashboard.html` — 4-card layout with parse errors
+- `templates/platform/base_platform.html` — Parse Errors nav link
+- `templates/review.html` — confirmed tab feed UX, real parse errors tab
+- `templates/statements.html` — bank format badge, parse error count badge, parse_failed status
+- `scripts/seed_demo_payments.py` — new demo data seeder
 
 ---
 

@@ -7,9 +7,10 @@ All /platform/* routes are exempt from the org admin before_request check.
 import os
 from datetime import datetime
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
 
 from src.database.db import generate_id, get_connection
+from src.parsers.banks.registry import bank_display_name as _bank_label
 
 platform_bp = Blueprint("platform", __name__, url_prefix="/platform")
 
@@ -90,6 +91,9 @@ def dashboard():
         recent_error_count = conn.execute(
             "SELECT COUNT(*) FROM platform_errors WHERE created_at >= datetime('now', '-24 hours')"
         ).fetchone()[0]
+        parse_error_count = conn.execute(
+            "SELECT COUNT(*) FROM statement_parse_errors WHERE created_at >= datetime('now', '-7 days')"
+        ).fetchone()[0]
 
     return render_template(
         "platform/dashboard.html",
@@ -97,6 +101,7 @@ def dashboard():
         total_properties=total_properties,
         total_tenants=total_tenants,
         recent_error_count=recent_error_count,
+        parse_error_count=parse_error_count,
         active_tab="dashboard",
     )
 
@@ -217,6 +222,60 @@ def toggle_org(org_id):
     state_label = "activated" if new_state else "deactivated"
     flash(f"'{org['name']}' {state_label}.", "success")
     return redirect(url_for("platform.dashboard"))
+
+
+@platform_bp.route("/parse-errors")
+def parse_errors_view():
+    org_filter = request.args.get("org_id", "")
+    with get_connection() as conn:
+        if org_filter:
+            rows = conn.execute("""
+                SELECT spe.*, o.name AS org_name
+                FROM statement_parse_errors spe
+                JOIN organizations o ON spe.org_id = o.id
+                WHERE spe.org_id = ?
+                ORDER BY spe.created_at DESC LIMIT 500
+            """, (org_filter,)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT spe.*, o.name AS org_name
+                FROM statement_parse_errors spe
+                JOIN organizations o ON spe.org_id = o.id
+                ORDER BY spe.created_at DESC LIMIT 500
+            """).fetchall()
+        orgs = conn.execute(
+            "SELECT id, name FROM organizations ORDER BY name"
+        ).fetchall()
+        # Count per org for the summary bar
+        counts_by_org = {
+            r[0]: r[1] for r in conn.execute(
+                "SELECT org_id, COUNT(*) FROM statement_parse_errors GROUP BY org_id"
+            ).fetchall()
+        }
+
+    return render_template(
+        "platform/parse_errors.html",
+        parse_errors=rows,
+        orgs=orgs,
+        selected_org=org_filter,
+        counts_by_org=counts_by_org,
+        bank_label=_bank_label,
+        active_tab="parse_errors",
+    )
+
+
+@platform_bp.route("/statements/<statement_id>/pdf")
+def download_statement_pdf(statement_id):
+    """Serve a stored bank statement PDF for platform-side review."""
+    with get_connection() as conn:
+        stmt = conn.execute(
+            "SELECT file_path, filename FROM bank_statements WHERE id = ?", (statement_id,)
+        ).fetchone()
+    if not stmt or not stmt["file_path"]:
+        abort(404)
+    if not os.path.exists(stmt["file_path"]):
+        abort(404)
+    return send_file(stmt["file_path"], mimetype="application/pdf", download_name=stmt["filename"])
 
 
 @platform_bp.route("/impersonate/<org_id>", methods=["POST"])

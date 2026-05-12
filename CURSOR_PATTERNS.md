@@ -138,6 +138,40 @@
 
 ---
 
+## Session 2 — 2026-05-12
+
+---
+
+### sqlite3.Row does not support .get() — bracket access only
+**File(s):** `app.py` (dashboard route, verify_payments, review route — 6 locations)
+**Root cause:** Cursor treats `sqlite3.Row` as a dict because it has dict-like syntax. It reaches for `.get('col', default)` for safe access (a standard dict pattern). But `sqlite3.Row` only supports bracket access — `.get()` raises `AttributeError` at runtime.
+**What Cursor did:** `property_row.get('organization_id')`, `claim.get('mpesa_ref')`, `row.get('rent_due_day', 5)`.
+**What it should do:** Bracket access with explicit None check: `property_row['organization_id'] if property_row['organization_id'] else None`. For defaults: `row['rent_due_day'] if row['rent_due_day'] is not None else 5`. Every `sqlite3.Row` access must use brackets, never `.get()`.
+**Why it matters:** The error only surfaces at runtime when the specific code path executes. It silently works if the column is always populated but crashes the moment a nullable column is NULL and `.get()` is called for the default.
+**Spotted:** 2026-05-12 (Session 2)
+
+---
+
+### bank_statements queries must use org_id, not property_id
+**File(s):** `app.py` — `manage_statements()`, `upload_statement()`, `verify_payments()`, `review()`, `reparse_statement()`
+**Root cause:** Cursor sees `bank_statements.property_id` in the original schema and writes `WHERE property_id = ?`. After the 2026-05-12 migration, statements are org-scoped: new uploads set `org_id`, `property_id` is legacy/nullable. Querying by `property_id` misses statements uploaded under other properties in the same org.
+**What Cursor did:** `SELECT * FROM bank_statements WHERE property_id = ?`.
+**What it should do:** `SELECT * FROM bank_statements WHERE org_id = ?` (using `session.get('org_id')` or `property_row['organization_id']`). Fall back to `property_id` only for very old legacy rows if needed. For new code: always `org_id`.
+**Why it matters:** One bank statement can cover multiple properties in the same org. A query scoped to a single property_id will silently miss cross-property transactions and produce wrong verification results.
+**Spotted:** 2026-05-12 (Session 2)
+
+---
+
+### Silent format fallback in detect_bank_statement_format() was removed — treat unknown formats explicitly
+**File(s):** `src/parsers/pdf_parser.py`
+**Root cause:** The original `detect_bank_statement_format()` returned `'cooperative'` for any PDF it couldn't identify. Cursor (and previous code) relied on this implicit fallback. After 2026-05-12, it returns `'unknown'` and `parse_bank_statement()` immediately fails fast with a `format_unknown` parse error rather than producing garbled transactions.
+**What Cursor did:** Assumed every PDF produces at least some transactions; checked only for `parse_warnings` to detect partial failures.
+**What it should do:** Always check the returned `bank_format` from parsing. If `'unknown'`, the statement will have `status='parse_failed'` and zero transactions — handle this explicitly. Never assume a successful return from `parse_bank_statement()` means valid transactions were extracted.
+**Why it matters:** An unknown PDF silently parsed as Co-op format produces hundreds of garbage transactions that pollute the unassigned transaction list and confuse verification.
+**Spotted:** 2026-05-12 (Session 2)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.
