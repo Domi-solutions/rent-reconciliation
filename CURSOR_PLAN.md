@@ -126,13 +126,14 @@ New blueprint: `src/routes/owner_routes.py`, prefix `/owner`
 - [x] `manage_owners` query includes person_id; owners list shows "Domi Login" badge when person_id linked
 - [x] owners.html: Domi Login password field added to create modal
 
-#### Phase 5 — Tenant Holistic View
-- [ ] `GET /tenant/login` + `POST /tenant/login` — phone lookup → find all `tenants` rows with same `person_id` → if one, redirect to token; if multiple, show holistic dashboard
-- [ ] `GET /tenant/dashboard` — all units for this person: property name, unit, balance, charges, last payment
-- [ ] Link multiple tenant records to same person: admin UI on Tenants page — "Link to person" button
-- [ ] When creating a tenant: if phone already exists in `persons`, offer to link
-- [ ] Existing `/tenant/<token>` routes fully unchanged
-- [ ] Commit: `git commit -m "Phase 5 complete: tenant holistic view + multi-unit identity"`
+#### Phase 5 — Tenant Holistic View ✅ COMPLETE
+- [x] `GET/POST /tenant/login` — phone + password via persons; 0 tenants→error, 1 tenant→token redirect, 2+→holistic dashboard
+- [x] `GET /tenant/logout`
+- [x] `GET /tenant/dashboard` — all active units for person: property, unit, balance, pending, total paid, last payment, link to full portal
+- [x] `POST /tenants/<tenant_id>/link-person` — admin links tenant by phone; creates persons row if not found
+- [x] `add_tenant`: auto-links persons row when phone matches on creation
+- [x] tenants.html: "Domi Login" column — shows "Linked" badge if person_id set, inline phone-link form if not
+- [x] Existing `/tenant/<token>` routes fully unchanged
 
 #### Phase 6 — Data Entry + Test Run
 - [ ] Create 2 organizations (Agency A, Agency B)

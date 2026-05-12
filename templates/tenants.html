@@ -35,6 +35,7 @@
         <th>Phone</th>
         <th>Move-in</th>
         <th>Portal link</th>
+        <th>Domi Login</th>
         <th></th>
       </tr>
     </thead>
@@ -65,6 +66,23 @@
         </td>
         <td>
           {% if t.status == 'active' %}
+            {% if t.person_id %}
+              <span class="badge bg-primary" style="font-size:11px;" title="Tenant can log in at /tenant/login">Linked</span>
+            {% else %}
+              <details style="display:inline;">
+                <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;font-size:12px;">Link</summary>
+                <form method="post" action="{{ url_for('link_tenant_person', tenant_id=t.id) }}"
+                      style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+                  <input type="tel" name="phone" class="form-control form-control-sm"
+                         placeholder="07xx xxx xxx" value="{{ t.phone or '' }}" style="max-width:140px;" required>
+                  <button type="submit" class="btn btn-sm btn-primary" style="white-space:nowrap;">Link</button>
+                </form>
+              </details>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td>
+          {% if t.status == 'active' %}
           <form method="post" action="{{ url_for('move_out_tenant', tenant_id=t.id) }}" class="d-inline move-out-form">
             <button type="submit" class="btn btn-sm btn-outline-secondary" style="color: var(--red); border-color: rgba(255,59,48,0.3);">Move out</button>
           </form>
@@ -72,7 +90,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-muted" style="padding: 32px 16px; text-align: center;">No tenants yet.</td></tr>
+      <tr><td colspan="7" class="text-muted" style="padding: 32px 16px; text-align: center;">No tenants yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

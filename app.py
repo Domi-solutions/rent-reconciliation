@@ -819,10 +819,20 @@ def add_tenant():
                 flash('Please select a unit.', 'error')
                 return redirect(url_for('add_tenant'))
 
+            # Auto-link to persons if phone matches an existing record
+            person_id = None
+            if phone:
+                phone_norm = ('+254' + phone[1:]) if phone.startswith(('07', '01')) else ('+' + phone if phone.startswith('254') else phone)
+                existing_person = conn.execute(
+                    "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
+                ).fetchone()
+                if existing_person:
+                    person_id = existing_person['id']
+
             tenant_id = generate_id('TENANT')
             conn.execute(
-                "INSERT INTO tenants (id, property_id, unit_id, name, phone, move_in_date) VALUES (?, ?, ?, ?, ?, date('now'))",
-                (tenant_id, property_row['id'], unit_id, name, phone),
+                "INSERT INTO tenants (id, property_id, unit_id, name, phone, move_in_date, person_id) VALUES (?, ?, ?, ?, ?, date('now'), ?)",
+                (tenant_id, property_row['id'], unit_id, name, phone, person_id),
             )
             conn.execute(
                 "UPDATE units SET status = 'occupied', status_changed_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -892,6 +902,54 @@ def revoke_tenant_token(tenant_id):
              f"Tenant: {tenant['name']} | Unit: {unit_number} | Portal link revoked", 'admin'),
         )
     flash('Portal link revoked.', 'success')
+    return redirect(url_for('manage_tenants'))
+
+
+@app.route('/tenants/<tenant_id>/link-person', methods=['POST'])
+def link_tenant_person(tenant_id):
+    """Link a tenant record to a persons row by phone. Creates persons row if needed."""
+    from werkzeug.security import generate_password_hash as _gph
+    phone_raw = request.form.get('phone', '').strip()
+    if not phone_raw:
+        flash('Phone number is required to link.', 'error')
+        return redirect(url_for('manage_tenants'))
+
+    if phone_raw.startswith('07') or phone_raw.startswith('01'):
+        phone_norm = '+254' + phone_raw[1:]
+    elif phone_raw.startswith('254'):
+        phone_norm = '+' + phone_raw
+    else:
+        phone_norm = phone_raw
+
+    with get_connection() as conn:
+        tenant = conn.execute(
+            "SELECT id, name, property_id FROM tenants WHERE id = ?", (tenant_id,)
+        ).fetchone()
+        if not tenant:
+            flash('Tenant not found.', 'error')
+            return redirect(url_for('manage_tenants'))
+
+        person = conn.execute(
+            "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
+        ).fetchone()
+        if not person:
+            person_id = generate_id('PERS')
+            conn.execute(
+                "INSERT INTO persons (id, name, phone) VALUES (?, ?, ?)",
+                (person_id, tenant['name'], phone_norm),
+            )
+        else:
+            person_id = person['id']
+
+        conn.execute(
+            "UPDATE tenants SET person_id = ? WHERE id = ?", (person_id, tenant_id)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('tenant_linked_person', 'tenant', tenant_id,
+             f"Tenant: {tenant['name']} | Phone: {phone_norm}", 'admin'),
+        )
+    flash(f"Domi Login linked for {tenant['name']}.", 'success')
     return redirect(url_for('manage_tenants'))
 
 

@@ -1,4 +1,4 @@
-"""Tenant portal: read-only access via shareable token URL. No session or password."""
+"""Tenant portal: token URL access (no session) + optional persons-based holistic login."""
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -27,6 +27,128 @@ def _get_tenant_by_token(conn, token):
     unit = {'id': row['unit_id'], 'unit_number': row['unit_number'], 'property_id': row['property_id']}
     prop = {'id': row['property_id'], 'name': row['property_name']}
     return (tenant, unit, prop)
+
+
+def _normalize_phone(raw):
+    p = raw.strip().replace(" ", "")
+    if p.startswith("07") or p.startswith("01"):
+        return "+254" + p[1:]
+    if p.startswith("254"):
+        return "+" + p
+    return p
+
+
+@tenant_bp.route("/login", methods=["GET", "POST"])
+def login():
+    """Persons-based login: phone + password → find linked tenant records."""
+    error = None
+    if request.method == "POST":
+        raw_phone = request.form.get("phone", "").strip()
+        password = request.form.get("password", "")
+        phone_norm = _normalize_phone(raw_phone)
+
+        with get_connection() as conn:
+            person = conn.execute(
+                "SELECT id, name, password_hash FROM persons WHERE phone = ? OR phone = ?",
+                (raw_phone, phone_norm),
+            ).fetchone()
+
+        if not person or not person["password_hash"]:
+            error = "No Domi account found for this phone number."
+        elif not check_password_hash(person["password_hash"], password):
+            error = "Incorrect password."
+        else:
+            with get_connection() as conn:
+                tenants = conn.execute(
+                    """SELECT t.access_token, t.id, u.unit_number, p.name AS property_name, p.id AS property_id
+                       FROM tenants t
+                       JOIN units u ON t.unit_id = u.id
+                       JOIN properties p ON u.property_id = p.id
+                       WHERE t.person_id = ? AND t.status = 'active'
+                       ORDER BY p.name, u.unit_number""",
+                    (person["id"],),
+                ).fetchall()
+
+            if len(tenants) == 0:
+                error = "No active tenancy found for this account."
+            elif len(tenants) == 1 and tenants[0]["access_token"]:
+                return redirect(url_for("tenant.portal", token=tenants[0]["access_token"]))
+            else:
+                session["tenant_person_id"] = person["id"]
+                session["tenant_person_name"] = person["name"]
+                return redirect(url_for("tenant.dashboard"))
+
+    return render_template("tenant/login.html", error=error)
+
+
+@tenant_bp.route("/logout")
+def logout():
+    """Clear tenant person session."""
+    session.pop("tenant_person_id", None)
+    session.pop("tenant_person_name", None)
+    return redirect(url_for("tenant.login"))
+
+
+@tenant_bp.route("/dashboard")
+def dashboard():
+    """Holistic tenant dashboard: all units for the logged-in person."""
+    person_id = session.get("tenant_person_id")
+    if not person_id:
+        return redirect(url_for("tenant.login"))
+
+    from datetime import datetime
+    with get_connection() as conn:
+        units = conn.execute(
+            """SELECT t.id AS tenant_id, t.name AS tenant_name, t.access_token,
+                      u.unit_number, u.monthly_rent, u.service_charge,
+                      p.name AS property_name, p.id AS property_id,
+                      COALESCE(ub.total_charged, 0) AS total_charged,
+                      COALESCE(ub.total_paid, 0) AS total_paid,
+                      COALESCE(ub.balance, 0) AS balance
+               FROM tenants t
+               JOIN units u ON t.unit_id = u.id
+               JOIN properties p ON u.property_id = p.id
+               LEFT JOIN unit_balances ub ON ub.unit_id = u.id
+               WHERE t.person_id = ? AND t.status = 'active'
+               ORDER BY p.name, u.unit_number""",
+            (person_id,),
+        ).fetchall()
+
+        unit_details = []
+        for row in units:
+            last_payment = conn.execute(
+                """SELECT amount, payment_date FROM payments
+                   WHERE unit_id = (SELECT id FROM units WHERE unit_number = ? AND property_id = ?)
+                   ORDER BY payment_date DESC LIMIT 1""",
+                (row["unit_number"], row["property_id"]),
+            ).fetchone()
+
+            pending = float(conn.execute(
+                """SELECT COALESCE(SUM(claimed_amount), 0) FROM payment_claims
+                   WHERE unit_id = (SELECT id FROM units WHERE unit_number = ? AND property_id = ?)
+                   AND status = 'pending'""",
+                (row["unit_number"], row["property_id"]),
+            ).fetchone()[0])
+
+            unit_details.append({
+                "tenant_id": row["tenant_id"],
+                "tenant_name": row["tenant_name"],
+                "access_token": row["access_token"],
+                "unit_number": row["unit_number"],
+                "property_name": row["property_name"],
+                "property_id": row["property_id"],
+                "total_charged": float(row["total_charged"]),
+                "total_paid": float(row["total_paid"]),
+                "balance": max(0.0, float(row["balance"]) - pending),
+                "pending": pending,
+                "last_payment": last_payment,
+            })
+
+    return render_template(
+        "tenant/dashboard.html",
+        units=unit_details,
+        person_name=session.get("tenant_person_name", ""),
+    )
 
 
 @tenant_bp.route('/<token>')
