@@ -80,6 +80,9 @@ from src.database.db import (
     migrate_add_checkin_responses,
     migrate_add_payment_transactions,
     migrate_add_language_preference,
+    migrate_add_organizations,
+    migrate_add_persons,
+    migrate_add_platform_errors,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -107,6 +110,9 @@ migrate_add_inbound_sessions()
 migrate_add_checkin_responses()
 migrate_add_payment_transactions()
 migrate_add_language_preference()
+migrate_add_organizations()
+migrate_add_persons()
+migrate_add_platform_errors()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp

@@ -978,3 +978,70 @@ def migrate_add_language_preference():
         if 'language_preference' not in cols:
             conn.execute("ALTER TABLE tenants ADD COLUMN language_preference TEXT")
         print("Migration complete: tenants.language_preference ready.")
+
+
+def migrate_add_organizations():
+    """Add organizations table and organization_id to properties. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS organizations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                slug TEXT UNIQUE,
+                admin_password_hash TEXT,
+                contact_email TEXT,
+                contact_phone TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_org_slug ON organizations(slug)")
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if 'organization_id' not in prop_cols:
+            conn.execute("ALTER TABLE properties ADD COLUMN organization_id TEXT REFERENCES organizations(id)")
+        print("Migration complete: organizations table and properties.organization_id ready.")
+
+
+def migrate_add_persons():
+    """Add persons table and person_id FK to tenants and owners. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS persons (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT,
+                password_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_phone ON persons(phone)")
+        tenant_cols = [r[1] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'person_id' not in tenant_cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN person_id TEXT REFERENCES persons(id)")
+        owner_cols = [r[1] for r in conn.execute("PRAGMA table_info(owners)").fetchall()]
+        if 'person_id' not in owner_cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN person_id TEXT REFERENCES persons(id)")
+        print("Migration complete: persons table, tenants.person_id, owners.person_id ready.")
+
+
+def migrate_add_platform_errors():
+    """Create platform_errors table for surfacing errors to the platform admin. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS platform_errors (
+                id TEXT PRIMARY KEY,
+                error_type TEXT NOT NULL DEFAULT '500',
+                route TEXT,
+                method TEXT,
+                org_id TEXT,
+                property_id TEXT,
+                user_role TEXT,
+                message TEXT,
+                traceback TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_perr_created ON platform_errors(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_perr_type ON platform_errors(error_type)")
+        print("Migration complete: platform_errors table ready.")
