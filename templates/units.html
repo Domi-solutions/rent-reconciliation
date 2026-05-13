@@ -1,31 +1,61 @@
 {% extends "base.html" %}
-{% block title %}Units - {{ property.name }}{% endblock %}
+{% block title %}Units — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .editable {
+    cursor: text;
+    border-radius: 4px;
+    padding: 2px 4px;
+    transition: background 0.15s;
+  }
+  .editable:hover { background: rgba(0,0,0,0.05); }
+  .inline-input {
+    border: 1px solid var(--bs-primary);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: inherit;
+    font-family: inherit;
+    width: 100%;
+    min-width: 80px;
+    outline: none;
+    background: white;
+  }
+  .edit-saving { opacity: 0.5; }
+  .edit-error { color: var(--red); font-size: 11px; display: block; margin-top: 2px; }
+  td.status-cell select { font-size: 12px; padding: 2px 2rem 2px 6px; width: auto; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
-    <div class="page-title">Units</div>
-    <div class="page-meta">Rental units, monthly rent, and current balances.</div>
+    <div class="page-title">Units &amp; Tenants</div>
+    <div class="page-meta">Click any cell to edit. Changes are logged to activity.</div>
   </div>
-  <a href="{{ url_for('add_unit') }}" class="btn btn-primary">Add Unit</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('add_tenant') }}" class="btn btn-outline-secondary">Add Tenant</a>
+    <a href="{{ url_for('add_unit') }}" class="btn btn-primary">Add Unit</a>
+  </div>
 </div>
-{% if filter_status == 'occupied' or filter_pending_claims %}
-<div class="banner-warning mb-3" style="font-size: 13px;">
-  Showing:
-  {% if filter_status == 'occupied' and filter_pending_claims %}Occupied units with pending claims
-  {% elif filter_status == 'occupied' %}Occupied units only
-  {% else %}Units with pending claims
-  {% endif %}
-  — <a href="{{ url_for('manage_units') }}" style="color: inherit; font-weight: 600;">Show all units</a>
-</div>
-{% endif %}
-<div class="surface-card">
-  <table class="table table-hover mb-0">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="alert alert-{{ 'danger' if cat == 'error' else 'success' }} alert-dismissible" role="alert">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="surface-card" style="overflow-x:auto;">
+  <table class="table table-hover mb-0" id="units-table">
     <thead>
       <tr>
         <th>Unit</th>
         <th>Status</th>
-        <th>Monthly Rent</th>
-        <th>Tenant</th>
+        <th>Rent (KES)</th>
+        <th>Service (KES)</th>
+        <th>Tenant Name</th>
         <th>Phone</th>
         <th class="text-end">Balance</th>
         <th></th>
@@ -33,56 +63,222 @@
     </thead>
     <tbody>
       {% for u in units %}
-      <tr>
-        <td>{{ u.unit_number }}</td>
+      <tr data-unit-id="{{ u.id }}" data-tenant-id="{{ u.tenant_id or '' }}">
+
+        {# Unit number #}
         <td>
-          {% if u.status == 'occupied' %}
-          <span class="status-paid">Occupied</span>
-          {% elif u.status == 'vacant' %}
-          <span class="status-vacant">Vacant</span>
+          <span class="editable"
+                data-entity="unit" data-id="{{ u.id }}" data-field="unit_number"
+                data-value="{{ u.unit_number }}">{{ u.unit_number }}</span>
+        </td>
+
+        {# Status dropdown #}
+        <td class="status-cell">
+          <select class="form-select form-select-sm status-select"
+                  data-unit-id="{{ u.id }}" data-current="{{ u.status }}">
+            <option value="occupied" {% if u.status == 'occupied' %}selected{% endif %}>Occupied</option>
+            <option value="vacant"   {% if u.status == 'vacant'   %}selected{% endif %}>Vacant</option>
+            <option value="office"   {% if u.status == 'office'   %}selected{% endif %}>Office</option>
+          </select>
+        </td>
+
+        {# Monthly rent #}
+        <td>
+          <span class="editable"
+                data-entity="unit" data-id="{{ u.id }}" data-field="monthly_rent"
+                data-value="{{ u.monthly_rent }}">{{ "{:,.0f}".format(u.monthly_rent or 0) }}</span>
+        </td>
+
+        {# Service charge #}
+        <td>
+          <span class="editable"
+                data-entity="unit" data-id="{{ u.id }}" data-field="service_charge"
+                data-value="{{ u.service_charge or 0 }}">{{ "{:,.0f}".format(u.service_charge or 0) }}</span>
+        </td>
+
+        {# Tenant name #}
+        <td>
+          {% if u.tenant_id %}
+          <span class="editable"
+                data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="name"
+                data-value="{{ u.tenant_name }}">{{ u.tenant_name }}</span>
           {% else %}
-          <span class="status-pending">Office</span>
+          <a href="{{ url_for('add_tenant') }}" class="data-row-meta" style="font-style:italic;">Add tenant</a>
           {% endif %}
         </td>
-        <td>KES {{ "%.2f"|format(u.monthly_rent) }}</td>
-        <td>{{ u.tenant_name or '-' }}</td>
-        <td>{{ u.tenant_phone or '-' }}</td>
+
+        {# Phone #}
+        <td>
+          {% if u.tenant_id %}
+          <span class="editable"
+                data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="phone"
+                data-value="{{ u.tenant_phone or '' }}">{{ u.tenant_phone or '—' }}</span>
+          {% else %}
+          <span class="data-row-meta">—</span>
+          {% endif %}
+        </td>
+
+        {# Balance #}
         <td class="text-end">
           {% set bal = u.balance if u.balance is not none else 0 %}
           {% if bal > 0 %}
-          <span class="amount-danger">{{ "%.2f"|format(bal) }}</span>
+          <span class="amount-danger">{{ "{:,.0f}".format(bal) }}</span>
           {% else %}
-          {{ "%.2f"|format(bal) }}
+          <span class="text-muted">{{ "{:,.0f}".format(bal) }}</span>
           {% endif %}
         </td>
-        <td>
-          <form method="post" action="{{ url_for('set_unit_status', unit_id=u.id) }}" class="d-flex gap-1 align-items-center status-change-form">
-            <select name="status" class="form-select form-select-sm" style="width: auto; font-size: 12px; padding: 3px 8px;">
-              <option value="occupied" {% if u.status == 'occupied' %}selected{% endif %}>Occupied</option>
-              <option value="vacant" {% if u.status == 'vacant' %}selected{% endif %}>Vacant</option>
-              <option value="office" {% if u.status == 'office' %}selected{% endif %}>Office</option>
-            </select>
-            <button type="submit" class="btn btn-sm btn-outline-secondary" style="font-size: 11px; padding: 3px 8px;">Set</button>
-          </form>
+
+        {# Actions #}
+        <td style="white-space:nowrap;">
+          {% if u.tenant_id %}
+            {% if u.access_token %}
+            <button class="btn btn-sm btn-outline-secondary copy-portal-link"
+                    data-url="{{ host_url }}/tenant/{{ u.access_token }}">Portal</button>
+            {% else %}
+            <form method="post" action="{{ url_for('generate_tenant_token', tenant_id=u.tenant_id) }}" class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Gen link</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('move_out_tenant', tenant_id=u.tenant_id) }}"
+                  class="d-inline move-out-form" data-name="{{ u.tenant_name }}">
+              <button type="submit" class="btn btn-sm btn-outline-secondary"
+                      style="color:var(--red);border-color:rgba(255,59,48,0.3);">Move out</button>
+            </form>
+          {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text-muted" style="padding: 32px 16px; text-align: center;">No units yet. Add one above.</td></tr>
+      <tr><td colspan="8" class="text-muted" style="padding:32px 16px;text-align:center;">No units yet. Add one above.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% endblock %}
+
 {% block extra_js %}
 <script>
-document.querySelectorAll('.status-change-form').forEach(function(form) {
+// ── Inline editing ──────────────────────────────────────────
+document.querySelectorAll('.editable').forEach(function(cell) {
+  cell.addEventListener('click', function() { startEdit(this); });
+});
+
+function startEdit(cell) {
+  if (cell.querySelector('input')) return; // already editing
+  const field    = cell.dataset.field;
+  const entity   = cell.dataset.entity;
+  const id       = cell.dataset.id;
+  const original = cell.dataset.value;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = original;
+  input.className = 'inline-input';
+
+  cell.innerHTML = '';
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+
+  let saved = false;
+
+  function save() {
+    if (saved) return;
+    saved = true;
+    const newVal = input.value.trim();
+    if (newVal === original) { restore(cell, field, original); return; }
+    cell.classList.add('edit-saving');
+    fetch('/' + entity + 's/' + id + '/field', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field: field, value: newVal})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      cell.classList.remove('edit-saving');
+      if (data.ok) {
+        cell.dataset.value = data.value;
+        restore(cell, field, data.value);
+      } else {
+        restore(cell, field, original);
+        showError(cell, data.error);
+      }
+    })
+    .catch(function() {
+      cell.classList.remove('edit-saving');
+      restore(cell, field, original);
+    });
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') {
+      saved = true;
+      restore(cell, field, original);
+    }
+  });
+}
+
+function restore(cell, field, value) {
+  let display = value;
+  if (field === 'monthly_rent' || field === 'service_charge') {
+    const n = parseFloat(value);
+    display = isNaN(n) ? value : n.toLocaleString('en-KE', {maximumFractionDigits: 0});
+  }
+  if (field === 'phone' && !display) display = '—';
+  cell.textContent = display || '—';
+}
+
+function showError(cell, msg) {
+  const err = document.createElement('span');
+  err.className = 'edit-error';
+  err.textContent = msg;
+  cell.appendChild(err);
+  setTimeout(function() { err.remove(); }, 3000);
+}
+
+// ── Status dropdown ─────────────────────────────────────────
+document.querySelectorAll('.status-select').forEach(function(sel) {
+  sel.addEventListener('change', function() {
+    const unitId  = this.dataset.unitId;
+    const current = this.dataset.current;
+    const newVal  = this.value;
+    if (newVal === current) return;
+    if (!confirm('Change status to ' + newVal + '?')) {
+      this.value = current; return;
+    }
+    const sel = this;
+    fetch('/units/' + unitId + '/field', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field: 'status', value: newVal})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        sel.dataset.current = newVal;
+      } else {
+        alert(data.error);
+        sel.value = current;
+      }
+    });
+  });
+});
+
+// ── Portal link copy ─────────────────────────────────────────
+document.querySelectorAll('.copy-portal-link').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(this.dataset.url).then(function() {
+      btn.textContent = 'Copied';
+      setTimeout(function() { btn.textContent = 'Portal'; }, 1500);
+    });
+  });
+});
+
+// ── Move out confirm ─────────────────────────────────────────
+document.querySelectorAll('.move-out-form').forEach(function(form) {
   form.addEventListener('submit', function(e) {
-    var unit = this.closest('tr').querySelector('td').textContent.trim();
-    var newStatus = this.querySelector('select').value;
-    var current = this.closest('tr').querySelector('.status-paid, .status-vacant, .status-pending');
-    var currentStatus = current ? current.textContent.trim().toLowerCase() : '';
-    if (newStatus === currentStatus) { e.preventDefault(); return; }
-    if (!confirm('Change unit ' + unit + ' to ' + newStatus + '?')) {
+    if (!confirm('Move out ' + this.dataset.name + '? Unit will become vacant.')) {
       e.preventDefault();
     }
   });

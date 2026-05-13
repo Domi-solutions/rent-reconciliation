@@ -172,6 +172,30 @@
 
 ---
 
+## Session 3 — 2026-05-13
+
+---
+
+### Jinja2 url_for() does not support ** dict unpacking
+**File(s):** `templates/activity.html` (and any template with conditional extra params in url_for)
+**Root cause:** Cursor writes Python-style dynamic keyword passing (`url_for('route', **{...})`) because it works in regular Python. Jinja2's `url_for` filter does not support `**` unpacking — it raises a `TemplateSyntaxError` at render time.
+**What Cursor did:** `{{ url_for('activity', action=r['action'], **({'from': from_date} if from_date else {})) }}`
+**What it should do:** Build the URL in two steps using string concatenation: `{{ url_for('activity', action=r['action']) }}{% if from_date %}&from={{ from_date }}{% endif %}{% if to_date %}&to={{ to_date }}{% endif %}`. Conditional query params must be appended as literal strings, not passed as Python dict unpacking.
+**Why it matters:** The error surfaces immediately at page render and blocks the entire template. Any template with dynamic optional URL params will fail silently during development if `**` unpacking is used.
+**Spotted:** 2026-05-13 (Session 3)
+
+---
+
+### Bootstrap form-select arrow overlap from custom padding shorthand
+**File(s):** `templates/units.html` (status select in editable unit table)
+**Root cause:** Bootstrap 5's `form-select` class sets `padding-right: 3rem` to reserve space for the dropdown chevron icon. Cursor applies a compact padding shorthand `padding: 3px 8px` which overrides all four sides including the right, collapsing the icon space and pushing the arrow on top of the text.
+**What Cursor did:** `style="padding: 3px 8px"` on a `<select class="form-select">`.
+**What it should do:** Always preserve Bootstrap's right-padding when adding custom padding to `form-select`. Use four-value shorthand that keeps right padding large: `style="padding: 3px 2rem 3px 8px"`. Never use shorthand that collapses all four sides on a Bootstrap component with a built-in icon.
+**Why it matters:** The chevron renders inside the text content area, making the control look broken and text unreadable for multi-character values.
+**Spotted:** 2026-05-13 (Session 3)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

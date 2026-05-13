@@ -79,17 +79,21 @@
 {# PRIMARY KPI ROW — 3 naked hero numbers #}
 <div class="row g-4 mb-0" style="padding-bottom: 24px;">
   <div class="col-12 col-md-4">
-    <div class="kpi-hero-label">Expected Income</div>
-    <div class="kpi-hero-value">KES {{ "{:,.0f}".format(stats.expected_monthly or 0) }}</div>
-    <div class="kpi-hero-sub">per month</div>
+    <a href="{{ url_for('manage_units') }}" class="text-decoration-none" style="display:block;">
+      <div class="kpi-hero-label">Expected Income</div>
+      <div class="kpi-hero-value">KES {{ "{:,.0f}".format(stats.expected_monthly or 0) }}</div>
+      <div class="kpi-hero-sub">per month</div>
+    </a>
   </div>
   <div class="col-12 col-md-4">
-    <div class="kpi-hero-label">Total Arrears</div>
-    <div class="kpi-hero-value kpi-hero-value--danger">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
-    <div class="kpi-hero-sub">
-      across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}
-      {% if stats.arrears_ratio and stats.arrears_ratio > 0 %} · {{ stats.arrears_ratio }}× monthly to clear{% endif %}
-    </div>
+    <a href="{{ url_for('admin_arrears') }}" class="text-decoration-none" style="display:block;">
+      <div class="kpi-hero-label">Total Arrears</div>
+      <div class="kpi-hero-value kpi-hero-value--danger">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
+      <div class="kpi-hero-sub">
+        across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}
+        {% if stats.arrears_ratio and stats.arrears_ratio > 0 %} · {{ stats.arrears_ratio }}× monthly to clear{% endif %}
+      </div>
+    </a>
   </div>
   <div class="col-12 col-md-4">
     <a href="{{ url_for('review', tab='confirmed') }}" class="text-decoration-none" style="display:block;">
@@ -117,7 +121,7 @@
     <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
   </div>
   <div class="stat-item">
-    <a href="{{ url_for('manage_units', pending_claims='1') }}" class="text-decoration-none" style="display:block;">
+    <a href="{{ url_for('review', tab='unconfirmed') }}" class="text-decoration-none" style="display:block;">
       <div class="stat-label">Pending Claims</div>
       <div class="stat-value">{{ pending_count }}</div>
     </a>
@@ -129,10 +133,11 @@
 </div>
 
 <div class="row">
-  <div class="col-lg-6 mb-4">
+  <div class="col-lg-6 mb-4" id="arrears-section">
     <div class="surface-card">
-      <div class="surface-card-header">
-        <h6>Units in Arrears</h6>
+      <div class="surface-card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Units in Arrears</h6>
+        <a href="{{ url_for('admin_arrears') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
       </div>
       {% if arrears %}
       <table class="table table-sm mb-0 viewer-table">
@@ -145,7 +150,7 @@
         </thead>
         <tbody>
           {% for row in arrears %}
-          <tr>
+          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('admin_arrears') }}'">
             <td>{{ row.unit_number }}</td>
             <td>{{ row.tenant_name or '-' }}</td>
             <td class="text-end">KES {{ "%.2f"|format(row.balance) }}</td>
@@ -163,8 +168,9 @@
   </div>
   <div class="col-lg-6 mb-4">
     <div class="surface-card">
-      <div class="surface-card-header">
-        <h6>Pending Payment Claims</h6>
+      <div class="surface-card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Pending Payment Claims</h6>
+        <a href="{{ url_for('review', tab='unconfirmed') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
       </div>
       {% if pending %}
       <table class="table table-sm mb-0 viewer-table">
@@ -177,7 +183,7 @@
         </thead>
         <tbody>
           {% for c in pending %}
-          <tr>
+          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('review', tab='unconfirmed') }}'">
             <td>{{ c.mpesa_ref }}</td>
             <td>{{ c.unit_number }}</td>
             <td class="text-end">
@@ -200,8 +206,9 @@
 <div class="row">
   <div class="col-lg-6 mb-4">
     <div class="surface-card">
-      <div class="surface-card-header">
-        <h6>Unassigned Bank Payments</h6>
+      <div class="surface-card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Unassigned Bank Payments</h6>
+        <a href="{{ url_for('review', tab='unreported') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
       </div>
       {% if unassigned %}
       <table class="table table-sm mb-0 viewer-table">
@@ -215,12 +222,12 @@
         </thead>
         <tbody>
           {% for t in unassigned %}
-          <tr>
+          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('review', tab='unreported') }}'">
             <td>{{ t.mpesa_ref or '-' }}</td>
             <td class="text-end">KES {{ "%.2f"|format(t.amount) }}</td>
             <td>{{ t.txn_date or '-' }}</td>
             <td>
-              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="topbar-btn-ghost" style="padding: 4px 10px; font-size: 12px;">
+              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="topbar-btn-ghost" style="padding: 4px 10px; font-size: 12px;" onclick="event.stopPropagation();">
                 Assign
               </a>
             </td>

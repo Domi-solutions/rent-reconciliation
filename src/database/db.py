@@ -1082,3 +1082,64 @@ def migrate_add_statement_parse_errors():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_spe_stmt ON statement_parse_errors(statement_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_spe_created ON statement_parse_errors(created_at)")
     print("Migration complete: statement_parse_errors table ready.")
+
+
+def migrate_add_platform_shadow_log():
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS platform_shadow_log (
+                id          TEXT PRIMARY KEY,
+                org_id      TEXT,
+                property_id TEXT,
+                action      TEXT NOT NULL,
+                entity_type TEXT,
+                entity_id   TEXT,
+                details     TEXT,
+                actor       TEXT DEFAULT 'agency',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_psl_org ON platform_shadow_log(org_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_psl_created ON platform_shadow_log(created_at)")
+    print("Migration complete: platform_shadow_log table ready.")
+
+
+def migrate_add_tenant_disputes():
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tenant_disputes (
+                id              TEXT PRIMARY KEY,
+                tenant_id       TEXT NOT NULL,
+                property_id     TEXT NOT NULL,
+                org_id          TEXT,
+                subject         TEXT,
+                message         TEXT NOT NULL,
+                status          TEXT DEFAULT 'open',
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                resolved_at     DATETIME,
+                resolution_note TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_td_org ON tenant_disputes(org_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_td_status ON tenant_disputes(status)")
+    print("Migration complete: tenant_disputes table ready.")
+
+
+def migrate_add_platform_alerts():
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS platform_alerts (
+                id          TEXT PRIMARY KEY,
+                org_id      TEXT,
+                property_id TEXT,
+                alert_type  TEXT NOT NULL,
+                details     TEXT,
+                severity    TEXT DEFAULT 'warning',
+                status      TEXT DEFAULT 'open',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                dismissed_at DATETIME
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pa_org ON platform_alerts(org_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pa_status ON platform_alerts(status)")
+    print("Migration complete: platform_alerts table ready.")

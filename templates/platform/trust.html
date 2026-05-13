@@ -1,0 +1,60 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Trust Scores — Domi Platform{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h4 class="mb-1">Agency Trust Scores</h4>
+  <div style="font-size:13px;color:#718096;">
+    Score = 100 − (critical alerts × 20) − (warnings × 5) − (open disputes × 10). Updated in real time.
+  </div>
+</div>
+
+{% if scores %}
+<div class="d-flex flex-column gap-3">
+  {% for s in scores %}
+  <div class="card border-0 shadow-sm p-4">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <div style="font-weight:600;font-size:16px;">{{ s.name }}</div>
+        <div style="font-size:12px;color:#718096;margin-top:2px;">
+          {{ s.total_tenants }} active tenant{{ 's' if s.total_tenants != 1 }}
+          · {{ s.open_critical }} critical alert{{ 's' if s.open_critical != 1 }}
+          · {{ s.open_warnings }} warning{{ 's' if s.open_warnings != 1 }}
+          · {{ s.open_disputes }} open dispute{{ 's' if s.open_disputes != 1 }}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:32px;font-weight:700;
+          color:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};">
+          {{ s.trust_score }}
+        </div>
+        <div style="font-size:11px;color:#a0aec0;text-transform:uppercase;letter-spacing:.04em;">/ 100</div>
+      </div>
+    </div>
+    <div class="mt-3" style="background:#e2e8f0;border-radius:9999px;height:6px;">
+      <div style="width:{{ s.trust_score }}%;
+        background:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};
+        height:6px;border-radius:9999px;transition:width .3s;"></div>
+    </div>
+    {% if s.open_critical > 0 or s.open_disputes > 0 %}
+    <div class="mt-3 d-flex gap-2">
+      {% if s.open_critical > 0 %}
+      <a href="{{ url_for('platform.alerts') }}?status=open" class="btn btn-sm btn-outline-danger">
+        {{ s.open_critical }} critical alert{{ 's' if s.open_critical != 1 }} →
+      </a>
+      {% endif %}
+      {% if s.open_disputes > 0 %}
+      <a href="{{ url_for('platform.disputes') }}?status=open" class="btn btn-sm btn-outline-warning">
+        {{ s.open_disputes }} open dispute{{ 's' if s.open_disputes != 1 }} →
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card border-0 shadow-sm p-5 text-center">
+  <div style="color:#718096;">No active organisations.</div>
+</div>
+{% endif %}
+{% endblock %}

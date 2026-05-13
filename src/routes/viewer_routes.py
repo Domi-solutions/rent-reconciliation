@@ -855,3 +855,61 @@ def viewer_report_detail(property_id, report_id):
                           period_end=report_row['period_end'],
                           created_at=report_row['created_at'],
                           active_tab='reports')
+
+
+@viewer_bp.route('/<property_id>/wallet')
+def property_wallet(property_id):
+    """Owner wallet — balance, management fee, disbursement history."""
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ?", (property_id,)
+        ).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        fee_rate = float(prop['management_fee_rate'] or 0.08)
+
+        total_collected = float(conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ?",
+            (property_id,)
+        ).fetchone()[0])
+
+        total_disbursed = float(conn.execute(
+            "SELECT COALESCE(SUM(net_amount), 0) FROM disbursements WHERE property_id = ? AND status = 'completed'",
+            (property_id,)
+        ).fetchone()[0])
+
+        fee_amount = round(total_collected * fee_rate, 2)
+        balance = round(total_collected - fee_amount - total_disbursed, 2)
+
+        disbursements = conn.execute(
+            """SELECT * FROM disbursements WHERE property_id = ?
+               ORDER BY created_at DESC LIMIT 50""",
+            (property_id,)
+        ).fetchall()
+
+        this_month = __import__('datetime').date.today().strftime('%Y-%m')
+        month_collected = float(conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ? AND strftime('%Y-%m', payment_date) = ?",
+            (property_id, this_month)
+        ).fetchone()[0])
+
+    return render_template(
+        'viewer/wallet.html',
+        property=prop,
+        active_tab='wallet',
+        total_collected=total_collected,
+        fee_rate=fee_rate,
+        fee_amount=fee_amount,
+        balance=balance,
+        total_disbursed=total_disbursed,
+        disbursements=disbursements,
+        month_collected=month_collected,
+    )

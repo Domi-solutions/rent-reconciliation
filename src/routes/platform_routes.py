@@ -94,6 +94,15 @@ def dashboard():
         parse_error_count = conn.execute(
             "SELECT COUNT(*) FROM statement_parse_errors WHERE created_at >= datetime('now', '-7 days')"
         ).fetchone()[0]
+        open_alerts_critical = conn.execute(
+            "SELECT COUNT(*) FROM platform_alerts WHERE status = 'open' AND severity = 'critical'"
+        ).fetchone()[0]
+        open_alerts_total = conn.execute(
+            "SELECT COUNT(*) FROM platform_alerts WHERE status = 'open'"
+        ).fetchone()[0]
+        open_disputes = conn.execute(
+            "SELECT COUNT(*) FROM tenant_disputes WHERE status = 'open'"
+        ).fetchone()[0]
 
     return render_template(
         "platform/dashboard.html",
@@ -102,6 +111,9 @@ def dashboard():
         total_tenants=total_tenants,
         recent_error_count=recent_error_count,
         parse_error_count=parse_error_count,
+        open_alerts_critical=open_alerts_critical,
+        open_alerts_total=open_alerts_total,
+        open_disputes=open_disputes,
         active_tab="dashboard",
     )
 
@@ -276,6 +288,137 @@ def download_statement_pdf(statement_id):
     if not os.path.exists(stmt["file_path"]):
         abort(404)
     return send_file(stmt["file_path"], mimetype="application/pdf", download_name=stmt["filename"])
+
+
+@platform_bp.route("/shadow-log")
+def shadow_log():
+    org_filter = request.args.get("org_id", "").strip()
+    with get_connection() as conn:
+        params = []
+        where = ""
+        if org_filter:
+            where = "WHERE psl.org_id = ?"
+            params.append(org_filter)
+        rows = conn.execute(
+            f"""SELECT psl.*, o.name AS org_name
+                FROM platform_shadow_log psl
+                LEFT JOIN organizations o ON o.id = psl.org_id
+                {where}
+                ORDER BY psl.created_at DESC LIMIT 500""",
+            params,
+        ).fetchall()
+        orgs = conn.execute("SELECT id, name FROM organizations ORDER BY name").fetchall()
+    return render_template("platform/shadow_log.html", rows=rows, orgs=orgs,
+                           org_filter=org_filter, active_tab="shadow_log")
+
+
+@platform_bp.route("/disputes")
+def disputes():
+    status_filter = request.args.get("status", "open")
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT td.*, t.name AS tenant_name, p.name AS property_name, o.name AS org_name
+               FROM tenant_disputes td
+               LEFT JOIN tenants t ON t.id = td.tenant_id
+               LEFT JOIN properties p ON p.id = td.property_id
+               LEFT JOIN organizations o ON o.id = td.org_id
+               WHERE td.status = ?
+               ORDER BY td.created_at DESC""",
+            (status_filter,),
+        ).fetchall()
+        open_count = conn.execute(
+            "SELECT COUNT(*) FROM tenant_disputes WHERE status = 'open'"
+        ).fetchone()[0]
+    return render_template("platform/disputes.html", disputes=rows,
+                           status_filter=status_filter, open_count=open_count,
+                           active_tab="disputes")
+
+
+@platform_bp.route("/disputes/<dispute_id>/resolve", methods=["POST"])
+def resolve_dispute(dispute_id):
+    note = request.form.get("note", "").strip()
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE tenant_disputes
+               SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolution_note = ?
+               WHERE id = ?""",
+            (note, dispute_id),
+        )
+    flash("Dispute marked resolved.", "success")
+    return redirect(url_for("platform.disputes"))
+
+
+@platform_bp.route("/alerts")
+def alerts():
+    status_filter = request.args.get("status", "open")
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT pa.*, o.name AS org_name, p.name AS property_name
+               FROM platform_alerts pa
+               LEFT JOIN organizations o ON o.id = pa.org_id
+               LEFT JOIN properties p ON p.id = pa.property_id
+               WHERE pa.status = ?
+               ORDER BY pa.severity DESC, pa.created_at DESC""",
+            (status_filter,),
+        ).fetchall()
+        open_counts = conn.execute(
+            """SELECT severity, COUNT(*) AS cnt FROM platform_alerts
+               WHERE status = 'open' GROUP BY severity"""
+        ).fetchall()
+    counts = {r["severity"]: r["cnt"] for r in open_counts}
+    return render_template("platform/alerts.html", alerts=rows,
+                           status_filter=status_filter, counts=counts,
+                           active_tab="alerts")
+
+
+@platform_bp.route("/alerts/<alert_id>/dismiss", methods=["POST"])
+def dismiss_alert(alert_id):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE platform_alerts SET status = 'dismissed', dismissed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (alert_id,),
+        )
+    return ("", 204)
+
+
+@platform_bp.route("/trust")
+def trust():
+    with get_connection() as conn:
+        orgs = conn.execute(
+            "SELECT id, name FROM organizations WHERE is_active = 1 ORDER BY name"
+        ).fetchall()
+        scores = []
+        for org in orgs:
+            open_critical = conn.execute(
+                "SELECT COUNT(*) FROM platform_alerts WHERE org_id = ? AND status = 'open' AND severity = 'critical'",
+                (org["id"],),
+            ).fetchone()[0]
+            open_warnings = conn.execute(
+                "SELECT COUNT(*) FROM platform_alerts WHERE org_id = ? AND status = 'open' AND severity = 'warning'",
+                (org["id"],),
+            ).fetchone()[0]
+            open_disputes = conn.execute(
+                "SELECT COUNT(*) FROM tenant_disputes WHERE org_id = ? AND status = 'open'",
+                (org["id"],),
+            ).fetchone()[0]
+            total_tenants = conn.execute(
+                """SELECT COUNT(*) FROM tenants t
+                   JOIN properties p ON p.id = t.property_id
+                   WHERE p.organization_id = ? AND t.status = 'active'""",
+                (org["id"],),
+            ).fetchone()[0]
+            raw = 100 - (open_critical * 20) - (open_warnings * 5) - (open_disputes * 10)
+            trust_score = max(0, min(100, raw))
+            scores.append({
+                "id": org["id"],
+                "name": org["name"],
+                "trust_score": trust_score,
+                "open_critical": open_critical,
+                "open_warnings": open_warnings,
+                "open_disputes": open_disputes,
+                "total_tenants": total_tenants,
+            })
+    return render_template("platform/trust.html", scores=scores, active_tab="trust")
 
 
 @platform_bp.route("/impersonate/<org_id>", methods=["POST"])

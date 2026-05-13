@@ -1,0 +1,103 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Wallet{% endblock %}
+{% block active_tab %}wallet{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Wallet</div>
+  <div class="page-meta">Rent collected, management fee, and disbursements for {{ property.name }}.</div>
+</div>
+
+{# ── Balance summary ── #}
+<div class="row g-3 mb-4">
+  <div class="col-sm-4">
+    <div class="surface-card" style="padding: 20px;">
+      <div class="data-row-meta">Available balance</div>
+      <div class="data-row-amount {% if balance > 0 %}amount-success{% endif %}" style="font-size: 28px; margin-top: 4px;">
+        KES {{ "{:,.0f}".format(balance) }}
+      </div>
+      <div class="data-row-meta mt-2">Total collected − fee − disbursed</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="surface-card" style="padding: 20px;">
+      <div class="data-row-meta">Total collected (all time)</div>
+      <div style="font-size: 22px; font-weight: 700; margin-top: 4px;">KES {{ "{:,.0f}".format(total_collected) }}</div>
+      <div class="data-row-meta mt-2">This month: KES {{ "{:,.0f}".format(month_collected) }}</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="surface-card" style="padding: 20px;">
+      <div class="data-row-meta">Management fee ({{ (fee_rate * 100)|round(1) }}%)</div>
+      <div style="font-size: 22px; font-weight: 700; margin-top: 4px; color: var(--ink-2);">KES {{ "{:,.0f}".format(fee_amount) }}</div>
+      <div class="data-row-meta mt-2">KES {{ "{:,.0f}".format(total_disbursed) }} disbursed to date</div>
+    </div>
+  </div>
+</div>
+
+{# ── Withdraw stub ── #}
+<div class="surface-card mb-4" style="padding: 20px; border: 1px dashed var(--border);">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <div style="font-weight: 600; font-size: 15px;">Withdraw to M-Pesa / Bank</div>
+      <div class="data-row-meta mt-1">
+        Direct disbursement to your registered M-Pesa or bank account is coming soon.
+        Your balance of <strong>KES {{ "{:,.0f}".format(balance) }}</strong> will be transferable once the payment rail is live.
+      </div>
+    </div>
+    <button class="btn btn-primary" disabled style="white-space: nowrap; opacity: 0.5; cursor: not-allowed;">
+      Withdraw — coming soon
+    </button>
+  </div>
+</div>
+
+{# ── Disbursement history ── #}
+<div class="surface-card">
+  <div class="surface-card-header">
+    <h6>Disbursement History</h6>
+  </div>
+  {% if disbursements %}
+  <table class="table table-sm mb-0 viewer-table">
+    <thead>
+      <tr>
+        <th>Period</th>
+        <th class="text-end">Collected</th>
+        <th class="text-end">Fee</th>
+        <th class="text-end">Net to you</th>
+        <th>Method</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in disbursements %}
+      <tr>
+        <td>{{ d.period }}</td>
+        <td class="text-end">{{ "{:,.0f}".format(d.total_collected) }}</td>
+        <td class="text-end" style="color: var(--ink-2);">{{ "{:,.0f}".format(d.fee_amount) }}</td>
+        <td class="text-end" style="font-weight: 600;">{{ "{:,.0f}".format(d.net_amount) }}</td>
+        <td>{{ d.method or '—' }}</td>
+        <td>
+          {% if d.status == 'completed' %}
+          <span class="status-paid">Paid</span>
+          {% elif d.status == 'processing' %}
+          <span class="status-pending">Processing</span>
+          {% elif d.status == 'failed' %}
+          <span class="status-arrears">Failed</span>
+          {% else %}
+          <span class="status-vacant">Pending</span>
+          {% endif %}
+        </td>
+        <td style="color: var(--ink-2); font-size: 12px;">{{ d.disbursed_at[:10] if d.disbursed_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">No disbursements yet</div>
+    <div class="empty-state-sub">Disbursements will appear here once the payment rail is live.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

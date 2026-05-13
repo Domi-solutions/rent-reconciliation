@@ -135,6 +135,43 @@ New blueprint: `src/routes/owner_routes.py`, prefix `/owner`
 - [x] tenants.html: "Domi Login" column — shows "Linked" badge if person_id set, inline phone-link form if not
 - [x] Existing `/tenant/<token>` routes fully unchanged
 
+#### Session 8 — Admin UX, Platform Guardian, Owner Wallet (2026-05-13) ✅ COMPLETE
+
+**Dashboard UX — clickable KPIs and table rows:**
+- "Total Arrears" → dedicated `/arrears` page (unit balances, pending claims, months-behind with `math.ceil`)
+- "Expected Income" → `/units`; "Pending Claims" stat + table rows → `/review?tab=unconfirmed`; "Units in Arrears" rows → `/arrears`; "Unassigned Bank Payments" rows → `/review?tab=unreported`
+- All table row clicks use `onclick="window.location=..."` with `stopPropagation()` on inner action links
+
+**Activity sidebar:**
+- Moved Activity out of Tools section into its own sidebar nav item (clock SVG)
+- Filter form: activity type (DISTINCT from audit_log), from date, to date; "Clear filters" button when active
+- Fixed Jinja2 `{% endif %}` missing bug and `**` dict unpacking error in `url_for()` calls (use string concatenation instead)
+
+**Combined units + tenants page (complete rewrite of `templates/units.html`):**
+- Single table: Unit, Status, Rent, Service, Tenant Name, Phone, Balance, Actions
+- Inline editing via `<span class="editable" data-entity="..." data-field="..." data-value="...">` — click → input → Enter/blur → fetch POST → JSON response
+- Two JSON endpoints: `POST /units/<unit_id>/field` and `POST /tenants/<tenant_id>/field`
+- Status uses `<select class="status-select">` auto-saves on change
+- All edits log to `audit_log` + `platform_shadow_log`; rent/service changes >10% raise alert + notify owner
+- Fixed Bootstrap select arrow overlap: `padding: 3px 2rem 3px 8px` (preserves Bootstrap's right-padding for arrow icon)
+- `/tenants` redirects to `/units`; Tenants removed from sidebar; `active_nav` consolidated
+
+**Platform guardian system (new):**
+- `src/platform/__init__.py` (empty) + `src/platform/guardian.py` — `platform_log()`, `raise_alert()`, `notify_owner_change()`
+- 3 new DB tables + migrations: `platform_shadow_log`, `tenant_disputes`, `platform_alerts`
+- `POST /tenant/<token>/dispute` — tenant raises dispute directly to platform (bypasses agency)
+- Tenant portal: "Something looks wrong?" card with subject dropdown + message textarea
+- Platform routes: shadow log, disputes (+resolve), alerts (+dismiss), trust score
+- Platform nav: 4 new items; Platform dashboard: 2 new KPI cards (Alerts, Disputes); layout 6-card grid
+- Owner removal triggers `platform_log()` + `raise_alert()` + direct SMS to owner
+
+**Owner wallet stub:**
+- `GET /view/<property_id>/wallet` + `templates/viewer/wallet.html`
+- Balance = total payments − fee − disbursed; 3 KPI cards + dashed stub withdraw card + disbursement history table
+- Wallet tab added to `base_viewer.html` nav
+
+**Doc updates:** `.agent/schema.yaml` (3 new tables), `.agent/routes.yaml` (3 new sections), `CLAUDE.md` (platform structure, patterns, DB rules), `ROADMAP.md` (new completed sections)
+
 #### Session 7 — Payments Feed UX, Demo Data, Org-Scoped Statements, Parse Error Logging (2026-05-12) ✅ COMPLETE
 
 **Payments feed UX:**
@@ -215,7 +252,7 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ## Project Re-entry Overview (for AI agents)
 
-**Last updated:** 2026-05-12
+**Last updated:** 2026-05-13
 **Product:** Domi — property fintech platform, Kenya. Repo name: `rent-reconciliation` (unchanged).
 **Stack:** Python 3.13, Flask 3.0+, SQLite, APScheduler, Jinja2 + Bootstrap 5. Fly.io (Johannesburg).
 

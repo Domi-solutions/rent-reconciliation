@@ -165,3 +165,21 @@ blueprints:
     key_routes:
       - "POST /inbound/sms — Africa's Talking inbound SMS (write-and-return-200)"
       - "POST /inbound/whatsapp — WhatsApp inbound stub (write-and-return-200; full payload parsing when credentials live)"
+
+  platform_guardian_routes:
+    note: "New platform oversight routes added to platform_bp in src/routes/platform_routes.py"
+    key_routes:
+      - "GET /platform/shadow-log — agency-uneditable audit log; ?org_id= filter"
+      - "GET /platform/disputes — tenant disputes (open/resolved); POST /platform/disputes/<id>/resolve"
+      - "GET /platform/alerts — anomaly alerts (open/dismissed); POST /platform/alerts/<id>/dismiss"
+      - "GET /platform/trust — per-agency trust scores (0-100)"
+
+  viewer_wallet:
+    note: "Owner wallet tab added to viewer blueprint in src/routes/viewer_routes.py"
+    key_routes:
+      - "GET /view/<property_id>/wallet — balance, fee, disbursement history; stub withdraw button"
+
+  tenant_dispute:
+    note: "Dispute submission added to tenant blueprint in src/routes/tenant_routes.py"
+    key_routes:
+      - "POST /tenant/<token>/dispute — tenant raises concern; writes to tenant_disputes; goes to platform not agency"

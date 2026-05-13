@@ -42,6 +42,8 @@
          href="{{ url_for('viewer.property_notifications', property_id=property.id) }}">Messages</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'activity' %}active{% endif %}"
          href="{{ url_for('viewer.property_activity', property_id=property.id) }}">Activity</a>
+      <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'wallet' %}active{% endif %}"
+         href="{{ url_for('viewer.property_wallet', property_id=property.id) }}">Wallet</a>
     </nav>
     {% endif %}
   </div>

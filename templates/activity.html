@@ -1,35 +1,69 @@
 {% extends "base.html" %}
-{% block title %}{% if filter_action %}Activity: {{ filter_action.replace('_', ' ')|title }}{% else %}Activity{% endblock %}{% endblock %}
+{% block title %}Activity{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-start mb-4">
   <div>
-    <div class="page-title">{% if filter_action %}{{ filter_action.replace('_', ' ')|title }}{% else %}Activity{% endif %}</div>
-    <div class="page-meta">{% if filter_action %}Entries of this type.{% else %}Audit log — last 200 entries.{% endif %}</div>
+    <div class="page-title">Activity</div>
+    <div class="page-meta">{{ activity_list|length }} entr{{ 'y' if activity_list|length == 1 else 'ies' }}{% if filter_action or from_date or to_date %} — filtered{% endif %}</div>
   </div>
-  {% if filter_action %}
-  <a href="{{ url_for('activity') }}" class="btn btn-outline-secondary btn-sm">Show all</a>
+  {% if filter_action or from_date or to_date %}
+  <a href="{{ url_for('activity') }}" class="btn btn-sm btn-outline-secondary">Clear filters</a>
   {% endif %}
 </div>
+
+{# ── FILTERS ── #}
+<div class="surface-card mb-4" style="padding: 16px 20px;">
+  <form method="get" action="{{ url_for('activity') }}" class="row g-2 align-items-end">
+
+    <div class="col-12 col-md-5">
+      <label class="form-label" style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px;">Activity type</label>
+      <select name="action" class="form-select form-select-sm">
+        <option value="">All types</option>
+        {% for a in action_types %}
+        <option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a.replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <label class="form-label" style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px;">From</label>
+      <input type="date" name="from" class="form-control form-control-sm" value="{{ from_date or '' }}">
+    </div>
+
+    <div class="col-6 col-md-3">
+      <label class="form-label" style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px;">To</label>
+      <input type="date" name="to" class="form-control form-control-sm" value="{{ to_date or '' }}">
+    </div>
+
+    <div class="col-12 col-md-1">
+      <button type="submit" class="btn btn-sm btn-primary w-100">Go</button>
+    </div>
+
+  </form>
+</div>
+
+{# ── RESULTS ── #}
 <div class="surface-card">
   {% if activity_list %}
   {% for r in activity_list %}
-  <a href="{{ url_for('activity', action=r.action) }}" class="text-decoration-none">
+  <a href="{{ url_for('activity', action=r['action']) }}{% if from_date %}&from={{ from_date }}{% endif %}{% if to_date %}&to={{ to_date }}{% endif %}" class="text-decoration-none">
     <div class="data-row">
       <div class="d-flex justify-content-between align-items-start">
         <div>
-          <div class="data-row-unit">{{ r.action.replace('_', ' ')|title }}</div>
-          <div class="data-row-meta">{{ r.user_id or 'System' }}</div>
-          {% if r.details %}<div class="data-row-meta mt-1">{{ r.details }}</div>{% endif %}
+          <div class="data-row-unit">{{ r['action'].replace('_', ' ')|title }}</div>
+          <div class="data-row-meta">{{ r['user_id'] or 'System' }}</div>
+          {% if r['details'] %}<div class="data-row-meta mt-1">{{ r['details'] }}</div>{% endif %}
         </div>
-        <div class="data-row-meta">{{ r.timestamp }}</div>
+        <div class="data-row-meta" style="white-space:nowrap;flex-shrink:0;padding-left:16px;">{{ r['timestamp'] }}</div>
       </div>
     </div>
   </a>
   {% endfor %}
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-title">No activity recorded</div>
-    <div class="empty-state-sub">{% if filter_action %}<a href="{{ url_for('activity') }}">Show all activity</a>{% else %}Changes will appear here as they are recorded.{% endif %}</div>
+    <div class="empty-state-title">No activity found</div>
+    <div class="empty-state-sub"><a href="{{ url_for('activity') }}">Clear filters</a> to see all entries.</div>
   </div>
   {% endif %}
 </div>

@@ -87,6 +87,9 @@ from src.database.db import (
     migrate_add_platform_errors,
     migrate_add_org_scoped_statements,
     migrate_add_statement_parse_errors,
+    migrate_add_platform_shadow_log,
+    migrate_add_tenant_disputes,
+    migrate_add_platform_alerts,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -119,6 +122,9 @@ migrate_add_persons()
 migrate_add_platform_errors()
 migrate_add_org_scoped_statements()
 migrate_add_statement_parse_errors()
+migrate_add_platform_shadow_log()
+migrate_add_tenant_disputes()
+migrate_add_platform_alerts()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -659,6 +665,61 @@ def dashboard():
         )
 
 
+@app.route('/arrears')
+def admin_arrears():
+    """Admin arrears page — all units with outstanding balances."""
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('dashboard'))
+        property_id = property_row['id']
+
+        rows = conn.execute("""
+            SELECT
+                ub.unit_id, ub.unit_number, ub.tenant_name, ub.tenant_phone,
+                ub.monthly_rent, ub.balance,
+                COALESCE(pending.pending_amount, 0) AS pending_amount
+            FROM unit_balances ub
+            LEFT JOIN (
+                SELECT unit_id, SUM(claimed_amount) AS pending_amount
+                FROM payment_claims
+                WHERE property_id = ? AND status = 'pending'
+                GROUP BY unit_id
+            ) pending ON pending.unit_id = ub.unit_id
+            WHERE ub.property_id = ? AND ub.balance > 0
+            ORDER BY ub.balance DESC
+        """, (property_id, property_id)).fetchall()
+
+        from math import ceil
+        arrears = []
+        for r in rows:
+            balance = float(r['balance'])
+            monthly_rent = float(r['monthly_rent'] or 0)
+            pending_amount = float(r['pending_amount'] or 0)
+            arrears.append({
+                'unit_number': r['unit_number'],
+                'tenant_name': r['tenant_name'],
+                'tenant_phone': r['tenant_phone'],
+                'balance': balance,
+                'monthly_rent': monthly_rent,
+                'pending_amount': pending_amount,
+                'projected_balance': max(balance - pending_amount, 0),
+                'months_behind': ceil(balance / monthly_rent) if monthly_rent > 0 else 0,
+            })
+
+        total_arrears = sum(a['balance'] for a in arrears)
+        pending_total = sum(a['pending_amount'] for a in arrears)
+
+        return render_template(
+            'arrears.html',
+            property=property_row,
+            arrears=arrears,
+            total_arrears=total_arrears,
+            pending_total=pending_total,
+            projected_arrears=max(total_arrears - pending_total, 0),
+        )
+
+
 @app.route('/setup', methods=['GET', 'POST'])
 def setup_property():
     """Initial property setup."""
@@ -714,7 +775,8 @@ def manage_units():
 
         where_clause = " AND ".join(conditions)
         units = conn.execute(f"""
-            SELECT u.*, t.name AS tenant_name, t.phone AS tenant_phone, ub.balance
+            SELECT u.*, t.id AS tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
+                   t.access_token, ub.balance
             FROM units u
             LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
             LEFT JOIN unit_balances ub ON ub.unit_id = u.id
@@ -728,6 +790,7 @@ def manage_units():
             units=units,
             filter_status=status_filter or None,
             filter_pending_claims=bool(pending_claims_filter),
+            host_url=request.host_url.rstrip('/'),
         )
 
 
@@ -761,6 +824,96 @@ def set_unit_status(unit_id):
         )
     flash(f"Unit {unit['unit_number']} is now {new_status}.", 'success')
     return redirect(url_for('manage_units'))
+
+
+@app.route('/units/<unit_id>/field', methods=['POST'])
+def edit_unit_field(unit_id):
+    """Inline-edit a single unit field. Returns JSON."""
+    from flask import jsonify
+    data = request.get_json(silent=True) or {}
+    field = data.get('field', '').strip()
+    value = data.get('value', '').strip()
+    allowed = {'unit_number', 'monthly_rent', 'service_charge', 'status'}
+    if field not in allowed:
+        return jsonify(ok=False, error='Invalid field.')
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return jsonify(ok=False, error='No property selected.')
+        unit = conn.execute(
+            "SELECT * FROM units WHERE id = ? AND property_id = ?",
+            (unit_id, property_row['id'])
+        ).fetchone()
+        if not unit:
+            return jsonify(ok=False, error='Unit not found.')
+        if field in ('monthly_rent', 'service_charge'):
+            try:
+                value = float(value)
+                if value < 0:
+                    return jsonify(ok=False, error='Must be 0 or more.')
+            except ValueError:
+                return jsonify(ok=False, error='Must be a number.')
+        elif field == 'status':
+            if value not in ('occupied', 'vacant', 'office'):
+                return jsonify(ok=False, error='Invalid status.')
+        elif field == 'unit_number':
+            if not value:
+                return jsonify(ok=False, error='Unit number cannot be empty.')
+        old_value = unit[field]
+        conn.execute(f"UPDATE units SET {field} = ? WHERE id = ?", (value, unit_id))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('unit_field_edited', 'unit', unit_id,
+             f"Unit {unit['unit_number']} | {field}: {old_value} → {value}", 'admin'),
+        )
+        from src.platform.guardian import platform_log, raise_alert, notify_owner_change
+        org_id = property_row.get('organization_id')
+        platform_log(conn, 'unit_field_edited', 'unit', unit_id,
+                     f"Unit {unit['unit_number']} | {field}: {old_value} → {value}",
+                     org_id=org_id, property_id=property_row['id'])
+        if field in ('monthly_rent', 'service_charge') and old_value and float(old_value) > 0:
+            pct_change = abs(float(value) - float(old_value)) / float(old_value) * 100
+            if pct_change > 10:
+                severity = 'critical' if pct_change > 30 else 'warning'
+                raise_alert(conn, 'rent_changed',
+                            f"Unit {unit['unit_number']}: {field} changed {old_value} → {value} ({pct_change:.0f}%)",
+                            org_id=org_id, property_id=property_row['id'], severity=severity)
+                notify_owner_change(conn, property_row['id'],
+                                    f"Rent change: Unit {unit['unit_number']}",
+                                    f"The {field.replace('_', ' ')} for Unit {unit['unit_number']} has been updated from KES {old_value} to KES {value}.")
+    return jsonify(ok=True, value=str(value))
+
+
+@app.route('/tenants/<tenant_id>/field', methods=['POST'])
+def edit_tenant_field(tenant_id):
+    """Inline-edit a single tenant field. Returns JSON."""
+    from flask import jsonify
+    data = request.get_json(silent=True) or {}
+    field = data.get('field', '').strip()
+    value = data.get('value', '').strip()
+    allowed = {'name', 'phone'}
+    if field not in allowed:
+        return jsonify(ok=False, error='Invalid field.')
+    if field == 'name' and not value:
+        return jsonify(ok=False, error='Name cannot be empty.')
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return jsonify(ok=False, error='No property selected.')
+        tenant = conn.execute(
+            "SELECT * FROM tenants WHERE id = ? AND property_id = ?",
+            (tenant_id, property_row['id'])
+        ).fetchone()
+        if not tenant:
+            return jsonify(ok=False, error='Tenant not found.')
+        old_value = tenant[field]
+        conn.execute(f"UPDATE tenants SET {field} = ? WHERE id = ?", (value, tenant_id))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('tenant_field_edited', 'tenant', tenant_id,
+             f"Tenant {tenant['name']} | {field}: {old_value} → {value}", 'admin'),
+        )
+    return jsonify(ok=True, value=value)
 
 
 @app.route('/units/add', methods=['GET', 'POST'])
@@ -805,33 +958,8 @@ def add_unit():
 
 @app.route('/tenants')
 def manage_tenants():
-    """List tenants with unit."""
-    with get_connection() as conn:
-        property_row = get_current_property(conn)
-        if not property_row:
-            return redirect(url_for('property_list'))
-
-        show_inactive = request.args.get('show_inactive') == '1'
-        status_filter = "IN ('active', 'inactive')" if show_inactive else "= 'active'"
-        sort = request.args.get('sort', 'unit')
-        only_arrears = request.args.get('arrears') == '1'
-
-        arrears_join = "LEFT JOIN unit_balances ub ON ub.unit_id = t.unit_id"
-        arrears_clause = "AND COALESCE(ub.balance, 0) > 0" if only_arrears else ""
-        order_clause = "CAST(REPLACE(u.unit_number, ' ', '') AS TEXT)" if sort == 'unit' else "t.name"
-
-        tenants = conn.execute(f"""
-            SELECT t.*, u.unit_number, COALESCE(ub.balance, 0) as balance
-            FROM tenants t
-            LEFT JOIN units u ON t.unit_id = u.id
-            {arrears_join}
-            WHERE t.property_id = ? AND t.status {status_filter}
-            {arrears_clause}
-            ORDER BY {order_clause}
-        """, (property_row['id'],)).fetchall()
-
-        return render_template('tenants.html', property=property_row, tenants=tenants, show_inactive=show_inactive,
-                               sort=sort, only_arrears=only_arrears)
+    """Redirects to combined units+tenants page."""
+    return redirect(url_for('manage_units'))
 
 
 @app.route('/tenants/add', methods=['GET', 'POST'])
@@ -1025,8 +1153,15 @@ def move_out_tenant(tenant_id):
             ('tenant_moved_out', 'tenant', tenant_id,
              f"Tenant: {tenant['name']} | Unit: {unit_number} | Moved out", 'admin'),
         )
+        from src.platform.guardian import platform_log
+        prop = conn.execute("SELECT organization_id FROM properties WHERE id = ?",
+                            (property_row['id'],)).fetchone()
+        platform_log(conn, 'tenant_moved_out', 'tenant', tenant_id,
+                     f"Tenant {tenant['name']} | Unit {unit_number} | Moved out",
+                     org_id=prop['organization_id'] if prop else None,
+                     property_id=property_row['id'])
     flash(f"{tenant['name']} moved out. Unit {unit_number} is now vacant.", 'success')
-    return redirect(url_for('manage_tenants'))
+    return redirect(url_for('manage_units'))
 
 
 # ============================================================
@@ -1224,6 +1359,8 @@ def delete_owner(owner_id):
 def remove_property_from_owner(owner_id, property_id):
     """Remove a property from an owner's assignments."""
     with get_connection() as conn:
+        owner = conn.execute("SELECT name, phone FROM owners WHERE id = ?", (owner_id,)).fetchone()
+        prop = conn.execute("SELECT name, organization_id FROM properties WHERE id = ?", (property_id,)).fetchone()
         conn.execute(
             "DELETE FROM property_owners WHERE owner_id = ? AND property_id = ?",
             (owner_id, property_id)
@@ -1237,6 +1374,21 @@ def remove_property_from_owner(owner_id, property_id):
             ('property_unassigned', 'owner', owner_id,
              f"Property {property_id} removed from owner {owner_id}", 'admin'),
         )
+        from src.platform.guardian import platform_log, raise_alert
+        from src.messaging.delivery import send_sms
+        org_id = prop['organization_id'] if prop else None
+        owner_name = owner['name'] if owner else owner_id
+        prop_name = prop['name'] if prop else property_id
+        platform_log(conn, 'owner_removed_from_property', 'owner', owner_id,
+                     f"Owner {owner_name} removed from property {prop_name}",
+                     org_id=org_id, property_id=property_id)
+        raise_alert(conn, 'owner_removed',
+                    f"Owner {owner_name} was removed from {prop_name} by the agency.",
+                    org_id=org_id, property_id=property_id, severity='critical')
+        if owner and owner['phone']:
+            send_sms([{'phone': owner['phone']}],
+                     f"Domi: Your access to {prop_name} has been removed by the managing agency. "
+                     f"If this was not expected, contact Domi support.")
     flash('Property removed from owner.', 'success')
     return redirect(url_for('manage_owners'))
 
@@ -2468,21 +2620,37 @@ def search():
 
 @app.route('/activity')
 def activity():
-    """Full audit log; optional filter by action type (?action=charges_generated)."""
+    """Full audit log; filterable by action type, from_date, to_date."""
     filter_action = request.args.get('action', '').strip()
+    from_date = request.args.get('from', '').strip()
+    to_date = request.args.get('to', '').strip()
     with get_connection() as conn:
+        conditions = []
+        params = []
         if filter_action:
-            activity_list = conn.execute("""
-                SELECT * FROM audit_log WHERE action = ? ORDER BY timestamp DESC
-            """, (filter_action,)).fetchall()
-        else:
-            activity_list = conn.execute("""
-                SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 200
-            """).fetchall()
+            conditions.append("action = ?")
+            params.append(filter_action)
+        if from_date:
+            conditions.append("date(timestamp) >= ?")
+            params.append(from_date)
+        if to_date:
+            conditions.append("date(timestamp) <= ?")
+            params.append(to_date)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        activity_list = conn.execute(
+            f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT 500",
+            params
+        ).fetchall()
+        action_types = [r[0] for r in conn.execute(
+            "SELECT DISTINCT action FROM audit_log ORDER BY action"
+        ).fetchall()]
     return render_template(
         'activity.html',
         activity_list=activity_list,
         filter_action=filter_action or None,
+        from_date=from_date or None,
+        to_date=to_date or None,
+        action_types=action_types,
     )
 
 

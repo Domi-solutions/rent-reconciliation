@@ -588,3 +588,33 @@ def new_maintenance(token):
         )
 
     return redirect(url_for('tenant.maintenance', token=token))
+
+
+@tenant_bp.route('/<token>/dispute', methods=['POST'])
+def raise_dispute(token):
+    """Tenant flags a discrepancy — goes directly to platform, not the agency."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        subject = request.form.get('subject', '').strip() or 'Dispute'
+        message = request.form.get('message', '').strip()
+        if not message:
+            from flask import flash
+            flash('Please describe the issue.', 'error')
+            return redirect(url_for('tenant.portal', token=token))
+        org = conn.execute(
+            "SELECT organization_id FROM properties WHERE id = ?", (prop['id'],)
+        ).fetchone()
+        dispute_id = generate_id('DISP')
+        conn.execute(
+            """INSERT INTO tenant_disputes
+                   (id, tenant_id, property_id, org_id, subject, message)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (dispute_id, tenant['id'], prop['id'],
+             org['organization_id'] if org else None, subject, message),
+        )
+    from flask import flash
+    flash('Your concern has been recorded and will be reviewed by Domi.', 'success')
+    return redirect(url_for('tenant.portal', token=token))

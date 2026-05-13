@@ -407,6 +407,23 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] Agent admin routes blueprint (`src/routes/agent_routes.py`)
 - [ ] Wire all briefings to SMS delivery
 
+### Platform Guardian (Session 8 — 2026-05-13) ✅ COMPLETE
+
+- [x] `platform_shadow_log` table — org_id, property_id, action, entity_type, entity_id, details, actor, created_at; agency cannot read or edit
+- [x] `tenant_disputes` table — tenant raises concern directly to platform (bypasses agency): tenant_id, property_id, org_id, subject, message, status, resolved_at, resolution_note
+- [x] `platform_alerts` table — anomaly alerts: org_id, property_id, alert_type, details, severity, status, dismissed_at
+- [x] `src/platform/guardian.py` — `platform_log()`, `raise_alert()`, `notify_owner_change()`
+- [x] `POST /tenant/<token>/dispute` — tenant raises dispute; writes to `tenant_disputes`; flash success (bypasses agency)
+- [x] Tenant portal: "Something looks wrong?" card with subject dropdown + message textarea
+- [x] `GET /platform/shadow-log` — platform-only audit log view; `?org_id=` filter
+- [x] `GET /platform/disputes` + `POST /platform/disputes/<id>/resolve` — dispute queue with resolution notes
+- [x] `GET /platform/alerts` + `POST /platform/alerts/<id>/dismiss` — anomaly alert queue
+- [x] `GET /platform/trust` — per-agency trust score (0–100); computed from open alerts + disputes; color-coded progress bar
+- [x] Platform nav: Alerts, Disputes, Shadow Log, Trust Scores tabs added
+- [x] Platform dashboard: Alerts + Disputes KPI cards added (red/amber thresholds); layout 4→6 cards
+- [x] Rent/service field edits >10% → auto-raise alert + notify owner via `guardian.py`
+- [x] Owner removed from property → `platform_log()` + `raise_alert()` + direct owner SMS
+
 ---
 
 ### Phase 6: Owner Intelligence (SQL-backed Conversational AI)
@@ -430,6 +447,29 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] PDF export
 
 ---
+
+### Admin UX Improvements (Session 8 — 2026-05-13) ✅ COMPLETE
+
+- [x] "Total Arrears" KPI card clickable → dedicated `/arrears` admin page (unit balances + pending claims, months-behind)
+- [x] "Expected Income" KPI card clickable → `/units` page
+- [x] "Pending Claims" stat clickable → `/review?tab=unconfirmed`
+- [x] "Pending Payment Claims" table rows clickable → `/review?tab=unconfirmed`; Assign link uses `stopPropagation()`
+- [x] "Units in Arrears" table rows clickable → `/arrears`
+- [x] "Unassigned Bank Payments" table rows clickable → `/review?tab=unreported`
+- [x] Activity sidebar item: own nav section with type filter + date range filters; filters preserved on row clicks
+- [x] Combined units + tenants page: single table with inline-editable fields (rent, service, tenant name, phone, status); all edits logged to `audit_log` and `platform_shadow_log`
+- [x] Inline editing via `<span class="editable">` + fetch POST to `/units/<id>/field` and `/tenants/<id>/field` (JSON endpoints)
+- [x] Status dropdown fix: `padding-right: 2rem` prevents Bootstrap arrow overlapping text
+- [x] `/tenants` now redirects to `/units`; Tenants removed from sidebar
+
+### Owner Wallet Stub (Session 8 — 2026-05-13) ✅ COMPLETE
+
+- [x] `GET /view/<property_id>/wallet` — balance, fee rate, disbursement history
+- [x] Balance = total verified payments − management fee − total disbursed (computed from existing tables)
+- [x] Three KPI cards: available balance, total collected (all-time + this month), management fee % + disbursed total
+- [x] Dashed-border "Withdraw — coming soon" stub card with disabled button
+- [x] Disbursement history table: period, collected, fee, net, method, status badges, date
+- [x] Wallet tab added to owner viewer nav (`base_viewer.html`)
 
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)

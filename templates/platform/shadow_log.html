@@ -1,0 +1,53 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Shadow Log — Domi Platform{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h4 class="mb-1">Shadow Audit Log</h4>
+    <div style="font-size:13px;color:#718096;">Agency-uneditable record of all sensitive actions.</div>
+  </div>
+  <form method="get" class="d-flex gap-2 align-items-center">
+    <select name="org_id" class="form-select form-select-sm" style="width:auto;">
+      <option value="">All organisations</option>
+      {% for o in orgs %}
+      <option value="{{ o.id }}" {% if org_filter == o.id %}selected{% endif %}>{{ o.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
+    {% if org_filter %}<a href="{{ url_for('platform.shadow_log') }}" class="btn btn-sm btn-outline-secondary">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if rows %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:13px;">
+      <thead class="table-light">
+        <tr>
+          <th style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">When</th>
+          <th style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Action</th>
+          <th style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Organisation</th>
+          <th style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Actor</th>
+          <th style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td style="white-space:nowrap;color:#718096;">{{ r.created_at[:16] }}</td>
+          <td><span class="badge bg-secondary-subtle text-secondary">{{ r.action.replace('_', ' ')|title }}</span></td>
+          <td>{{ r.org_name or '—' }}</td>
+          <td style="color:#718096;">{{ r.actor }}</td>
+          <td style="max-width:400px;">{{ r.details or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm p-5 text-center">
+  <div style="color:#718096;">No shadow log entries yet.</div>
+</div>
+{% endif %}
+{% endblock %}

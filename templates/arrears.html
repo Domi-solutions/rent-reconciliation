@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Arrears — {{ property.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4 d-flex justify-content-between align-items-start">
+  <div>
+    <div class="page-title">Arrears</div>
+    <div class="page-meta">
+      {{ arrears|length }} unit{{ 's' if arrears|length != 1 }} with outstanding balances
+      {% if total_arrears > 0 %} · KES {{ "{:,.0f}".format(total_arrears) }} total{% endif %}
+    </div>
+  </div>
+  <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">Print</button>
+</div>
+
+{% if arrears %}
+
+{% if total_arrears > 0 %}
+<div class="banner-danger mb-2">
+  <strong>{{ arrears|length }} unit{{ 's' if arrears|length != 1 }} owe a total of KES {{ "{:,.0f}".format(total_arrears) }}</strong>
+</div>
+{% endif %}
+
+{% if pending_total > 0 %}
+<div class="banner-warning mb-3">
+  <strong>KES {{ "{:,.0f}".format(pending_total) }}</strong> in pending payments reported.
+  If verified, arrears would be <strong>KES {{ "{:,.0f}".format(projected_arrears) }}</strong>.
+</div>
+{% endif %}
+
+<div class="surface-card">
+  {% for a in arrears %}
+  <div class="data-row">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="data-row-unit">{{ a.unit_number }}</div>
+        <div class="data-row-meta">
+          {{ a.tenant_name or 'No tenant' }}
+          {% if a.tenant_phone %}
+            · <a href="tel:{{ a.tenant_phone }}" class="data-row-meta">{{ a.tenant_phone }}</a>
+          {% endif %}
+        </div>
+        {% if a.monthly_rent > 0 %}
+        <div class="data-row-meta">KES {{ "{:,.0f}".format(a.monthly_rent) }}/mo</div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <div class="data-row-amount amount-danger">
+          KES {{ "{:,.0f}".format(a.balance) }}
+        </div>
+        <div class="data-row-meta">
+          {% if a.months_behind %}~{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }} behind{% endif %}
+        </div>
+        {% if a.pending_amount > 0 %}
+        <div class="mt-1">
+          <span class="status-pending">KES {{ "{:,.0f}".format(a.pending_amount) }} pending</span>
+        </div>
+        <div class="data-row-meta">If verified → KES {{ "{:,.0f}".format(a.projected_balance) }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No arrears</div>
+  <div class="empty-state-sub">All tenants are up to date.</div>
+</div>
+{% endif %}
+{% endblock %}

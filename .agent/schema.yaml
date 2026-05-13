@@ -456,6 +456,52 @@ tables:
       - idx_spe_stmt ON (statement_id)
       - idx_spe_created ON (created_at)
 
+  platform_shadow_log:
+    status: live
+    migration: migrate_add_platform_shadow_log
+    note: "Agency-uneditable record of sensitive actions. Written by src/platform/guardian.py. Never exposed to org admin."
+    columns:
+      id: {type: TEXT, pk: true}
+      org_id: {type: TEXT, fk: organizations.id}
+      property_id: {type: TEXT, fk: properties.id}
+      action: {type: TEXT, required: true}
+      entity_type: {type: TEXT}
+      entity_id: {type: TEXT}
+      details: {type: TEXT}
+      actor: {type: TEXT, default: agency}
+      created_at: {type: DATETIME, default: CURRENT_TIMESTAMP}
+
+  tenant_disputes:
+    status: live
+    migration: migrate_add_tenant_disputes
+    note: "Tenant concerns submitted directly to Domi, bypassing the agency. POST /tenant/<token>/dispute. Visible only to platform team."
+    columns:
+      id: {type: TEXT, pk: true}
+      tenant_id: {type: TEXT, required: true}
+      property_id: {type: TEXT, required: true}
+      org_id: {type: TEXT}
+      subject: {type: TEXT}
+      message: {type: TEXT, required: true}
+      status: {type: TEXT, default: open, values: [open, resolved]}
+      created_at: {type: DATETIME, default: CURRENT_TIMESTAMP}
+      resolved_at: {type: DATETIME}
+      resolution_note: {type: TEXT}
+
+  platform_alerts:
+    status: live
+    migration: migrate_add_platform_alerts
+    note: "Raised automatically on sensitive agency actions (owner_removed = critical; rent_changed >10% = warning/critical)."
+    columns:
+      id: {type: TEXT, pk: true}
+      org_id: {type: TEXT}
+      property_id: {type: TEXT}
+      alert_type: {type: TEXT, required: true}
+      details: {type: TEXT}
+      severity: {type: TEXT, default: warning, values: [warning, critical]}
+      status: {type: TEXT, default: open, values: [open, dismissed]}
+      created_at: {type: DATETIME, default: CURRENT_TIMESTAMP}
+      dismissed_at: {type: DATETIME}
+
 views:
   unit_balances:
     status: live

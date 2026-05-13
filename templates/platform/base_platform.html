@@ -36,6 +36,10 @@
 
 <nav class="platform-nav">
   <a href="{{ url_for('platform.dashboard') }}" class="{% if active_tab == 'dashboard' %}active{% endif %}">Organisations</a>
+  <a href="{{ url_for('platform.alerts') }}" class="{% if active_tab == 'alerts' %}active{% endif %}">Alerts</a>
+  <a href="{{ url_for('platform.disputes') }}" class="{% if active_tab == 'disputes' %}active{% endif %}">Disputes</a>
+  <a href="{{ url_for('platform.shadow_log') }}" class="{% if active_tab == 'shadow_log' %}active{% endif %}">Shadow Log</a>
+  <a href="{{ url_for('platform.trust') }}" class="{% if active_tab == 'trust' %}active{% endif %}">Trust Scores</a>
   <a href="{{ url_for('platform.errors') }}" class="{% if active_tab == 'errors' %}active{% endif %}">Errors</a>
   <a href="{{ url_for('platform.parse_errors_view') }}" class="{% if active_tab == 'parse_errors' %}active{% endif %}">Parse Errors</a>
 </nav>

@@ -93,6 +93,9 @@ Domi is a **financial and operational intelligence layer** — pull → push mod
 rent-reconciliation/
 ├── app.py                    # Flask app, admin routes, blueprint registration, APScheduler init
 ├── src/
+│   ├── platform/
+│   │   ├── __init__.py
+│   │   └── guardian.py       # platform_log(), raise_alert(), notify_owner_change() — platform oversight helpers
 │   ├── agent/
 │   │   ├── coordinator.py    # Orchestrates all scheduled jobs
 │   │   ├── detector.py       # Anomaly detection + task checker + nudges
@@ -145,7 +148,8 @@ rent-reconciliation/
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
 │   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment
-│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html
+│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html
+│   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
 │   ├── owners.html
 │   └── caretakers.html
 ├── scripts/
@@ -174,6 +178,9 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
 - `bank_statements` is **org-scoped** (as of 2026-05-12): new uploads set `org_id`, `property_id` is legacy/nullable. Always query by `WHERE org_id = ?` for new code. `bank_format` is stored at upload time (`cooperative`|`tabular_kes`|`unknown`).
 - `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
+- `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
+- `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
+- `platform_alerts` — anomaly alerts raised on sensitive actions (owner removed = critical; rent changed >10% = warning/critical). Platform dismisses; agency cannot see.
 
 ---
 
@@ -235,6 +242,18 @@ label = bank_display_name('unknown')      # → 'Unknown format'
 # write parser in src/parsers/banks/<bank>.py,
 # add detection branch in detect_bank_statement_format() in pdf_parser.py
 ```
+
+**Platform guardian — call from any route that performs a sensitive agency action:**
+```python
+from src.platform.guardian import platform_log, raise_alert, notify_owner_change
+# Log to shadow log (always):
+platform_log(conn, 'action_name', 'entity_type', entity_id, 'details', org_id=org_id, property_id=pid)
+# Raise an alert visible only to platform:
+raise_alert(conn, 'alert_type', 'details', org_id=org_id, property_id=pid, severity='critical')
+# Notify all owners of a property directly (bypasses agency):
+notify_owner_change(conn, property_id, 'Subject line', 'Body text')
+```
+Sensitive actions that must call guardian: unit field edit (rent/service change >10%), owner removed from property, tenant moved out, payment reversed.
 
 **`detect_bank_statement_format` returns `'unknown'` for unrecognised PDFs** — never silently falls back to `'cooperative'`. An `'unknown'` format is logged as a `format_unknown` parse error and the upload is marked `parse_failed`.
 
