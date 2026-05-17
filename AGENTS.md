@@ -26,61 +26,68 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude Code (payments feed, demo data, org-scoped statements, parse error logging, parser registry)
-**Date:** 2026-05-12
+**Who:** Claude Code (payout security, sidebar restructure, onboarding UX, codebase cleanup)
+**Date:** 2026-05-17
 
 ### What was completed this session
 
-**Payments feed UX:**
-- "Collected This Month" card on dashboard is now clickable → `/review?tab=confirmed`
-- Confirmed tab redesigned as scrolling M-Pesa-style feed (amount bold, tenant/unit/ref/badge per row)
-- "Manual" badge renamed to "Bank"
+**Payout account security (beneficiary fraud prevention):**
+- `migrate_add_payout_fields` — 5 new columns on `owners`: `payout_mpesa`, `payout_confirmed`, `payout_active_at`, `payout_otp`, `payout_otp_expires_at`
+- `payout_mpesa` is owner-write-only via portal OTP flow — admin has zero write path
+- `POST /view/<property_id>/payout/request-otp` + `confirm-otp` — OTP via SMS → 48h hold before disbursements activate
+- `_get_confirmed_payout_owner()` in `disbursements.py` — hard-blocks disbursements until confirmed + hold passed; raises ValueError + critical platform alert if none found
+- `templates/viewer/wallet.html` — full payout account UI (4 states: unset/pending_otp/hold/active)
 
-**Demo data:**
-- `scripts/seed_demo_payments.py` — 132 rent charges, 12 statements, 56 payments, realistic scenarios (clean payers, late, missed month, partial, catchup, underpay) across Agency Alfa and Agency Beta
+**Admin sidebar restructure:**
+- New order: Overview → Units → Payments → Messages → Bank Statements → Water Charges → Reports → Activity → (Monthly) Monthly Workflow → (Setup) Caretakers → Owners
+- Water Charges added as dedicated sidebar item
+- Monthly Workflow elevated from Tools footer into labeled Monthly section
 
-**Org-scoped bank statements:**
-- `bank_statements` now has `org_id` and `bank_format` columns (migration: `migrate_add_org_scoped_statements`)
-- Upload/reparse/verify/review routes all query by `org_id`, not `property_id`
-- One statement upload covers all properties in the org
+**Monthly Workflow status indicators:**
+- `tools_index()` route now queries DB per-step completion timestamps
+- Each of 5 steps shows green (done this month) or red (needs doing); Step 4 Verify Payments was missing and is now added
+- Unassigned credit count shown on Step 4 with direct link
 
-**Parse error logging (real, not stub):**
-- `statement_parse_errors` table — every parse failure logged with org_id, statement_id, filename, file_path, bank_format, error_type, error_message, raw_text, page_number
-- Parse Errors tab in review.html shows real data from DB
-- Platform dashboard: 4th stat card (7d parse error count, amber)
-- `GET /platform/parse-errors` — all errors across all orgs, org filter, View PDF button
-- `GET /platform/statements/<id>/pdf` — serves stored PDF via `send_file()`
-- `templates/platform/parse_errors.html` — new full-page table
+**New user onboarding:**
+- Setup checklist card on dashboard (3 steps: add owners, add caretaker, run workflow); auto-dismisses when all done
+- Actionable empty states on: Payments confirmed tab, Bank Statements page, Unreported credits tab
 
-**Multi-bank parser registry:**
-- `src/parsers/banks/registry.py` — `BANK_DISPLAY_NAMES`, `bank_display_name()`, `SUPPORTED_FORMATS`
-- `detect_bank_statement_format()` now returns `'unknown'` instead of silently falling back to `'cooperative'`
-- Unknown format → `format_unknown` parse error logged → statement marked `parse_failed`
-- Adding a new bank = one file in `src/parsers/banks/` + one entry in `registry.py` + one detection branch in `pdf_parser.py`
-
-**Bug fix:**
-- Fixed `AttributeError: 'sqlite3.Row' object has no attribute 'get'` — 6 locations in `app.py`; `.get()` replaced with bracket access + conditional throughout
+**Codebase cleanup:**
+- `src/utils/phone.py` created — `normalize_to_e164()` + `normalize_to_daraja()`, single source of truth
+- Removed 4 duplicate `_normalize_phone` definitions from viewer_routes, tenant_routes, owner_routes, delivery.py
+- `daraja.py` now imports `normalize_to_daraja` from utils instead of defining its own
+- Deleted `src/validation/` (orphaned module — `validate_balance_checksum` was already in pdf_parser.py)
+- `test_routes.py` CRUD routes gated behind `ENVIRONMENT != production` in app.py
+- Moved screenshots to `docs/screenshots/`, bank PDF to `data/input/`, DB backups to `backups/`
+- Archived `scripts/start_tunnel.sh` to `scripts/archived/` (replaced by Fly.io)
+- `src/routes/owner_routes.py` documented in `.agent/routes.yaml`
 
 ### Pick up next
 
-1. **Full end-to-end test run:** upload a real bank statement for one of the demo properties, verify claims auto-match, check parse errors surface correctly, confirm payments show in the feed.
+1. **Full end-to-end test run:** fresh property → bank statement workflow → SMS sandbox → M-Pesa STK Push sandbox → disbursement sandbox
 2. **Phase 4 (The Conversation):** LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md`
 3. **Phase 5 (The Coordinator):** admin task feed, anomaly detection, caretaker morning briefing
 4. **Phase H:** WhatsApp live channel (gated on Meta approval — apply now)
 5. When ready to flip AT_USERNAME to live: read `memory/project_go_live_messaging_checklist.md` first
 
 ### Key files changed this session
-- `app.py` — upload_statement, manage_statements, reparse_statement, verify_payments, review, dashboard routes
-- `src/database/db.py` — migrate_add_org_scoped_statements, migrate_add_statement_parse_errors
-- `src/parsers/pdf_parser.py` — detect_bank_statement_format returns 'unknown'; parse_bank_statement fails fast on unknown
-- `src/parsers/banks/__init__.py`, `src/parsers/banks/registry.py` — new bank format registry
-- `src/routes/platform_routes.py` — parse_errors_view, download_statement_pdf, dashboard parse error count
-- `templates/platform/parse_errors.html` — new
-- `templates/platform/dashboard.html` — 4-card layout with parse errors
-- `templates/platform/base_platform.html` — Parse Errors nav link
-- `templates/review.html` — confirmed tab feed UX, real parse errors tab
-- `templates/statements.html` — bank format badge, parse error count badge, parse_failed status
-- `scripts/seed_demo_payments.py` — new demo data seeder
+- `src/utils/phone.py` — new canonical phone normalizer (normalize_to_e164, normalize_to_daraja)
+- `src/routes/viewer_routes.py`, `tenant_routes.py`, `owner_routes.py` — removed local normalizers, import from utils
+- `src/messaging/delivery.py` — removed local normalizer, import from utils
+- `src/payments/daraja.py` — removed local normalize_phone, import from utils
+- `src/database/db.py` — migrate_add_payout_fields
+- `src/routes/viewer_routes.py` — payout OTP routes, property_wallet updated
+- `src/payments/disbursements.py` — _get_confirmed_payout_owner guard
+- `app.py` — tools_index() rewritten; test_bp gated; dashboard setup checklist
+- `templates/viewer/wallet.html` — payout account management UI
+- `templates/base.html` — sidebar restructure + active_nav update
+- `templates/tools_index.html` — 5-step workflow with green/red status
+- `templates/dashboard.html` — setup checklist card
+- `templates/review.html`, `statements.html` — actionable empty states
+- `.agent/schema.yaml` — payout columns on owners table
+- `.agent/routes.yaml` — owner blueprint added, payout routes added
+- `ROADMAP.md` — payout security + admin UX sections marked complete
+- `CURSOR_PATTERNS.md` — Session 4 entries (COUNT None, payout ownership, workflow status pattern)
 
 ---
 

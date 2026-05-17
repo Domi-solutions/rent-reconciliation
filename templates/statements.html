@@ -66,8 +66,16 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" class="text-muted" style="padding: 32px 16px; text-align: center;">
-          No statements yet. Upload one above.
+        <td colspan="7" style="padding: 40px 16px; text-align: center;">
+          <div style="font-weight: 600; font-size: 15px; margin-bottom: 6px;">No bank statements uploaded yet</div>
+          <div class="data-row-meta" style="max-width: 420px; margin: 0 auto 16px;">
+            Upload a PDF bank statement to import M-Pesa transactions and begin matching payments to tenants.
+            This is Step 3 of the monthly workflow.
+          </div>
+          <a href="{{ url_for('upload_statement') }}" class="btn btn-primary btn-sm">Upload your first statement →</a>
+          <div class="mt-2">
+            <a href="{{ url_for('tools_index') }}" class="data-row-meta" style="font-size: 12px;">See the full monthly workflow →</a>
+          </div>
         </td>
       </tr>
       {% endfor %}

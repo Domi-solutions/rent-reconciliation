@@ -175,15 +175,21 @@ tables:
 
   owners:
     status: live
-    migration: migrate_add_owners
+    migration: migrate_add_owners + migrate_add_payout_fields
+    note: "payout_mpesa is OWNER-WRITE-ONLY via portal OTP flow. Admin has zero write path to this field. See payout security architecture in CLAUDE.md."
     columns:
       id: {type: TEXT, pk: true}
       name: {type: TEXT, required: true}
-      phone: {type: TEXT}
+      phone: {type: TEXT, note: "Contact phone — separate from payout_mpesa"}
       email: {type: TEXT}
       password_hash: {type: TEXT}
       access_token: {type: TEXT, unique: true}
       notes: {type: TEXT}
+      payout_mpesa: {type: TEXT, nullable: true, added_by: migrate_add_payout_fields, note: "Owner's M-Pesa number for disbursements. Set only via OTP-verified portal flow. Admin cannot write this field."}
+      payout_confirmed: {type: INTEGER, default: 0, added_by: migrate_add_payout_fields, note: "1 = OTP verified. Disbursements blocked until 1 AND payout_active_at <= now()"}
+      payout_active_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_payout_fields, note: "48h hold after OTP confirmation. Disbursements blocked until this timestamp passes."}
+      payout_otp: {type: TEXT, nullable: true, added_by: migrate_add_payout_fields, note: "6-digit OTP in transit. Cleared after verification or expiry."}
+      payout_otp_expires_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_payout_fields, note: "OTP expiry (10 minutes from generation). After expiry, owner must request new OTP."}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   property_owners:

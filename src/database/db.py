@@ -1143,3 +1143,20 @@ def migrate_add_platform_alerts():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pa_org ON platform_alerts(org_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pa_status ON platform_alerts(status)")
     print("Migration complete: platform_alerts table ready.")
+
+
+def migrate_add_payout_fields():
+    """Add owner payout account fields. Only the owner can set these via their portal. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(owners)").fetchall()]
+        if 'payout_mpesa' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN payout_mpesa TEXT")
+        if 'payout_confirmed' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN payout_confirmed INTEGER DEFAULT 0")
+        if 'payout_active_at' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN payout_active_at TIMESTAMP")
+        if 'payout_otp' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN payout_otp TEXT")
+        if 'payout_otp_expires_at' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN payout_otp_expires_at TIMESTAMP")
+    print("Migration complete: owner payout fields ready.")

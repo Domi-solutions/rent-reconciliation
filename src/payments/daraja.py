@@ -13,6 +13,8 @@ from datetime import datetime
 import urllib.request
 import urllib.error
 
+from src.utils.phone import normalize_to_daraja as normalize_phone
+
 logger = logging.getLogger(__name__)
 
 SANDBOX_BASE = "https://sandbox.safaricom.co.ke"
@@ -41,16 +43,6 @@ def _get_access_token():
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         raise RuntimeError(f"Daraja OAuth failed ({e.code}): {body}") from e
-
-
-def normalize_phone(phone: str) -> str:
-    """Convert Kenyan phone to international format without + (e.g. 0712... → 254712...)."""
-    phone = phone.strip().replace(" ", "").replace("-", "")
-    if phone.startswith("+"):
-        phone = phone[1:]
-    if phone.startswith("07") or phone.startswith("01"):
-        phone = "254" + phone[1:]
-    return phone
 
 
 def stk_push(phone: str, amount: int, account_ref: str, description: str) -> dict:

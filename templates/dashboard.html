@@ -17,6 +17,64 @@
   <div class="page-meta">{{ rentable_units }} units · {{ stats.occupancy_rate }}% occupied</div>
 </div>
 
+{# SETUP CHECKLIST — shown until all three steps are complete #}
+{% if show_setup_checklist %}
+<div class="surface-card mb-4" style="border: 1px solid #e0e7ff; background: #f8f9ff;">
+  <div style="padding: 16px 20px 12px;">
+    <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Get started — 3 steps to set up your property</div>
+    <div class="data-row-meta">Complete these once and the checklist disappears.</div>
+  </div>
+  <div style="border-top: 1px solid #e0e7ff;">
+
+    <a href="{{ url_for('manage_owners') }}"
+       class="d-flex align-items-center text-decoration-none"
+       style="padding: 12px 20px; border-bottom: 1px solid #e0e7ff; gap: 14px;
+              color: {% if setup_checklist.has_owner %}var(--ink-3){% else %}var(--ink){% endif %};">
+      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+                  {% if setup_checklist.has_owner %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
+        {% if setup_checklist.has_owner %}✓{% else %}1{% endif %}
+      </div>
+      <div>
+        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_owner %}text-decoration: line-through; opacity: 0.6;{% endif %}">Add property owners</div>
+        <div class="data-row-meta" style="font-size: 12px;">Link the owner(s) who will receive disbursements and view reports.</div>
+      </div>
+      {% if not setup_checklist.has_owner %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
+    </a>
+
+    <a href="{{ url_for('manage_caretakers') }}"
+       class="d-flex align-items-center text-decoration-none"
+       style="padding: 12px 20px; border-bottom: 1px solid #e0e7ff; gap: 14px;
+              color: {% if setup_checklist.has_caretaker %}var(--ink-3){% else %}var(--ink){% endif %};">
+      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+                  {% if setup_checklist.has_caretaker %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
+        {% if setup_checklist.has_caretaker %}✓{% else %}2{% endif %}
+      </div>
+      <div>
+        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_caretaker %}text-decoration: line-through; opacity: 0.6;{% endif %}">Add a caretaker</div>
+        <div class="data-row-meta" style="font-size: 12px;">Caretakers report payments and receive daily briefings via SMS.</div>
+      </div>
+      {% if not setup_checklist.has_caretaker %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
+    </a>
+
+    <a href="{{ url_for('tools_index') }}"
+       class="d-flex align-items-center text-decoration-none"
+       style="padding: 12px 20px; gap: 14px;
+              color: {% if setup_checklist.has_charges %}var(--ink-3){% else %}var(--ink){% endif %};">
+      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+                  {% if setup_checklist.has_charges %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
+        {% if setup_checklist.has_charges %}✓{% else %}3{% endif %}
+      </div>
+      <div>
+        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_charges %}text-decoration: line-through; opacity: 0.6;{% endif %}">Run the monthly workflow</div>
+        <div class="data-row-meta" style="font-size: 12px;">Generate charges, upload a bank statement, and verify payments.</div>
+      </div>
+      {% if not setup_checklist.has_charges %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
+    </a>
+
+  </div>
+</div>
+{% endif %}
+
 {# GENERATE CHARGES HINT #}
 {% if show_generate_charges_hint %}
 <div class="alert-banner mb-4">

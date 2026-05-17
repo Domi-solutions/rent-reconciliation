@@ -8,6 +8,14 @@
   <div class="page-meta">Rent collected, management fee, and disbursements for {{ property.name }}.</div>
 </div>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="alert alert-{{ 'danger' if cat == 'error' else 'success' }} alert-dismissible" role="alert">
+    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+{% endwith %}
+
 {# ── Balance summary ── #}
 <div class="row g-3 mb-4">
   <div class="col-sm-4">
@@ -35,20 +43,79 @@
   </div>
 </div>
 
-{# ── Withdraw stub ── #}
-<div class="surface-card mb-4" style="padding: 20px; border: 1px dashed var(--border);">
-  <div class="d-flex justify-content-between align-items-center">
-    <div>
-      <div style="font-weight: 600; font-size: 15px;">Withdraw to M-Pesa / Bank</div>
-      <div class="data-row-meta mt-1">
-        Direct disbursement to your registered M-Pesa or bank account is coming soon.
-        Your balance of <strong>KES {{ "{:,.0f}".format(balance) }}</strong> will be transferable once the payment rail is live.
-      </div>
-    </div>
-    <button class="btn btn-primary" disabled style="white-space: nowrap; opacity: 0.5; cursor: not-allowed;">
-      Withdraw — coming soon
-    </button>
+{# ── Payout account ── #}
+<div class="surface-card mb-4" style="padding: 20px;">
+  <div style="font-weight: 600; font-size: 15px; margin-bottom: 12px;">Payout Account</div>
+
+  {% set otp_step = request.args.get('otp_step') == '1' %}
+
+  {% if payout_status == 'active' %}
+  {# Active account — show number and allow change #}
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <span class="badge bg-success" style="font-size: 13px;">Active</span>
+    <span style="font-size: 15px; font-weight: 500;">{{ payout_mpesa }}</span>
   </div>
+  <div class="data-row-meta mb-3">Disbursements will be sent to this M-Pesa number.</div>
+  <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#changePayoutForm">
+    Change payout number
+  </button>
+  <div class="collapse mt-3" id="changePayoutForm">
+    <form method="post" action="{{ url_for('viewer.payout_request_otp', property_id=property.id) }}">
+      <div class="mb-2" style="max-width: 280px;">
+        <label class="form-label" style="font-size: 13px;">New M-Pesa number</label>
+        <input type="tel" name="payout_mpesa" class="form-control form-control-sm" placeholder="0712 345 678" required>
+      </div>
+      <div class="data-row-meta mb-2">A verification code will be sent to the new number.</div>
+      <button type="submit" class="btn btn-sm btn-primary">Send verification code</button>
+    </form>
+  </div>
+
+  {% elif payout_status == 'hold' %}
+  {# Confirmed but in 48h hold #}
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <span class="badge bg-warning text-dark" style="font-size: 13px;">Hold — activates {{ payout_active_at[:16] }}</span>
+    <span style="font-size: 15px; font-weight: 500;">{{ payout_mpesa }}</span>
+  </div>
+  <div class="data-row-meta">
+    Your payout account is confirmed and will be active for disbursements after the 48-hour security hold.
+    If you did not set this, contact us immediately.
+  </div>
+
+  {% elif payout_status == 'pending_otp' or otp_step %}
+  {# OTP was sent, waiting for confirmation #}
+  <div class="data-row-meta mb-3">
+    A 6-digit code was sent to <strong>{{ payout_mpesa }}</strong>. Enter it below to confirm.
+  </div>
+  <form method="post" action="{{ url_for('viewer.payout_confirm_otp', property_id=property.id) }}" style="max-width: 320px;">
+    <div class="mb-2">
+      <label class="form-label" style="font-size: 13px;">Verification code</label>
+      <input type="text" name="otp" class="form-control form-control-sm" placeholder="6-digit code"
+             maxlength="6" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary">Confirm payout account</button>
+  </form>
+  <div class="mt-3">
+    <a href="{{ url_for('viewer.property_wallet', property_id=property.id) }}" class="data-row-meta">
+      ← Start over with a different number
+    </a>
+  </div>
+
+  {% else %}
+  {# No payout account set #}
+  <div class="alert alert-warning" style="font-size: 13px; margin-bottom: 16px;">
+    <strong>No payout account set.</strong>
+    Disbursements cannot be processed until you register and verify an M-Pesa number below.
+    Your property manager cannot set this on your behalf.
+  </div>
+  <form method="post" action="{{ url_for('viewer.payout_request_otp', property_id=property.id) }}" style="max-width: 280px;">
+    <div class="mb-2">
+      <label class="form-label" style="font-size: 13px;">Your M-Pesa number</label>
+      <input type="tel" name="payout_mpesa" class="form-control form-control-sm" placeholder="0712 345 678" required>
+    </div>
+    <div class="data-row-meta mb-2">A verification code will be sent to this number to confirm it's yours.</div>
+    <button type="submit" class="btn btn-sm btn-primary">Send verification code</button>
+  </form>
+  {% endif %}
 </div>
 
 {# ── Disbursement history ── #}
@@ -64,6 +131,7 @@
         <th class="text-end">Collected</th>
         <th class="text-end">Fee</th>
         <th class="text-end">Net to you</th>
+        <th>Sent to</th>
         <th>Method</th>
         <th>Status</th>
         <th>Date</th>
@@ -76,6 +144,7 @@
         <td class="text-end">{{ "{:,.0f}".format(d.total_collected) }}</td>
         <td class="text-end" style="color: var(--ink-2);">{{ "{:,.0f}".format(d.fee_amount) }}</td>
         <td class="text-end" style="font-weight: 600;">{{ "{:,.0f}".format(d.net_amount) }}</td>
+        <td style="font-size: 12px; color: var(--ink-2);">{{ d.recipient_account or '—' }}</td>
         <td>{{ d.method or '—' }}</td>
         <td>
           {% if d.status == 'completed' %}
@@ -96,7 +165,7 @@
   {% else %}
   <div class="empty-state">
     <div class="empty-state-title">No disbursements yet</div>
-    <div class="empty-state-sub">Disbursements will appear here once the payment rail is live.</div>
+    <div class="empty-state-sub">Disbursements will appear here once your payout account is active and the payment rail goes live.</div>
   </div>
   {% endif %}
 </div>

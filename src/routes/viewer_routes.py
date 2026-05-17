@@ -10,12 +10,15 @@ Auth model:
     who lands on /view without a valid session
 """
 import json
-from datetime import datetime
+import random
+import string
+from datetime import datetime, timedelta, timezone
 from math import ceil
 
-from flask import Blueprint, render_template, abort, request, redirect, session, url_for
+from flask import Blueprint, render_template, abort, request, redirect, session, url_for, flash
 from src.database.db import get_connection
 from src.reports.landlord_report import enrich_report_data
+from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 viewer_bp = Blueprint('viewer', __name__, url_prefix='/view')
 
@@ -874,6 +877,11 @@ def property_wallet(property_id):
         if not access:
             abort(403)
 
+        owner = conn.execute(
+            "SELECT payout_mpesa, payout_confirmed, payout_active_at FROM owners WHERE id = ?",
+            (owner_id,)
+        ).fetchone()
+
         fee_rate = float(prop['management_fee_rate'] or 0.08)
 
         total_collected = float(conn.execute(
@@ -901,6 +909,16 @@ def property_wallet(property_id):
             (property_id, this_month)
         ).fetchone()[0])
 
+    now = datetime.now(timezone.utc)
+    payout_status = 'unset'
+    if owner and owner['payout_mpesa'] and owner['payout_confirmed']:
+        if owner['payout_active_at'] and owner['payout_active_at'] > now.strftime('%Y-%m-%d %H:%M:%S'):
+            payout_status = 'hold'
+        else:
+            payout_status = 'active'
+    elif owner and owner['payout_mpesa'] and not owner['payout_confirmed']:
+        payout_status = 'pending_otp'
+
     return render_template(
         'viewer/wallet.html',
         property=prop,
@@ -912,4 +930,113 @@ def property_wallet(property_id):
         total_disbursed=total_disbursed,
         disbursements=disbursements,
         month_collected=month_collected,
+        payout_mpesa=owner['payout_mpesa'] if owner else None,
+        payout_status=payout_status,
+        payout_active_at=owner['payout_active_at'] if owner else None,
     )
+
+
+@viewer_bp.route('/<property_id>/payout/request-otp', methods=['POST'])
+def payout_request_otp(property_id):
+    """Owner requests OTP to verify a new M-Pesa payout number."""
+    owner_id = session.get('owner_id')
+    with get_connection() as conn:
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        raw_phone = request.form.get('payout_mpesa', '').strip()
+        if not raw_phone:
+            flash('Please enter a phone number.', 'error')
+            return redirect(url_for('viewer.property_wallet', property_id=property_id))
+
+        phone = _normalize_phone(raw_phone)
+        if not phone or not phone.startswith('+254') or len(phone) != 13:
+            flash('Enter a valid Kenyan M-Pesa number (e.g. 0712 345 678).', 'error')
+            return redirect(url_for('viewer.property_wallet', property_id=property_id))
+
+        otp = ''.join(random.choices(string.digits, k=6))
+        expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            "UPDATE owners SET payout_mpesa = ?, payout_confirmed = 0, payout_otp = ?, payout_otp_expires_at = ? WHERE id = ?",
+            (phone, otp, expires, owner_id),
+        )
+
+    from src.messaging.delivery import send_sms
+    send_sms(
+        [{'phone': phone}],
+        f"Domi verification code: {otp}. Valid 10 minutes. Enter this on the Domi owner portal to confirm your payout account."
+    )
+
+    flash(f'A 6-digit code was sent to {phone}. Enter it below to confirm.', 'success')
+    return redirect(url_for('viewer.property_wallet', property_id=property_id) + '?otp_step=1')
+
+
+@viewer_bp.route('/<property_id>/payout/confirm-otp', methods=['POST'])
+def payout_confirm_otp(property_id):
+    """Owner submits OTP to activate their payout account."""
+    owner_id = session.get('owner_id')
+    with get_connection() as conn:
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        owner = conn.execute(
+            "SELECT name, phone, payout_mpesa, payout_otp, payout_otp_expires_at FROM owners WHERE id = ?",
+            (owner_id,)
+        ).fetchone()
+        if not owner or not owner['payout_otp']:
+            flash('No pending verification. Please request a new code.', 'error')
+            return redirect(url_for('viewer.property_wallet', property_id=property_id))
+
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        if owner['payout_otp_expires_at'] < now:
+            flash('That code has expired. Please request a new one.', 'error')
+            return redirect(url_for('viewer.property_wallet', property_id=property_id) + '?otp_step=1')
+
+        submitted = request.form.get('otp', '').strip()
+        if submitted != owner['payout_otp']:
+            flash('Incorrect code. Please try again.', 'error')
+            return redirect(url_for('viewer.property_wallet', property_id=property_id) + '?otp_step=1')
+
+        # OTP correct — activate after 48-hour hold
+        active_at = (datetime.now(timezone.utc) + timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            "UPDATE owners SET payout_confirmed = 1, payout_active_at = ?, payout_otp = NULL, payout_otp_expires_at = NULL WHERE id = ?",
+            (active_at, owner_id),
+        )
+
+        # Raise a platform alert so operator can verify before first disbursement
+        prop = conn.execute("SELECT name, organization_id FROM properties WHERE id = ?", (property_id,)).fetchone()
+        from src.platform.guardian import platform_log, raise_alert
+        platform_log(conn, 'payout_account_set', 'owner', owner_id,
+                     f"Owner '{owner['name']}' set payout M-Pesa to {owner['payout_mpesa']}. "
+                     f"Active after 48h hold at {active_at}.",
+                     org_id=prop['organization_id'] if prop else None, property_id=property_id)
+        raise_alert(conn, 'payout_account_set',
+                    f"Owner '{owner['name']}' registered payout M-Pesa {owner['payout_mpesa']} "
+                    f"for {prop['name'] if prop else property_id}. "
+                    f"48-hour hold in effect — active at {active_at}. Verify identity before first disbursement.",
+                    org_id=prop['organization_id'] if prop else None,
+                    property_id=property_id, severity='critical')
+
+    # Warn the previous contact phone if it differs from the new payout number
+    if owner['phone'] and owner['phone'] != owner['payout_mpesa']:
+        from src.messaging.delivery import send_sms
+        send_sms(
+            [{'phone': owner['phone']}],
+            f"Domi: A payout account ({owner['payout_mpesa']}) was registered on your Domi owner profile. "
+            f"It will become active in 48 hours. If this was not you, contact us immediately."
+        )
+
+    flash(
+        f'Payout account {owner["payout_mpesa"]} confirmed. It will be active for disbursements in 48 hours.',
+        'success'
+    )
+    return redirect(url_for('viewer.property_wallet', property_id=property_id))

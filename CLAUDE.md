@@ -130,10 +130,10 @@ rent-reconciliation/
 │   │   ├── delivery.py       # send_sms(), phone normalizer (07xx → +2547xx)
 │   │   ├── owner_notify.py   # notify_property_owners()
 │   │   └── reminders.py      # Due-date reminder generation
-│   ├── payments/             # Phase G — planned
+│   ├── payments/             # Phase G — COMPLETE
 │   │   ├── daraja.py         # STK Push (initiate), B2C (disburse to landlord)
 │   │   ├── pesapal.py        # Card checkout integration
-│   │   └── disbursements.py  # calculate_disbursement(), execute_disbursement()
+│   │   └── disbursements.py  # calculate_disbursement(), execute_disbursement(); _get_confirmed_payout_owner() guards disbursements — raises ValueError + critical alert if no confirmed owner found
 │   ├── database/
 │   │   ├── db.py             # get_connection(), generate_id(), all migrations
 │   │   └── schema.sql
@@ -181,6 +181,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
 - `platform_alerts` — anomaly alerts raised on sensitive actions (owner removed = critical; rent changed >10% = warning/critical). Platform dismisses; agency cannot see.
+- `owners.payout_mpesa` — **admin has zero write path to this field**. It is set exclusively by the owner via portal OTP flow (`POST /view/<property_id>/payout/request-otp` → `confirm-otp`). Disbursements are hard-blocked until `payout_confirmed=1` AND `payout_active_at <= now()` (48-hour hold after OTP confirmation). See `_get_confirmed_payout_owner()` in `disbursements.py`.
 
 ---
 
@@ -263,6 +264,9 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
+Full migration call order in `app.py` startup (append-only, never reorder):
+`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day`
+
 ---
 
 ## User Roles
@@ -302,6 +306,30 @@ from src.database.db import migrate_add_charge_type  # etc.
 - Always call `enrich_report_data()` before rendering — back-fills fields on old saved reports
 - Collection metric: `total_verified / expected_monthly_income * 100` — NOT verified ÷ period charges (misleadingly low mid-month)
 - PDF export: `window.print()` — no server-side generation
+
+---
+
+## Admin Sidebar Structure
+
+The sidebar in `base.html` follows a frequency-of-use philosophy. Never reorder without understanding the rationale.
+
+**Main section (daily use):** Overview → Units → Payments → Messages → Bank Statements → Water Charges → Reports → Activity
+
+**Monthly section (labeled):** Monthly Workflow only — links to `tools_index` route which shows live green/red status for each of the 5 workflow steps (Water Charges → Generate Charges → Upload Bank Statement → Verify Payments → Export & Report). Status is green if the step was completed in the current `YYYY-MM` period, red otherwise.
+
+**Setup section (labeled, touch-once):** Caretakers → Owners
+
+**Footer:** Tools & Settings (parser test tools, onboard property) → Log out
+
+`active_nav` is derived from `request.endpoint` via a chained Jinja2 ternary at the top of `base.html`. When adding a new route that should highlight a sidebar item, add the endpoint to the correct `active_nav` branch.
+
+---
+
+## New User Onboarding
+
+**Setup checklist on dashboard (`dashboard.html`):** Shown when `show_setup_checklist=True` (set in `dashboard()` route when `not (has_owner and has_caretaker and has_charges)`). Three linked steps: (1) Add property owners, (2) Add a caretaker, (3) Run monthly workflow. Each step shows a green ✓ and strikethrough text once its condition is met. The entire card disappears once all three conditions are satisfied. This is a live DB check on every dashboard load — no dismissal button needed.
+
+**Empty states:** Key pages (Payments confirmed tab, Bank Statements, Unreported credits) have actionable empty states with context about next steps and links to the relevant workflow step — not just "nothing here yet."
 
 ---
 
@@ -396,6 +424,15 @@ Outbound proactive messages require Meta-approved templates (plain text, `{{1}}`
 **`src/payments/`:** `daraja.py` (STK Push + B2C), `pesapal.py` (card), `disbursements.py`. Payment modules never import from `src/agent/` or route files — write to DB and return.
 
 **`src/routes/payment_routes.py`** — `url_prefix='/inbound/payment'`. Routes exempt from admin auth. Always write-and-return-200; never block on processing.
+
+**Payout account security model (beneficiary substitution fraud prevention):**
+The threat: a malicious admin or AI agent creates a fake owner, assigns them to a property, and sets their M-Pesa number to redirect disbursements. The defence is separation of control:
+- `owners.phone` = contact phone (admin-writable)
+- `owners.payout_mpesa` = disbursement destination (owner-write-only, never admin-writable)
+- Owner sets `payout_mpesa` via portal OTP flow: requests OTP → SMS to submitted number (proves SIM ownership) → confirms OTP → 48-hour hold before disbursements activate
+- `_get_confirmed_payout_owner(conn, property_id)` in `disbursements.py` enforces: `payout_confirmed=1` AND `payout_active_at <= now()`. If no owner passes both checks → `ValueError` + critical platform alert → disbursement blocked.
+- On payout number change: SMS warning sent to the previous number so compromised accounts get notified.
+- This model means a fraudulent owner created by a rogue admin cannot receive funds without also controlling the target M-Pesa SIM.
 
 **New tables** (full schema in `.agent/schema.yaml`):
 - `payment_transactions` — raw Daraja/Pesapal callbacks; `external_reference` UNIQUE (dedup key); FK to `payments.id` set when processed

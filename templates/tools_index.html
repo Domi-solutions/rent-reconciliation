@@ -10,30 +10,101 @@
 
   <div class="col-12">
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
-      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow</h6>
+      <div class="d-flex justify-content-between align-items-center">
+        <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow — {{ period }}</h6>
+        <div style="font-size: 11px; color: var(--ink-3); display: flex; gap: 12px; align-items: center;">
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Done this month</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>Needs attention</span>
+        </div>
+      </div>
     </div>
     <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
       <div class="row g-0">
-        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
-          <div class="data-row-unit mb-1">Upload Water Charges</div>
-          <div class="data-row-meta mb-3">Step 1 — Upload meter readings for the month before generating charges.</div>
+
+        {# Step 1 — Water Charges #}
+        {% set s = workflow.get('water') %}
+        {% set done = s and s[:7] == period %}
+        <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 1</div>
+            <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
+              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+            </span>
+          </div>
+          <div class="data-row-unit mb-1">Water Charges</div>
+          <div class="data-row-meta mb-3">Upload meter readings before generating charges.</div>
           <a href="{{ url_for('upload_water_charges') }}" class="btn btn-outline-primary btn-sm">Upload Readings</a>
         </div>
-        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
+
+        {# Step 2 — Generate Charges #}
+        {% set s = workflow.get('charges') %}
+        {% set done = s and s[:7] == period %}
+        <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 2</div>
+            <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
+              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+            </span>
+          </div>
           <div class="data-row-unit mb-1">Generate Charges</div>
-          <div class="data-row-meta mb-3">Step 2 — Create rent + service charge records for all occupied units.</div>
+          <div class="data-row-meta mb-3">Create rent + service charge records for all occupied units.</div>
           <a href="{{ url_for('generate_charges') }}" class="btn btn-outline-primary btn-sm">Generate Charges</a>
         </div>
-        <div class="col-md-3" style="padding: 20px; border-right: 1px solid var(--border);">
+
+        {# Step 3 — Upload Bank Statement #}
+        {% set s = workflow.get('statement') %}
+        {% set done = s and s[:7] == period %}
+        <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 3</div>
+            <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
+              {% if done %}✓ {{ s[:10] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+            </span>
+          </div>
           <div class="data-row-unit mb-1">Upload Bank Statement</div>
-          <div class="data-row-meta mb-3">Step 3 — Upload a PDF bank statement to scan and verify M-Pesa payments.</div>
+          <div class="data-row-meta mb-3">Upload a PDF bank statement to scan for M-Pesa payments.</div>
           <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-primary btn-sm">Upload Statement</a>
         </div>
-        <div class="col-md-3" style="padding: 20px;">
-          <div class="data-row-unit mb-1">Export Data</div>
-          <div class="data-row-meta mb-3">Download unit balances, payment history, and charge records as Excel.</div>
+
+        {# Step 4 — Verify Payments #}
+        {% set s = workflow.get('verify') %}
+        {% set done = s and s[:7] == period %}
+        {% set unassigned = workflow.get('unassigned', 0) %}
+        <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if (done and unassigned == 0) else '#ef4444' }};">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 4</div>
+            <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if (done and unassigned == 0) else '#dc2626' }};">
+              {% if done and unassigned == 0 %}✓ {{ s[:7] }}
+              {% elif done %}{{ unassigned }} unassigned
+              {% elif s %}Last: {{ s[:7] }}
+              {% else %}Never done{% endif %}
+            </span>
+          </div>
+          <div class="data-row-unit mb-1">Verify Payments</div>
+          <div class="data-row-meta mb-3">Match claims to bank transactions.
+            {% if unassigned > 0 %}<span style="color:#dc2626;"> {{ unassigned }} unmatched credit{{ 's' if unassigned != 1 }} need assigning.</span>{% endif %}
+          </div>
+          <a href="{{ url_for('review') }}" class="btn btn-outline-primary btn-sm">Verify Payments</a>
+          {% if unassigned > 0 %}
+          <a href="{{ url_for('review', tab='unreported') }}" class="btn btn-outline-danger btn-sm ms-1">Assign {{ unassigned }}</a>
+          {% endif %}
+        </div>
+
+        {# Step 5 — Export & Report #}
+        {% set s = workflow.get('export') %}
+        {% set done = s and s[:7] == period %}
+        <div class="col-md" style="padding: 20px; border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 5</div>
+            <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
+              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+            </span>
+          </div>
+          <div class="data-row-unit mb-1">Export &amp; Report</div>
+          <div class="data-row-meta mb-3">Download unit balances, payment history, and charge records.</div>
           <a href="{{ url_for('export_page') }}" class="btn btn-outline-primary btn-sm">Export</a>
         </div>
+
       </div>
     </div>
   </div>

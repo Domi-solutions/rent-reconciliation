@@ -12,25 +12,8 @@ Usage:
 """
 
 import os
-import re
 
-
-def _normalize_phone(raw):
-    """
-    Normalize a Kenyan phone number to E.164 format (+254XXXXXXXXX).
-    Handles: 07XXXXXXXX, 2547XXXXXXXX, +2547XXXXXXXX
-    Returns None if the number can't be recognized.
-    """
-    if not raw:
-        return None
-    phone = re.sub(r'[\s\-\(\)]', '', str(raw).strip())
-    if phone.startswith('+254') and len(phone) == 13:
-        return phone
-    if phone.startswith('254') and len(phone) == 12:
-        return '+' + phone
-    if phone.startswith('0') and len(phone) == 10:
-        return '+254' + phone[1:]
-    return None
+from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 
 def send_sms(recipients, message):

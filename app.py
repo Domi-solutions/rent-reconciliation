@@ -90,6 +90,7 @@ from src.database.db import (
     migrate_add_platform_shadow_log,
     migrate_add_tenant_disputes,
     migrate_add_platform_alerts,
+    migrate_add_payout_fields,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -125,12 +126,14 @@ migrate_add_statement_parse_errors()
 migrate_add_platform_shadow_log()
 migrate_add_tenant_disputes()
 migrate_add_platform_alerts()
+migrate_add_payout_fields()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
 from src.messaging.reminders import generate_due_reminders
 
-app.register_blueprint(test_bp)
+if os.environ.get('ENVIRONMENT') != 'production':
+    app.register_blueprint(test_bp)
 app.register_blueprint(viewer_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(tenant_bp)
@@ -648,6 +651,20 @@ def dashboard():
             ORDER BY timestamp DESC LIMIT 1
         """).fetchone()
 
+        has_owner = conn.execute(
+            "SELECT COUNT(*) FROM property_owners WHERE property_id = ?", (property_id,)
+        ).fetchone()[0] > 0
+        has_caretaker = conn.execute(
+            "SELECT COUNT(*) FROM caretakers WHERE property_id = ?", (property_id,)
+        ).fetchone()[0] > 0
+        has_charges = charges_this_month > 0
+        setup_checklist = {
+            'has_owner': has_owner,
+            'has_caretaker': has_caretaker,
+            'has_charges': has_charges,
+        }
+        show_setup_checklist = not (has_owner and has_caretaker and has_charges)
+
         return render_template(
             'dashboard.html',
             property=property_row,
@@ -662,6 +679,8 @@ def dashboard():
             next_due_date=next_due_date,
             days_to_due=days_to_due,
             recent_reminder=recent_reminder,
+            show_setup_checklist=show_setup_checklist,
+            setup_checklist=setup_checklist,
         )
 
 
@@ -867,7 +886,7 @@ def edit_unit_field(unit_id):
              f"Unit {unit['unit_number']} | {field}: {old_value} → {value}", 'admin'),
         )
         from src.platform.guardian import platform_log, raise_alert, notify_owner_change
-        org_id = property_row.get('organization_id')
+        org_id = property_row['organization_id']
         platform_log(conn, 'unit_field_edited', 'unit', unit_id,
                      f"Unit {unit['unit_number']} | {field}: {old_value} → {value}",
                      org_id=org_id, property_id=property_row['id'])
@@ -1263,6 +1282,16 @@ def create_owner():
             ('owner_created', 'owner', owner_id,
              f"Owner: {name}" + (" | Domi Login: enabled" if person_id and domi_password else ""), 'admin'),
         )
+        from src.platform.guardian import platform_log, raise_alert
+        _org_id = session.get('org_id')
+        platform_log(conn, 'owner_created', 'owner', owner_id,
+                     f"New owner '{name}' created by agency. Phone: {phone or 'none'}. "
+                     f"Property linked: {property_id or 'none'}.",
+                     org_id=_org_id)
+        raise_alert(conn, 'owner_created',
+                    f"Agency created new owner '{name}' (id={owner_id}). "
+                    f"Verify this is a real owner before the next disbursement cycle.",
+                    org_id=_org_id, severity='critical')
     flash(f"Owner '{name}' created." + (" Domi Login enabled." if person_id and domi_password else ""), 'success')
     return redirect(url_for('manage_owners'))
 
@@ -1332,6 +1361,15 @@ def assign_property_to_owner(owner_id):
             ('property_assigned', 'owner', owner_id,
              f"Property '{prop['name']}' assigned to {owner['name']}", 'admin'),
         )
+        from src.platform.guardian import platform_log, raise_alert
+        _org_id = session.get('org_id')
+        platform_log(conn, 'owner_assigned_to_property', 'owner', owner_id,
+                     f"Agency assigned '{owner['name']}' to property '{prop['name']}'.",
+                     org_id=_org_id, property_id=property_id)
+        raise_alert(conn, 'owner_assigned',
+                    f"Agency assigned owner '{owner['name']}' to '{prop['name']}'. "
+                    f"Confirm this is the legitimate owner before disbursements run.",
+                    org_id=_org_id, property_id=property_id, severity='critical')
     flash(f"'{prop['name']}' assigned to {owner['name']}.", 'success')
     return redirect(url_for('manage_owners'))
 
@@ -3379,8 +3417,47 @@ def onboard_preview():
 
 @app.route('/tools')
 def tools_index():
-    """Tools index - parser testing (no DB persistence)."""
-    return render_template('tools_index.html')
+    """Monthly workflow status + parser testing utilities."""
+    period = datetime.now().strftime('%Y-%m')
+    workflow = {}
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if prop:
+            pid = prop['id']
+            org_id = prop['organization_id'] or session.get('org_id')
+            stmt_filter = "org_id = ?" if org_id else "property_id = ?"
+            stmt_param  = org_id if org_id else pid
+
+            workflow['water'] = (conn.execute(
+                "SELECT MAX(created_at) FROM rent_charges WHERE property_id=? AND charge_type='water' AND period=?",
+                (pid, period)).fetchone()[0])
+
+            workflow['charges'] = (conn.execute(
+                "SELECT MAX(created_at) FROM rent_charges WHERE property_id=? AND charge_type='rent' AND period=?",
+                (pid, period)).fetchone()[0])
+
+            workflow['statement'] = (conn.execute(
+                f"SELECT MAX(uploaded_at) FROM bank_statements WHERE {stmt_filter}",
+                (stmt_param,)).fetchone()[0])
+
+            workflow['verify'] = (conn.execute(
+                "SELECT MAX(payment_date) FROM payments WHERE property_id=? AND strftime('%Y-%m', payment_date)=?",
+                (pid, period)).fetchone()[0])
+
+            workflow['unassigned'] = conn.execute(
+                f"""SELECT COUNT(*) FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE {stmt_filter}
+                      AND bt.txn_type = 'PAYBILL_CREDIT'
+                      AND bt.id NOT IN (
+                          SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)""",
+                (stmt_param,)).fetchone()[0] or 0
+
+            workflow['export'] = (conn.execute(
+                "SELECT MAX(timestamp) FROM audit_log WHERE action LIKE 'export_%'",
+                ).fetchone()[0])
+
+    return render_template('tools_index.html', workflow=workflow, period=period)
 
 
 @app.route('/tools/test-pdf', methods=['GET', 'POST'])

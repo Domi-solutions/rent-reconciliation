@@ -196,6 +196,40 @@
 
 ---
 
+## Session 4 — 2026-05-17
+
+---
+
+### COUNT(*) via fetchone()[0] can return None — always guard with `or 0`
+**File(s):** `app.py` — `tools_index()` route (unassigned transaction count)
+**Root cause:** Cursor assumes `COUNT(*)` always returns an integer. But when combined with a complex JOIN and no matching rows, SQLite can return `None` through `fetchone()[0]` — particularly when the result set is empty after filtering. This only surfaces at runtime on a fresh or empty DB.
+**What Cursor did:** `workflow['unassigned'] = conn.execute("SELECT COUNT(*) FROM ...").fetchone()[0]` — crashes with `TypeError` when the result is `None`, or passes `None` to template comparisons.
+**What it should do:** Always guard aggregate queries with `or 0`: `conn.execute("SELECT COUNT(*) FROM ...").fetchone()[0] or 0`. Same applies to `MAX()`, `SUM()`, `MIN()` — all can return `None` on empty sets.
+**Why it matters:** The error only surfaces in production or on first-time setups where the table is empty. Masked during development if the DB always has data.
+**Spotted:** 2026-05-17 (Session 4)
+
+---
+
+### Disbursements must not write directly to owners.payout_mpesa — it is owner-set via portal only
+**File(s):** `src/payments/disbursements.py`, any admin route touching `owners` table
+**Root cause:** Cursor sees `owners.payout_mpesa` as just another column and writes to it from whatever route is most convenient (e.g. an admin form). It doesn't recognise the security constraint that makes this column owner-write-only.
+**What Cursor did:** Added an admin form field to set `payout_mpesa` directly, or set it during owner creation.
+**What it should do:** `owners.payout_mpesa` is set ONLY via `POST /view/<property_id>/payout/request-otp` + `confirm-otp` in `viewer_routes.py`. No admin route, no onboarding form, no migration seed should write to this column. Disbursements read it via `_get_confirmed_payout_owner()` — which also enforces the 48-hour hold. If no confirmed owner exists, the function raises `ValueError` + critical platform alert. Never bypass this check.
+**Why it matters:** The OTP + 48h hold is the only guard against an admin or rogue AI agent redirecting landlord disbursements to an attacker-controlled M-Pesa number. Bypassing it removes the entire security layer.
+**Spotted:** 2026-05-17 (Session 4)
+
+---
+
+### Monthly workflow status uses timestamp prefix comparison — do not query separate status flags
+**File(s):** `app.py` — `tools_index()`, `templates/tools_index.html`
+**Root cause:** Cursor would build a separate `workflow_status` table or add boolean columns to track monthly steps. This creates a maintenance burden and can get out of sync with actual data.
+**What Cursor did:** N/A — documented preemptively as the pattern was established deliberately in Session 9.
+**What it should do:** Each workflow step maps to a specific DB timestamp signal. The `period` is the current `YYYY-MM`. A step is "done this month" if its timestamp starts with the current period. In Jinja2: `{% set done = s and s[:7] == period %}`. Steps: water → `MAX(created_at) FROM rent_charges WHERE charge_type='water'`; charges → `MAX(created_at) FROM rent_charges WHERE charge_type='rent'`; statement → `MAX(uploaded_at) FROM bank_statements WHERE org_id=?`; verify → `MAX(payment_date) FROM payments WHERE property_id=?`; export → `MAX(timestamp) FROM audit_log WHERE action LIKE 'export_%'`. No separate status table needed — the data IS the status.
+**Why it matters:** A status table diverges from actual data (e.g. charges generated but then deleted would still show as done). Querying the source tables ensures accuracy.
+**Spotted:** 2026-05-17 (Session 4)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

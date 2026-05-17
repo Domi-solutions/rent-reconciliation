@@ -462,14 +462,29 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Status dropdown fix: `padding-right: 2rem` prevents Bootstrap arrow overlapping text
 - [x] `/tenants` now redirects to `/units`; Tenants removed from sidebar
 
-### Owner Wallet Stub (Session 8 — 2026-05-13) ✅ COMPLETE
+### Owner Wallet + Payout Security (Sessions 8–9 — 2026-05-13 / 2026-05-17) ✅ COMPLETE
 
-- [x] `GET /view/<property_id>/wallet` — balance, fee rate, disbursement history
+- [x] `GET /view/<property_id>/wallet` — balance, fee rate, disbursement history; payout account section with 4 states (unset/pending_otp/hold/active)
 - [x] Balance = total verified payments − management fee − total disbursed (computed from existing tables)
 - [x] Three KPI cards: available balance, total collected (all-time + this month), management fee % + disbursed total
-- [x] Dashed-border "Withdraw — coming soon" stub card with disabled button
-- [x] Disbursement history table: period, collected, fee, net, method, status badges, date
+- [x] Disbursement history table: period, collected, fee, net, method, status badges, date, recipient_account
 - [x] Wallet tab added to owner viewer nav (`base_viewer.html`)
+- [x] **Beneficiary substitution fraud prevention:** `owners.payout_mpesa` is owner-write-only via portal OTP flow — admin has zero write path
+- [x] `migrate_add_payout_fields` — adds `payout_mpesa`, `payout_confirmed`, `payout_active_at`, `payout_otp`, `payout_otp_expires_at` to `owners` table
+- [x] `POST /view/<property_id>/payout/request-otp` — owner submits number; OTP generated + sent via SMS; 10-min expiry
+- [x] `POST /view/<property_id>/payout/confirm-otp` — verifies OTP; sets confirmed + 48h hold; platform_log + critical alert; warns old number via SMS if changing
+- [x] `_get_confirmed_payout_owner(conn, property_id)` in `disbursements.py` — hard-blocks disbursements until `payout_confirmed=1 AND payout_active_at <= now()`; raises `ValueError` + critical platform alert if no eligible owner found
+- [x] `execute_disbursement()` sets `recipient_account` from confirmed owner's `payout_mpesa`
+
+### Admin UX & Onboarding (Session 9 — 2026-05-17) ✅ COMPLETE
+
+- [x] Sidebar restructured: daily-use items first (Overview → Units → Payments → Messages → Bank Statements → Water Charges → Reports → Activity), then Monthly section (Monthly Workflow), then Setup section (Caretakers → Owners)
+- [x] Water Charges added to sidebar as dedicated nav item (adjacent to Bank Statements — both are upload actions)
+- [x] Monthly Workflow elevated from Tools & Settings footer → main Monthly sidebar section
+- [x] `tools_index()` route fully implemented: queries DB for per-step last-completion timestamps; returns `workflow` dict + `period` for live status
+- [x] Monthly Workflow page: 5 steps (was 4); Step 4 "Verify Payments" added; each step shows green top border if done this month, red if not; unassigned count shown on Step 4 with direct "Assign X" link
+- [x] Setup checklist on dashboard: 3-step card (add owners / add caretaker / run workflow); each step shows ✓ when complete; entire card disappears when all 3 done; live DB check on every load
+- [x] Actionable empty states: Payments confirmed tab, Bank Statements page, Unreported credits tab — each has explanatory copy + CTA links to next workflow step
 
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)

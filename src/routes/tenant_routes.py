@@ -4,6 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
+from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 tenant_bp = Blueprint('tenant', __name__, url_prefix='/tenant')
 
@@ -27,15 +28,6 @@ def _get_tenant_by_token(conn, token):
     unit = {'id': row['unit_id'], 'unit_number': row['unit_number'], 'property_id': row['property_id']}
     prop = {'id': row['property_id'], 'name': row['property_name']}
     return (tenant, unit, prop)
-
-
-def _normalize_phone(raw):
-    p = raw.strip().replace(" ", "")
-    if p.startswith("07") or p.startswith("01"):
-        return "+254" + p[1:]
-    if p.startswith("254"):
-        return "+" + p
-    return p
 
 
 @tenant_bp.route("/login", methods=["GET", "POST"])

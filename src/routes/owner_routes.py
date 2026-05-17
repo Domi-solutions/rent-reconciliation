@@ -10,18 +10,9 @@ from flask import Blueprint, abort, redirect, render_template, request, session,
 from werkzeug.security import check_password_hash
 
 from src.database.db import get_connection
+from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 owner_bp = Blueprint("owner", __name__, url_prefix="/owner")
-
-
-def _normalize_phone(raw):
-    """Convert 07xx / 01xx / 254xx → +2547xx."""
-    p = raw.strip().replace(" ", "")
-    if p.startswith("07") or p.startswith("01"):
-        return "+254" + p[1:]
-    if p.startswith("254"):
-        return "+" + p
-    return p
 
 
 @owner_bp.before_request

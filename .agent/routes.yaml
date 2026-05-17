@@ -27,6 +27,7 @@ blueprints:
       - "GET /login — login form"
       - "POST /login — authenticate admin"
       - "GET /logout — clear session"
+      - "GET /tools — monthly workflow (tools_index); queries DB for per-step completion timestamps; returns workflow dict + current period for green/red status indicators"
 
   viewer:
     file: src/routes/viewer_routes.py
@@ -174,10 +175,25 @@ blueprints:
       - "GET /platform/alerts — anomaly alerts (open/dismissed); POST /platform/alerts/<id>/dismiss"
       - "GET /platform/trust — per-agency trust scores (0-100)"
 
-  viewer_wallet:
-    note: "Owner wallet tab added to viewer blueprint in src/routes/viewer_routes.py"
+  owner:
+    file: src/routes/owner_routes.py
+    prefix: /owner
+    auth: session['person_id'] + session['person_role'] == 'owner' (persons-based login)
+    status: live
+    note: "Distinct from /view/* token-based flow. person_id from persons table; bridges into existing viewer by setting session['owner_id']."
     key_routes:
-      - "GET /view/<property_id>/wallet — balance, fee, disbursement history; stub withdraw button"
+      - "GET /owner/login"
+      - "POST /owner/login — authenticate via persons.phone + password_hash"
+      - "GET /owner/logout"
+      - "GET /owner/dashboard — portfolio view across all owned properties (occupancy, arrears, collection rate)"
+      - "GET /owner/<property_id>/ — verify ownership then redirect into /view/<property_id>"
+
+  viewer_wallet:
+    note: "Owner wallet tab in viewer blueprint. Full payout account management with OTP + 48h hold security model. Admin cannot set payout_mpesa — owner-only via portal."
+    key_routes:
+      - "GET /view/<property_id>/wallet — balance, fee, disbursement history; payout account status (unset/pending_otp/hold/active)"
+      - "POST /view/<property_id>/payout/request-otp — owner submits M-Pesa number; normalizes to +2547XX; generates 6-digit OTP; sends via SMS; stores in owners.payout_otp with 10-min expiry"
+      - "POST /view/<property_id>/payout/confirm-otp — verifies OTP; sets payout_confirmed=1 + payout_active_at=now+48h; platform_log + critical alert; SMS warning to old number if previously set"
 
   tenant_dispute:
     note: "Dispute submission added to tenant blueprint in src/routes/tenant_routes.py"

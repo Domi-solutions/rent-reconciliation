@@ -4,11 +4,35 @@ Reads payment_transactions for the period; creates disbursements record.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.database.db import get_connection, generate_id
 
 logger = logging.getLogger(__name__)
+
+
+def _get_confirmed_payout_owner(conn, property_id):
+    """
+    Return the first owner for this property whose payout account is confirmed
+    and past the 48-hour hold period, or None.
+
+    Only the owner can set payout_mpesa via their portal — admin has no write path.
+    """
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    return conn.execute(
+        """
+        SELECT o.id, o.name, o.payout_mpesa
+        FROM owners o
+        JOIN property_owners po ON po.owner_id = o.id
+        WHERE po.property_id = ?
+          AND o.payout_confirmed = 1
+          AND o.payout_mpesa IS NOT NULL
+          AND o.payout_active_at <= ?
+        ORDER BY po.created_at
+        LIMIT 1
+        """,
+        (property_id, now),
+    ).fetchone()
 
 
 def calculate_disbursement(conn, property_id: str, period: str) -> dict:
@@ -66,6 +90,7 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
     Create a disbursements record for a period.
     Returns the disbursement id.
     Skips if a disbursement record already exists for this property+period.
+    Raises ValueError if no owner has a confirmed, active payout account.
     """
     existing = conn.execute(
         "SELECT id FROM disbursements WHERE property_id = ? AND period = ?",
@@ -75,14 +100,32 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
         logger.info("Disbursement already exists for %s %s — skipping", property_id, period)
         return existing["id"]
 
+    owner = _get_confirmed_payout_owner(conn, property_id)
+    if not owner:
+        # Raise a platform alert so the operator can chase the owner to set their account.
+        from src.platform.guardian import raise_alert
+        prop = conn.execute("SELECT name, organization_id FROM properties WHERE id = ?", (property_id,)).fetchone()
+        prop_name = prop['name'] if prop else property_id
+        org_id = prop['organization_id'] if prop else None
+        raise_alert(
+            conn, 'disbursement_blocked',
+            f"Disbursement for {prop_name} ({period}) blocked: no owner has a confirmed, "
+            f"active payout account. Owner must set their M-Pesa number via the owner portal.",
+            org_id=org_id, property_id=property_id, severity='critical',
+        )
+        raise ValueError(
+            f"No confirmed payout account for property {property_id}. "
+            f"Owner must set their M-Pesa number via the owner portal before disbursement can proceed."
+        )
+
     data = calculate_disbursement(conn, property_id, period)
     disb_id = generate_id("DISB")
     conn.execute(
         """
         INSERT INTO disbursements
             (id, property_id, period, total_collected, fee_rate, fee_amount, net_amount,
-             status, method, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'mpesa_b2c', CURRENT_TIMESTAMP)
+             recipient_account, status, method, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'mpesa_b2c', CURRENT_TIMESTAMP)
         """,
         (
             disb_id,
@@ -92,11 +135,12 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
             data["fee_rate"],
             data["fee_amount"],
             data["net_amount"],
+            owner["payout_mpesa"],
         ),
     )
     logger.info(
-        "Disbursement %s created: %s %s — KES %.2f net",
-        disb_id, property_id, period, data["net_amount"],
+        "Disbursement %s created: %s %s — KES %.2f net → %s",
+        disb_id, property_id, period, data["net_amount"], owner["payout_mpesa"],
     )
     return disb_id
 
