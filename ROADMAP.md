@@ -486,6 +486,23 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Setup checklist on dashboard: 3-step card (add owners / add caretaker / run workflow); each step shows ✓ when complete; entire card disappears when all 3 done; live DB check on every load
 - [x] Actionable empty states: Payments confirmed tab, Bank Statements page, Unreported credits tab — each has explanatory copy + CTA links to next workflow step
 
+### Bank Statement Workflow (Session 10 — 2026-05-19) ✅ COMPLETE
+
+- [x] **Bank statements page redirect fixed** — `manage_statements()` now falls back to `property_row['organization_id']` when `session['org_id']` is missing (master-key login path); `property_list()` and `select_property()` backfill `org_id` into session
+- [x] **Family Bank detection** — `detect_bank_statement_format()` checks for `PARTICULARS IN OUT` header to separate Family Bank from Co-operative Bank (both use `DD-MMM-` date format); dispatches to cooperative parser
+- [x] **National Bank detection** — detects `Transaction Date Value Date Reference Transaction Details` column header; dispatches to tabular parser with `national_bank` label
+- [x] **Bank display names** — `src/parsers/banks/registry.py`: `BANK_DISPLAY_NAMES` dict + `bank_display_name()` with all 5 formats (`cooperative`, `family_bank`, `national_bank`, `tabular_kes`, `unknown`)
+- [x] **View PDF route** — `GET /statements/<statement_id>/view` serves stored PDF via `send_file()` using `UPLOAD_FOLDER/{id}.pdf` (not stored `file_path` which is a Fly.io absolute path)
+- [x] **Reparse fix** — route uses `UPLOAD_FOLDER/{id}.pdf`, computes `period_start`/`period_end` from transactions and includes both in the UPDATE
+- [x] **Statement detail hub** — `GET /statements/<statement_id>` — full management page: 4 summary cards, verified payments table (with Correct button → collapse form), unmatched credits (with suggestion badges + Auto-assign + Assign), parse errors, other transactions collapsed; all actions audited
+- [x] **Suggestion engine** — Tier 1: unit_hint from narration (exact org-scoped unit match → Auto-assign button); Tier 2: sender name token overlap ≥2 tokens → name_match badge, pre-fills unit + reason in assign form
+- [x] **Verify scoped to statement** — `verify_payments()` reads `stmt.property_id`; if set, filters pending claims to `WHERE p.id = stmt.property_id` only; org-wide otherwise
+- [x] **Payments tab reorder** — Confirmed → Unconfirmed → Unreported → Reversals → Parse Errors
+- [x] **Statement column in Unreported tab** — both single and group unreported tables show statement filename as first column with link to `statement_detail`
+- [x] **Multi-property upload tagging** — property dropdown at upload (appears only when org has >1 property); `tagged_property_id` saved to `bank_statements.property_id`; supersede logic scoped by property tag (tagged statements only supersede same-tag statements; org-wide only supersedes org-wide)
+- [x] **Property context in statement detail** — when org has >1 property: Property column in verified/unmatched tables; "Property-tagged" or "Org-wide" badge in header; unit dropdowns use `<optgroup>` headers grouped by property
+- [x] **payment.property_id always derived from unit** — `statement_auto_assign()`, `statement_assign_payment()`, `statement_correct_payment()` all derive `property_id` from the target unit via SQL (`SELECT p.id FROM units u JOIN properties p ... WHERE u.id = ?`); never from session's selected property
+
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
 - [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"

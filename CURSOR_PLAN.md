@@ -250,9 +250,27 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ---
 
+#### Session 10 — Bank Statement Workflow (2026-05-19) ✅ COMPLETE
+
+- Fixed `manage_statements()` redirect bug (org_id not set on master-key login path) + `property_list()`/`select_property()` now backfill `session['org_id']`
+- Added Family Bank format detection (distinct from Co-operative; same parser, different `PARTICULARS IN OUT` header check)
+- Added National Bank format detection (distinct from KCB/Tabular; different column header; same tabular parser)
+- Fixed `view_statement_pdf` and `reparse_statement` to use `UPLOAD_FOLDER/{id}.pdf` (not stored `file_path` which is a Fly.io absolute path)
+- Reparse now updates `period_start`/`period_end` from transactions in the UPDATE
+- Built `GET /statements/<statement_id>` — full statement management hub (verified, unmatched, assign, auto-assign, correct, parse errors, other txns) — all actions audited
+- Two-tier suggestion engine: Tier 1 = unit_hint narration exact match → Auto-assign; Tier 2 = sender name token overlap ≥2 → name_match badge + pre-filled assign form
+- `verify_payments()` now scopes to `stmt.property_id` when set; org-wide otherwise
+- Payments tab reorder: Confirmed → Unconfirmed → Unreported → Reversals → Parse Errors
+- Statement filename column added to Unreported tab (links to statement detail)
+- Multi-property upload tagging: optional property dropdown at upload; supersede logic scoped by tag; statement detail shows Property column + grouped optgroup dropdowns when org has >1 property
+- `payment.property_id` now always derived from unit SQL in all 3 assign/correct routes (was using session property)
+- Updated `.agent/schema.yaml`, `.agent/routes.yaml`, `ROADMAP.md`, `CURSOR_PLAN.md`, `CURSOR_PATTERNS.md`
+
+---
+
 ## Project Re-entry Overview (for AI agents)
 
-**Last updated:** 2026-05-13
+**Last updated:** 2026-05-19
 **Product:** Domi — property fintech platform, Kenya. Repo name: `rent-reconciliation` (unchanged).
 **Stack:** Python 3.13, Flask 3.0+, SQLite, APScheduler, Jinja2 + Bootstrap 5. Fly.io (Johannesburg).
 

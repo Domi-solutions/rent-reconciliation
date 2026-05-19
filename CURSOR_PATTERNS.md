@@ -230,6 +230,30 @@
 
 ---
 
+## Session 5 — 2026-05-19
+
+---
+
+### payment.property_id must be derived from the unit, not the session's selected property
+**File(s):** `app.py` — `statement_auto_assign()`, `statement_assign_payment()`, `statement_correct_payment()`
+**Root cause:** Cursor sees `get_current_property(conn)` at the top of every admin route and reaches for `property_row['id']` as the natural source of `property_id` when creating a payment. In a single-property org this always happens to be correct. In a multi-property org, the session's selected property may differ from the unit's actual property — for example, an admin selects Property A but assigns a credit to a unit in Property B via the org-wide statement view.
+**What Cursor did:** `pay_property_id = property_row['id'] if property_row else None` — uses the session's selected property, not the target unit's property.
+**What it should do:** Always derive `property_id` from the unit being assigned to: `conn.execute("SELECT p.id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? LIMIT 1", (unit_id,)).fetchone()`. The session property is irrelevant — the unit's property is the authoritative source.
+**Why it matters:** Payments with the wrong `property_id` produce incorrect reconciliation per-property, skew financial reports, and break collection rate calculations for the affected property.
+**Spotted:** 2026-05-19 (Session 5)
+
+---
+
+### Family Bank and National Bank are distinct formats from Co-operative and KCB — check headers before returning format
+**File(s):** `src/parsers/pdf_parser.py` — `detect_bank_statement_format()`
+**Root cause:** Cursor reads the existing detector logic and sees that `segment_transactions()` (cooperative date pattern) matches successfully → returns `'cooperative'`. It doesn't check whether the statement is actually Co-op or Family Bank. Similarly it sees tabular detection → returns `'tabular_kes'` without distinguishing National Bank.
+**What Cursor did:** Returned `'cooperative'` for any statement with `DD-MMM-` date format; returned `'tabular_kes'` for any tabular-layout statement regardless of bank.
+**What it should do:** After the segmentation check succeeds, check bank-specific header strings BEFORE committing to the format label. For the cooperative parser group: check `PARTICULARS IN OUT` → `family_bank`, else → `cooperative`. For the tabular parser group: check `Transaction Date Value Date Reference Transaction Details` → `national_bank`, else → `tabular_kes`. Detection order matters — check from most-specific to least-specific.
+**Why it matters:** Mislabeled statements confuse admins, produce wrong badge colors, and mislead debugging of parser issues. The format stored in `bank_statements.bank_format` is the permanent record — getting it wrong at upload time means every subsequent view shows the wrong bank.
+**Spotted:** 2026-05-19 (Session 5)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

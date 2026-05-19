@@ -62,12 +62,12 @@ tables:
   bank_statements:
     status: live
     migration: schema.sql (base) + migrate_add_org_scoped_statements
-    note: "Org-scoped as of 2026-05-12. New uploads set org_id; property_id is legacy/nullable for new rows."
+    note: "Org-scoped as of 2026-05-12. New uploads set org_id. property_id is now optional — set when admin tags statement to a specific property at upload; NULL = org-wide (covers all properties). Supersede logic and verify_payments scope are both driven by property_id tag."
     columns:
       id: {type: TEXT, pk: true}
-      property_id: {type: TEXT, fk: properties.id, note: "Legacy field; nullable for new org-scoped uploads"}
-      org_id: {type: TEXT, fk: organizations.id, added_by: migrate_add_org_scoped_statements, note: "Set on all new uploads; query by this for multi-property orgs"}
-      bank_format: {type: TEXT, added_by: migrate_add_org_scoped_statements, values: [cooperative, tabular_kes, unknown], note: "Detected format; stored so reparse can skip re-detection"}
+      property_id: {type: TEXT, fk: properties.id, note: "Optional property tag set at upload. NULL = org-wide; non-null = verify_payments scopes claims to this property only. Supersede only affects statements with the same property_id tag."}
+      org_id: {type: TEXT, fk: organizations.id, added_by: migrate_add_org_scoped_statements, note: "Set on all new uploads; primary query key; always query by this for multi-property orgs"}
+      bank_format: {type: TEXT, added_by: migrate_add_org_scoped_statements, values: [cooperative, family_bank, national_bank, tabular_kes, unknown], note: "Detected format; stored so reparse can skip re-detection. family_bank uses cooperative parser. national_bank uses tabular parser."}
       filename: {type: TEXT, required: true}
       file_path: {type: TEXT, required: true}
       period_start: {type: DATE}
