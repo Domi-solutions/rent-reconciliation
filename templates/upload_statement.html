@@ -7,12 +7,24 @@
 <div class="surface-card form-card-wrap">
   <div class="surface-card-header"><h6>PDF Upload</h6></div>
   <div style="padding: 20px;">
-    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Upload a Co-operative Bank statement PDF. Balance checksum will be validated. After upload you'll be taken to verify pending payment claims against this statement.</p>
+    <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Upload a bank statement PDF. The format is detected automatically. After upload you'll be taken to verify pending payment claims against this statement.</p>
     <form method="post" action="{{ url_for('upload_statement') }}" enctype="multipart/form-data">
       <div class="mb-3">
         <label for="file" class="form-label">PDF File *</label>
         <input type="file" class="form-control" id="file" name="file" accept=".pdf" required>
       </div>
+      {% if properties|length > 1 %}
+      <div class="mb-3">
+        <label for="property_id" class="form-label">Property</label>
+        <select class="form-select" id="property_id" name="property_id">
+          <option value="">All properties in this organisation</option>
+          {% for p in properties %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Tag to a specific property to scope verification to that property only. Leave as "All properties" if this statement covers multiple properties.</div>
+      </div>
+      {% endif %}
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">Upload & Process</button>
         <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-secondary">Cancel</a>

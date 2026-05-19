@@ -1221,12 +1221,18 @@ def detect_bank_statement_format(raw_text: str, page_numbers: List[int]) -> str:
     Choose parser strategy from extracted PDF text (no file I/O).
 
     Returns:
-        'cooperative' — Co-operative Bank layout (segment_coop > 0)
-        'tabular_kes' — tabular Debit/Credit/Book Balance layout (only when coop has no rows)
-        'cooperative' — also used when neither segments (legacy default / unreadable PDF)
+        'cooperative'   — Co-operative Bank layout (DD-MMM- date segmentation)
+        'national_bank' — National Bank of Kenya tabular layout (identified by column header)
+        'tabular_kes'   — Generic tabular Debit/Credit/Book Balance layout (e.g. KCB)
+        'unknown'       — Unrecognised format
     """
     if len(segment_transactions(raw_text, page_numbers)) > 0:
+        # Family Bank uses the same DD-MMM- date format as Co-op but has a distinct column header
+        if 'PARTICULARS IN OUT' in raw_text:
+            return 'family_bank'
         return 'cooperative'
+    if 'Transaction Date Value Date Reference Transaction Details' in raw_text:
+        return 'national_bank'
     if len(segment_tabular_transactions(raw_text, page_numbers)) > 0:
         return 'tabular_kes'
     return 'unknown'
@@ -1388,10 +1394,14 @@ def parse_bank_statement(pdf_path: str) -> dict:
     try:
         raw_text, page_numbers = extract_raw_text(pdf_path)
         fmt = detect_bank_statement_format(raw_text, page_numbers)
-        if fmt == 'tabular_kes':
-            return _parse_tabular_kes_from_raw(raw_text, page_numbers)
-        if fmt == 'cooperative':
-            return _parse_cooperative_from_raw(raw_text, page_numbers)
+        if fmt in ('cooperative', 'family_bank'):
+            result = _parse_cooperative_from_raw(raw_text, page_numbers)
+            result['statement_format'] = fmt
+            return result
+        if fmt in ('tabular_kes', 'national_bank'):
+            result = _parse_tabular_kes_from_raw(raw_text, page_numbers)
+            result['statement_format'] = fmt
+            return result
         return {
             'success': False,
             'statement_format': 'unknown',

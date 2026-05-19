@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}{{ stmt.filename }}{% endblock %}
+{% block content %}
+
+{# ── Header ───────────────────────────────────────────────────────────────── #}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('manage_statements') }}" style="font-size:13px;color:#6b7280;text-decoration:none;">← Bank Statements</a>
+    <div class="page-title mt-1" style="font-size:18px;">{{ stmt.filename }}</div>
+    <div class="page-meta d-flex align-items-center gap-2 flex-wrap mt-1">
+      <span class="badge" style="font-size:10px;
+        background:{% if stmt.bank_format=='cooperative' %}#0d6efd
+        {% elif stmt.bank_format=='family_bank' %}#fd7e14
+        {% elif stmt.bank_format=='national_bank' %}#198754
+        {% elif stmt.bank_format=='tabular_kes' %}#6f42c1
+        {% else %}#dc3545{% endif %};">{{ bank_label(stmt.bank_format) }}</span>
+      <span>{{ stmt.period_start or '—' }} → {{ stmt.period_end or '—' }}</span>
+      <span style="color:#d1d5db;">·</span>
+      <span>Uploaded {{ stmt.uploaded_at[:10] if stmt.uploaded_at }}</span>
+      {% if prop_count > 1 %}
+      <span style="color:#d1d5db;">·</span>
+      {% if stmt.property_id %}
+      <span class="badge bg-primary-subtle text-primary" style="font-size:10px;" title="Verification scoped to this property only">Property-tagged</span>
+      {% else %}
+      <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;" title="Verification ran across all org properties">Org-wide</span>
+      {% endif %}
+      {% endif %}
+      <span style="color:#d1d5db;">·</span>
+      {% if stmt.status == 'active' %}<span class="badge bg-success-subtle text-success" style="font-size:10px;">Active</span>
+      {% elif stmt.status == 'superseded' %}<span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">Superseded</span>
+      {% else %}<span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">{{ stmt.status }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('view_statement_pdf', statement_id=stmt.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">View PDF</a>
+    <a href="{{ url_for('verify_payments', statement_id=stmt.id) }}" class="btn btn-sm btn-primary">Run Verification</a>
+  </div>
+</div>
+
+{# ── Summary cards ────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  {% set total_credits = (matched|sum(attribute='payment_amount')) + (unmatched|sum(attribute='amount')) %}
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px 12px;">
+      <div style="font-size:22px;font-weight:700;color:#1a1a2e;">{{ matched|length + unmatched|length }}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px;">M-Pesa Credits</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px 12px;">
+      <div style="font-size:22px;font-weight:700;color:#16a34a;">{{ matched|length }}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px;">Verified</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px 12px;">
+      <div style="font-size:22px;font-weight:700;color:{% if unmatched %}#dc2626{% else %}#6b7280{% endif %};">{{ unmatched|length }}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px;">Unmatched</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px 12px;">
+      <div style="font-size:20px;font-weight:700;color:#1a1a2e;">KES {{ "{:,.0f}".format(total_credits) }}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px;">Total In</div>
+    </div>
+  </div>
+</div>
+
+{# ── Verified payments ────────────────────────────────────────────────────── #}
+<div class="surface-card mb-4">
+  <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+    <div style="font-weight:600;font-size:14px;">Verified Payments <span style="color:#16a34a;">({{ matched|length }})</span></div>
+    {% if matched %}<div style="font-size:12px;color:#6b7280;">KES {{ "{:,.0f}".format(matched|sum(attribute='payment_amount')) }} total</div>{% endif %}
+  </div>
+  <table class="table mb-0" style="font-size:13px;">
+    <thead>
+      <tr>
+        <th style="width:90px;">Date</th>
+        <th>Ref</th>
+        <th>Sender</th>
+        <th>Amount</th>
+        <th>Unit</th>
+        <th>Tenant</th>
+        {% if prop_count > 1 %}<th style="width:110px;">Property</th>{% endif %}
+        <th style="width:70px;">How</th>
+        <th style="width:80px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in matched %}
+      <tr>
+        <td style="color:#6b7280;font-size:12px;">{{ r.txn_date or '—' }}</td>
+        <td><code style="font-size:11px;">{{ r.mpesa_ref or '—' }}</code></td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.sender_name }}">{{ r.sender_name or '—' }}</td>
+        <td style="font-weight:600;">KES {{ "{:,.0f}".format(r.payment_amount) }}</td>
+        <td><span class="badge bg-secondary-subtle text-secondary">{{ r.unit_number or '—' }}</span></td>
+        <td style="font-size:12px;">{{ r.tenant_name or '—' }}</td>
+        {% if prop_count > 1 %}<td style="font-size:11px;color:#6b7280;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.property_name }}">{{ r.property_name or '—' }}</td>{% endif %}
+        <td>
+          {% if r.assignment_type == 'auto' %}
+          <span class="badge bg-success-subtle text-success" style="font-size:10px;">Auto</span>
+          {% else %}
+          <span class="badge bg-primary-subtle text-primary" style="font-size:10px;">Manual</span>
+          {% endif %}
+        </td>
+        <td>
+          <button class="btn btn-xs btn-outline-warning" style="font-size:11px;padding:2px 8px;"
+                  data-bs-toggle="collapse" data-bs-target="#correct-{{ r.payment_id }}">Correct</button>
+        </td>
+      </tr>
+      {# Correction form #}
+      <tr class="collapse" id="correct-{{ r.payment_id }}">
+        <td colspan="{{ 9 if prop_count > 1 else 8 }}" style="background:#fffbeb;padding:12px 16px;">
+          <form method="post" action="{{ url_for('statement_correct_payment', statement_id=stmt.id, payment_id=r.payment_id) }}">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#92400e;">
+              Correct assignment — currently Unit {{ r.unit_number }} ({{ r.assignment_type }})
+              {% if r.assignment_reason %}<span style="font-weight:400;"> · "{{ r.assignment_reason }}"</span>{% endif %}
+            </div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Reason for correction <span style="color:#dc2626;">*</span></label>
+                <input type="text" name="reason" class="form-control form-control-sm" placeholder="e.g. Parser matched wrong unit — sender is tenant of 3B" required minlength="5">
+              </div>
+              <div class="col-md-3">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Reassign to unit (optional)</label>
+                <select name="new_unit_id" class="form-select form-select-sm">
+                  <option value="">— just unassign —</option>
+                  {% if prop_count > 1 %}
+                    {% set ns2 = namespace(cur_prop='') %}
+                    {% for u in units %}
+                      {% if u.property_name != ns2.cur_prop %}
+                        {% if ns2.cur_prop %}</optgroup>{% endif %}
+                        <optgroup label="{{ u.property_name }}">
+                        {% set ns2.cur_prop = u.property_name %}
+                      {% endif %}
+                      <option value="{{ u.id }}" {% if u.id == r.payment_unit_id %}disabled{% endif %}>
+                        {{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}
+                      </option>
+                    {% endfor %}
+                    {% if ns2.cur_prop %}</optgroup>{% endif %}
+                  {% else %}
+                    {% for u in units %}
+                    <option value="{{ u.id }}" {% if u.id == r.payment_unit_id %}disabled{% endif %}>
+                      {{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  {% endif %}
+                </select>
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-warning btn-sm">Save Correction</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        data-bs-toggle="collapse" data-bs-target="#correct-{{ r.payment_id }}">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="{{ 9 if prop_count > 1 else 8 }}" style="padding:24px 16px;text-align:center;color:#6b7280;">
+          No verified payments yet — click <strong>Run Verification</strong> to match pending claims.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ── Unmatched credits ────────────────────────────────────────────────────── #}
+{% if unmatched %}
+<div class="surface-card mb-4">
+  <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;">
+    <div style="font-weight:600;font-size:14px;">Unmatched Credits <span style="color:#dc2626;">({{ unmatched|length }})</span></div>
+    <div style="font-size:12px;color:#6b7280;margin-top:2px;">Credits not matched to any claim. Auto-assign where a unit hint is clear; assign manually for the rest.</div>
+  </div>
+  <table class="table mb-0" style="font-size:13px;">
+    <thead>
+      <tr>
+        <th style="width:90px;">Date</th>
+        <th>Ref</th>
+        <th>Sender</th>
+        <th>Amount</th>
+        <th>Suggestion</th>
+        <th style="width:160px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in unmatched %}
+      <tr>
+        <td style="color:#6b7280;font-size:12px;">{{ r.txn_date or '—' }}</td>
+        <td><code style="font-size:11px;">{{ r.mpesa_ref or '—' }}</code></td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.sender_name }}">{{ r.sender_name or '—' }}</td>
+        <td style="font-weight:600;">KES {{ "{:,.0f}".format(r.amount) }}</td>
+        <td>
+          {% if r.get('suggestion_source') == 'unit_hint' %}
+          <span class="badge bg-success-subtle text-success" style="font-size:10px;" title="Extracted from M-Pesa narration">Unit {{ r.suggested_unit_number }} · Hint</span>
+          {% elif r.get('suggestion_source') == 'name_match' %}
+          <span class="badge bg-warning-subtle text-warning" style="font-size:10px;" title="Sender name matches tenant {{ r.suggested_tenant_name }}">Unit {{ r.suggested_unit_number }} · Name match</span>
+          {% elif r.unit_hint %}
+          <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">Hint: {{ r.unit_hint }}</span>
+          {% else %}
+          <span style="color:#d1d5db;font-size:12px;">—</span>
+          {% endif %}
+        </td>
+        <td class="d-flex gap-1 flex-wrap">
+          {% if r.get('suggestion_source') == 'unit_hint' %}
+          <form method="post" action="{{ url_for('statement_auto_assign', statement_id=stmt.id, txn_id=r.id) }}" style="display:inline;">
+            <button type="submit" class="btn btn-success btn-sm" style="font-size:11px;padding:3px 10px;">Auto-assign</button>
+          </form>
+          {% endif %}
+          <button class="btn btn-outline-primary btn-sm" style="font-size:11px;padding:3px 10px;"
+                  data-bs-toggle="collapse" data-bs-target="#assign-{{ r.id }}">Assign</button>
+        </td>
+      </tr>
+      {# Manual assignment form #}
+      <tr class="collapse" id="assign-{{ r.id }}">
+        <td colspan="6" style="background:#f0f9ff;padding:12px 16px;">
+          <form method="post" action="{{ url_for('statement_assign_payment', statement_id=stmt.id, txn_id=r.id) }}">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#0369a1;">
+              Assign {{ r.mpesa_ref or r.id }} · KES {{ "{:,.0f}".format(r.amount) }}
+              {% if r.get('suggestion_source') == 'name_match' %}
+              <span class="badge bg-warning-subtle text-warning ms-2" style="font-size:10px;">Name match: {{ r.suggested_tenant_name }}</span>
+              {% endif %}
+            </div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-3">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Unit <span style="color:#dc2626;">*</span></label>
+                <select name="unit_id" class="form-select form-select-sm" required>
+                  <option value="">Select unit…</option>
+                  {% if prop_count > 1 %}
+                    {% set ns = namespace(cur_prop='') %}
+                    {% for u in units %}
+                      {% if u.property_name != ns.cur_prop %}
+                        {% if ns.cur_prop %}</optgroup>{% endif %}
+                        <optgroup label="{{ u.property_name }}">
+                        {% set ns.cur_prop = u.property_name %}
+                      {% endif %}
+                      <option value="{{ u.id }}" {% if r.get('suggested_unit_id') == u.id %}selected{% endif %}>
+                        {{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}
+                      </option>
+                    {% endfor %}
+                    {% if ns.cur_prop %}</optgroup>{% endif %}
+                  {% else %}
+                    {% for u in units %}
+                    <option value="{{ u.id }}" {% if r.get('suggested_unit_id') == u.id %}selected{% endif %}>
+                      {{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  {% endif %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Reason <span style="color:#dc2626;">*</span></label>
+                <input type="text" name="reason" class="form-control form-control-sm" required minlength="5"
+                  placeholder="e.g. Tenant confirmed via WhatsApp"
+                  value="{% if r.get('suggestion_source') == 'name_match' %}Sender name matched tenant: {{ r.suggested_tenant_name }}{% endif %}">
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm">Assign</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        data-bs-toggle="collapse" data-bs-target="#assign-{{ r.id }}">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── Parse errors ─────────────────────────────────────────────────────────── #}
+{% if parse_errors %}
+<div class="surface-card mb-4">
+  <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;">
+    <div style="font-weight:600;font-size:14px;color:#dc2626;">Parse Errors <span>({{ parse_errors|length }})</span></div>
+    <div style="font-size:12px;color:#6b7280;margin-top:2px;">Rows the parser could not read. Review in the PDF and assign manually if needed.</div>
+  </div>
+  <table class="table mb-0" style="font-size:12px;">
+    <thead><tr><th>Page</th><th>Type</th><th>Error</th><th>Raw text</th></tr></thead>
+    <tbody>
+      {% for e in parse_errors %}
+      <tr>
+        <td style="color:#6b7280;">{{ e.page_number or '—' }}</td>
+        <td><span class="badge bg-danger-subtle text-danger" style="font-size:10px;">{{ e.error_type }}</span></td>
+        <td style="font-size:11px;">{{ e.error_message or '—' }}</td>
+        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:10px;" title="{{ e.raw_text }}">{{ e.raw_text[:100] if e.raw_text else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── Other transactions ───────────────────────────────────────────────────── #}
+{% if other_txns %}
+<div class="surface-card">
+  <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;cursor:pointer;"
+       data-bs-toggle="collapse" data-bs-target="#otherTxns">
+    <div style="font-weight:600;font-size:14px;">
+      Other Transactions <span style="font-weight:400;color:#6b7280;">({{ other_txns|length }} — cheques, charges, reversals)</span>
+    </div>
+    <span style="font-size:12px;color:#6b7280;">Show / hide ↕</span>
+  </div>
+  <div class="collapse" id="otherTxns">
+    <table class="table mb-0" style="font-size:12px;">
+      <thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for r in other_txns %}
+        <tr>
+          <td style="color:#6b7280;">{{ r.txn_date or '—' }}</td>
+          <td><span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">{{ r.txn_type }}</span></td>
+          <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.raw_text }}">{{ r.sender_name or r.raw_text[:60] or '—' }}</td>
+          <td>KES {{ "{:,.0f}".format(r.amount) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -18,10 +18,10 @@
     <a class="nav-link {{ 'active' if tab == 'confirmed' }}" href="{{ url_for('review', tab='confirmed') }}">Confirmed</a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if tab == 'unreported' }}" href="{{ url_for('review', tab='unreported') }}">Unreported</a>
+    <a class="nav-link {{ 'active' if tab == 'unconfirmed' }}" href="{{ url_for('review', tab='unconfirmed') }}">Unconfirmed</a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if tab == 'unconfirmed' }}" href="{{ url_for('review', tab='unconfirmed') }}">Unconfirmed</a>
+    <a class="nav-link {{ 'active' if tab == 'unreported' }}" href="{{ url_for('review', tab='unreported') }}">Unreported</a>
   </li>
   <li class="nav-item">
     <a class="nav-link {{ 'active' if tab == 'reversals' }}" href="{{ url_for('review', tab='reversals') }}">Reversals</a>
@@ -124,6 +124,7 @@
                   <table class="table table-sm mb-0">
                     <thead>
                       <tr>
+                        <th>Statement</th>
                         <th>Ref</th>
                         <th>Amount</th>
                         <th>Date</th>
@@ -135,6 +136,13 @@
                     <tbody>
                       {% for t in g.transactions %}
                       <tr>
+                        <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                          {% if t.statement_id %}
+                          <a href="{{ url_for('statement_detail', statement_id=t.statement_id) }}" style="color:#6b7280;text-decoration:none;" title="{{ t.statement_filename }}">
+                            {{ t.statement_filename | truncate(22, true, '…') if t.statement_filename else '—' }}
+                          </a>
+                          {% else %}—{% endif %}
+                        </td>
                         <td>{{ t.mpesa_ref or '-' }}</td>
                         <td>KES {{ "%.2f"|format(t.amount) }}</td>
                         <td>{{ t.txn_date or '-' }}</td>
@@ -185,6 +193,7 @@
       <table class="table table-sm">
         <thead>
           <tr>
+            <th>Statement</th>
             <th>Ref</th>
             <th>Amount</th>
             <th>Date</th>
@@ -196,6 +205,13 @@
         <tbody>
           {% for t in unreported_single %}
           <tr>
+            <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {% if t.statement_id %}
+              <a href="{{ url_for('statement_detail', statement_id=t.statement_id) }}" style="color:#6b7280;text-decoration:none;" title="{{ t.statement_filename }}">
+                {{ t.statement_filename | truncate(24, true, '…') if t.statement_filename else '—' }}
+              </a>
+              {% else %}—{% endif %}
+            </td>
             <td>{{ t.mpesa_ref or '-' }}</td>
             <td>KES {{ "%.2f"|format(t.amount) }}</td>
             <td>{{ t.txn_date or '-' }}</td>

@@ -16,6 +16,8 @@ name lookup and is the authoritative place to extend support.
 
 BANK_DISPLAY_NAMES = {
     'cooperative': 'Co-operative Bank',
+    'family_bank': 'Family Bank',
+    'national_bank': 'National Bank',
     'tabular_kes': 'KCB / Tabular',
     'unknown': 'Unknown format',
 }

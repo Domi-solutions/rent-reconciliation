@@ -468,6 +468,8 @@ def property_list():
             ).fetchall()
     if len(properties) == 1:
         session['property_id'] = properties[0]['id']
+        if properties[0]['organization_id'] and not session.get('org_id'):
+            session['org_id'] = properties[0]['organization_id']
         return redirect(url_for('dashboard'))
     return render_template('property_list.html', properties=properties)
 
@@ -485,6 +487,8 @@ def select_property(property_id):
             flash('Property not in your organisation.', 'error')
             return redirect(url_for('property_list'))
     session['property_id'] = property_id
+    if prop['organization_id'] and not session.get('org_id'):
+        session['org_id'] = prop['organization_id']
     flash(f'Switched to {prop["name"]}', 'info')
     return redirect(url_for('dashboard'))
 
@@ -1647,12 +1651,13 @@ def report_payment():
 def manage_statements():
     """List bank statements — org-scoped (all properties in org)."""
     from src.parsers.banks.registry import bank_display_name as _bank_label
-    org_id = session.get('org_id')
-    if not org_id:
-        return redirect(url_for('property_list'))
-
     with get_connection() as conn:
         property_row = get_current_property(conn)
+        org_id = session.get('org_id') or (property_row['organization_id'] if property_row else None)
+        if org_id and not session.get('org_id'):
+            session['org_id'] = org_id
+        if not org_id:
+            return redirect(url_for('property_list'))
         statements = conn.execute("""
             SELECT bs.*, COALESCE(bs.bank_format, 'unknown') as bank_format
             FROM bank_statements bs
@@ -1682,6 +1687,12 @@ def upload_statement():
     from src.parsers.banks.registry import bank_display_name as _bank_label
     org_id = session.get('org_id')
     if not org_id:
+        with get_connection() as conn:
+            prop = get_current_property(conn)
+            org_id = prop['organization_id'] if prop else None
+        if org_id:
+            session['org_id'] = org_id
+    if not org_id:
         return redirect(url_for('property_list'))
 
     if request.method == 'POST':
@@ -1697,6 +1708,7 @@ def upload_statement():
             return redirect(url_for('upload_statement'))
 
         filename = secure_filename(file.filename)
+        tagged_property_id = request.form.get('property_id', '').strip() or None
         statement_id = generate_id('STMT')
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{statement_id}.pdf")
         file.save(file_path)
@@ -1727,23 +1739,30 @@ def upload_statement():
             stmt_errors = result.get('errors') or []
 
             with get_connection() as conn:
-                # Supersede any overlapping active statements for this org
+                # Supersede overlapping active statements — scoped to same property tag
                 if period_start and period_end:
-                    conn.execute("""
-                        UPDATE bank_statements SET status = 'superseded'
-                        WHERE org_id = ? AND status = 'active'
-                        AND period_start <= ? AND period_end >= ?
-                    """, (org_id, period_end, period_start))
+                    if tagged_property_id:
+                        conn.execute("""
+                            UPDATE bank_statements SET status = 'superseded'
+                            WHERE org_id = ? AND property_id = ? AND status = 'active'
+                            AND period_start <= ? AND period_end >= ?
+                        """, (org_id, tagged_property_id, period_end, period_start))
+                    else:
+                        conn.execute("""
+                            UPDATE bank_statements SET status = 'superseded'
+                            WHERE org_id = ? AND (property_id IS NULL OR property_id = '') AND status = 'active'
+                            AND period_start <= ? AND period_end >= ?
+                        """, (org_id, period_end, period_start))
 
                 stmt_status = 'active' if validation.get('valid') else 'parse_failed'
                 conn.execute("""
                     INSERT INTO bank_statements
-                    (id, org_id, filename, file_path, period_start, period_end,
+                    (id, org_id, property_id, filename, file_path, period_start, period_end,
                      opening_balance, closing_balance, total_transactions, rent_transactions,
                      bank_format, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    statement_id, org_id, filename, file_path,
+                    statement_id, org_id, tagged_property_id, filename, file_path,
                     period_start, period_end, opening, closing,
                     len(transactions), paybill_count, bank_format, stmt_status,
                 ))
@@ -1841,7 +1860,37 @@ def upload_statement():
         property_row = get_current_property(conn)
         if not property_row:
             return redirect(url_for('property_list'))
-    return render_template('upload_statement.html', property=property_row)
+        properties = conn.execute(
+            "SELECT id, name FROM properties WHERE organization_id = ? AND status = 'active' ORDER BY name",
+            (org_id,)
+        ).fetchall() if org_id else [property_row]
+    return render_template('upload_statement.html', property=property_row, properties=properties)
+
+
+@app.route('/statements/<statement_id>/view')
+def view_statement_pdf(statement_id):
+    """Serve the raw PDF for inline viewing (opens in browser tab)."""
+    org_id = session.get('org_id')
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        effective_org = org_id or (prop['organization_id'] if prop else None)
+        stmt = conn.execute(
+            "SELECT * FROM bank_statements WHERE id = ? AND (org_id = ? OR property_id IN (SELECT id FROM properties WHERE organization_id = ?))",
+            (statement_id, effective_org, effective_org),
+        ).fetchone()
+    if not stmt:
+        flash('Statement not found.', 'error')
+        return redirect(url_for('manage_statements'))
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{statement_id}.pdf")
+    if not os.path.exists(file_path):
+        flash('PDF file not found on server.', 'error')
+        return redirect(url_for('manage_statements'))
+    return send_file(
+        file_path,
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=stmt['filename'],
+    )
 
 
 @app.route('/statements/<statement_id>/reparse', methods=['POST'])
@@ -1858,7 +1907,7 @@ def reparse_statement(statement_id):
             flash('Statement not found.', 'error')
             return redirect(url_for('manage_statements'))
 
-        file_path = stmt['file_path']
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{statement_id}.pdf")
         if not os.path.exists(file_path):
             flash('PDF file not found on server — cannot re-parse.', 'error')
             return redirect(url_for('manage_statements'))
@@ -1888,6 +1937,14 @@ def reparse_statement(statement_id):
         summary = result.get('summary') or {}
         paybill_count = summary.get('paybill_credits', 0)
         parse_error_txns = [t for t in transactions if getattr(t, 'txn_type', '') == 'PARSE_ERROR']
+
+        reparse_period_start = None
+        reparse_period_end = None
+        for t in transactions:
+            iso = _parse_txn_date_to_iso(getattr(t, 'transaction_date', None))
+            if iso:
+                reparse_period_start = iso if not reparse_period_start else min(reparse_period_start, iso)
+                reparse_period_end = iso if not reparse_period_end else max(reparse_period_end, iso)
 
         with get_connection() as conn:
             stmt_row = conn.execute("SELECT org_id, filename, file_path FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
@@ -1948,9 +2005,11 @@ def reparse_statement(statement_id):
             conn.execute("""
                 UPDATE bank_statements
                 SET opening_balance = ?, closing_balance = ?, total_transactions = ?,
-                    rent_transactions = ?, bank_format = ?, status = ?
+                    rent_transactions = ?, bank_format = ?, status = ?,
+                    period_start = ?, period_end = ?
                 WHERE id = ?
-            """, (opening, closing, len(transactions), paybill_count, bank_format, new_status, statement_id))
+            """, (opening, closing, len(transactions), paybill_count, bank_format, new_status,
+                  reparse_period_start, reparse_period_end, statement_id))
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -1978,17 +2037,27 @@ def verify_payments(statement_id):
             return redirect(url_for('property_list'))
 
         # Resolve org — from statement (new flow) or current property (legacy)
-        stmt_meta = conn.execute("SELECT org_id FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+        stmt_meta = conn.execute("SELECT org_id, property_id FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
         verify_org_id = (stmt_meta['org_id'] if stmt_meta else None) or session.get('org_id') or (property_row['organization_id'] if property_row['organization_id'] else None)
+        stmt_property_id = stmt_meta['property_id'] if stmt_meta else None
 
         if verify_org_id:
-            pending_claims = conn.execute("""
-                SELECT pc.*, u.unit_number, p.id as claim_property_id
-                FROM payment_claims pc
-                JOIN units u ON pc.unit_id = u.id
-                JOIN properties p ON u.property_id = p.id
-                WHERE p.organization_id = ? AND pc.status = 'pending'
-            """, (verify_org_id,)).fetchall()
+            if stmt_property_id:
+                pending_claims = conn.execute("""
+                    SELECT pc.*, u.unit_number, p.id as claim_property_id
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND p.id = ? AND pc.status = 'pending'
+                """, (verify_org_id, stmt_property_id)).fetchall()
+            else:
+                pending_claims = conn.execute("""
+                    SELECT pc.*, u.unit_number, p.id as claim_property_id
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND pc.status = 'pending'
+                """, (verify_org_id,)).fetchall()
         else:
             pending_claims = conn.execute("""
                 SELECT pc.*, u.unit_number, pc.property_id as claim_property_id
@@ -2091,8 +2160,365 @@ def verify_payments(statement_id):
             except Exception:
                 pass
 
-        flash(f'Verification complete! {verified_count} payments verified.', 'success')
-        return redirect(url_for('dashboard'))
+        flash(f'Verification complete! {verified_count} payments verified.', 'success' if verified_count else 'info')
+        return redirect(url_for('statement_detail', statement_id=statement_id))
+
+
+@app.route('/statements/<statement_id>')
+def statement_detail(statement_id):
+    """Statement management hub: verify, assign, correct, and audit all activity for one statement."""
+    from src.parsers.banks.registry import bank_display_name as _bank_label
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        org_id = session.get('org_id') or (property_row['organization_id'] if property_row else None)
+
+        stmt = conn.execute("SELECT * FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+        if not stmt:
+            flash('Statement not found.', 'error')
+            return redirect(url_for('manage_statements'))
+
+        effective_org = org_id or stmt['org_id']
+
+        credits = conn.execute("""
+            SELECT bt.*,
+                   p.id           AS payment_id,
+                   p.amount       AS payment_amount,
+                   p.payment_date,
+                   p.assignment_type,
+                   p.assignment_reason,
+                   p.unit_id      AS payment_unit_id,
+                   u.unit_number,
+                   t.name         AS tenant_name,
+                   pc.status      AS claim_status,
+                   pr.name        AS property_name
+            FROM bank_transactions bt
+            LEFT JOIN payments p     ON p.bank_txn_id = bt.id
+            LEFT JOIN units u        ON u.id = p.unit_id
+            LEFT JOIN tenants t      ON t.unit_id = u.id AND t.status = 'active'
+            LEFT JOIN payment_claims pc ON pc.id = p.claim_id
+            LEFT JOIN properties pr  ON pr.id = u.property_id
+            WHERE bt.statement_id = ? AND bt.txn_type = 'PAYBILL_CREDIT'
+            ORDER BY bt.txn_date, bt.id
+        """, (statement_id,)).fetchall()
+
+        other_txns = conn.execute("""
+            SELECT * FROM bank_transactions
+            WHERE statement_id = ? AND txn_type != 'PAYBILL_CREDIT'
+            ORDER BY txn_date, id
+        """, (statement_id,)).fetchall()
+
+        parse_errors = conn.execute("""
+            SELECT * FROM statement_parse_errors
+            WHERE statement_id = ? ORDER BY txn_index, page_number
+        """, (statement_id,)).fetchall()
+
+        # Units for assignment dropdowns (org-scoped)
+        if effective_org:
+            prop_count = conn.execute(
+                "SELECT COUNT(*) FROM properties WHERE organization_id = ? AND status = 'active'",
+                (effective_org,)
+            ).fetchone()[0]
+            units = conn.execute("""
+                SELECT u.id, u.unit_number, t.name AS tenant_name,
+                       p.name AS property_name, p.id AS property_id
+                FROM units u
+                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                JOIN properties p ON u.property_id = p.id
+                WHERE p.organization_id = ?
+                ORDER BY p.name, u.unit_number
+            """, (effective_org,)).fetchall()
+            tenant_rows = conn.execute("""
+                SELECT t.id, t.name, t.unit_id, u.unit_number
+                FROM tenants t JOIN units u ON t.unit_id = u.id
+                JOIN properties p ON u.property_id = p.id
+                WHERE p.organization_id = ? AND t.status = 'active'
+            """, (effective_org,)).fetchall()
+        else:
+            prop_count = 1
+            units = conn.execute("""
+                SELECT u.id, u.unit_number, t.name AS tenant_name,
+                       p.name AS property_name, p.id AS property_id
+                FROM units u
+                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                JOIN properties p ON u.property_id = p.id
+                WHERE u.property_id = ?
+                ORDER BY u.unit_number
+            """, (property_row['id'],)).fetchall()
+            tenant_rows = conn.execute("""
+                SELECT t.id, t.name, t.unit_id, u.unit_number
+                FROM tenants t JOIN units u ON t.unit_id = u.id
+                WHERE t.property_id = ? AND t.status = 'active'
+            """, (property_row['id'],)).fetchall()
+
+        def _name_tokens(s):
+            if not s:
+                return []
+            return [tok for tok in re.sub(r'[^A-Za-z0-9]+', ' ', s).strip().lower().split() if tok]
+
+        tenant_index = [
+            {'unit_id': t['unit_id'], 'unit_number': t['unit_number'],
+             'name': t['name'], 'tokens': set(_name_tokens(t['name']))}
+            for t in tenant_rows if len(_name_tokens(t['name'])) >= 2
+        ]
+
+        matched, unmatched = [], []
+        for row in credits:
+            r = dict(row)
+            if r['payment_id']:
+                matched.append(r)
+                continue
+            # Tier 1 — unit hint
+            hint = (r.get('unit_hint') or '').strip()
+            if hint and effective_org:
+                hit = conn.execute("""
+                    SELECT u.id, u.unit_number FROM units u
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND UPPER(TRIM(u.unit_number)) = ?
+                """, (effective_org, hint.upper())).fetchall()
+                if len(hit) == 1:
+                    r['suggested_unit_id'] = hit[0]['id']
+                    r['suggested_unit_number'] = hit[0]['unit_number']
+                    r['suggestion_source'] = 'unit_hint'
+            # Tier 2 — sender name match
+            if not r.get('suggested_unit_id'):
+                stokens = set(_name_tokens(r.get('sender_name') or ''))
+                if len(stokens) >= 2:
+                    for tenant in tenant_index:
+                        if len(stokens & tenant['tokens']) >= 2:
+                            r['suggested_unit_id'] = tenant['unit_id']
+                            r['suggested_unit_number'] = tenant['unit_number']
+                            r['suggested_tenant_name'] = tenant['name']
+                            r['suggestion_source'] = 'name_match'
+                            break
+            unmatched.append(r)
+
+    return render_template(
+        'statement_detail.html',
+        stmt=stmt,
+        matched=matched,
+        unmatched=unmatched,
+        other_txns=other_txns,
+        parse_errors=parse_errors,
+        units=units,
+        bank_label=_bank_label,
+        property=property_row,
+        prop_count=prop_count,
+    )
+
+
+@app.route('/statements/<statement_id>/auto-assign/<txn_id>', methods=['POST'])
+def statement_auto_assign(statement_id, txn_id):
+    """Auto-assign a bank credit to the unit extracted from the narration (unit_hint). Audited."""
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        org_id = session.get('org_id') or (property_row['organization_id'] if property_row else None)
+
+        txn = conn.execute("SELECT * FROM bank_transactions WHERE id = ? AND statement_id = ?",
+                           (txn_id, statement_id)).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+        if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (txn_id,)).fetchone():
+            flash('Already assigned.', 'warning')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
+        unit_hint = (txn['unit_hint'] or '').strip()
+        if not unit_hint:
+            flash('No unit hint — assign manually.', 'error')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
+        stmt_meta = conn.execute("SELECT org_id FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+        effective_org = org_id or (stmt_meta['org_id'] if stmt_meta else None)
+
+        if effective_org:
+            hits = conn.execute("""
+                SELECT u.id, u.unit_number FROM units u
+                JOIN properties p ON u.property_id = p.id
+                WHERE p.organization_id = ? AND UPPER(TRIM(u.unit_number)) = ?
+            """, (effective_org, unit_hint.upper())).fetchall()
+        else:
+            hits = conn.execute("""
+                SELECT id, unit_number FROM units
+                WHERE property_id = ? AND UPPER(TRIM(unit_number)) = ?
+            """, (property_row['id'], unit_hint.upper())).fetchall()
+
+        if len(hits) != 1:
+            flash(f'Hint "{unit_hint}" matched {len(hits)} units — assign manually.', 'error')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
+        unit = hits[0]
+        prop_row = conn.execute(
+            "SELECT p.id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? LIMIT 1",
+            (unit['id'],)).fetchone()
+        pay_property_id = prop_row['id'] if prop_row else None
+
+        payment_id = generate_id('PAY')
+        conn.execute("""
+            INSERT INTO payments
+            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', 'Unit hint from narration', 'admin')
+        """, (payment_id, pay_property_id, unit['id'], txn_id, statement_id,
+              txn['amount'], txn['txn_date'] or ''))
+        allocate_payment(conn, payment_id, unit['id'], txn['amount'])
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_auto_hint_assigned', 'payment', payment_id,
+             f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):.2f} | Unit: {unit['unit_number']} | Hint: {unit_hint} | Statement: {statement_id}",
+             'admin'),
+        )
+        try:
+            _tenant = conn.execute(
+                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                (unit['id'],)).fetchone()
+            if _tenant and _tenant['phone']:
+                _token = _tenant['access_token'] or secrets.token_urlsafe(32)
+                if not _tenant['access_token']:
+                    conn.execute("UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                                 (_token, unit['id']))
+                _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
+                        f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
+                from src.messaging.delivery import send_sms
+                send_sms([{'phone': _tenant['phone']}], _sms)
+        except Exception:
+            pass
+
+    flash(f'Auto-assigned to Unit {unit["unit_number"]}.', 'success')
+    return redirect(url_for('statement_detail', statement_id=statement_id))
+
+
+@app.route('/statements/<statement_id>/assign/<txn_id>', methods=['POST'])
+def statement_assign_payment(statement_id, txn_id):
+    """Manually assign a bank credit to a unit from the statement detail page. Audited."""
+    unit_id = request.form.get('unit_id', '').strip()
+    reason = request.form.get('reason', '').strip()
+
+    if not unit_id:
+        flash('Please select a unit.', 'error')
+        return redirect(url_for('statement_detail', statement_id=statement_id))
+    if len(reason) < 5:
+        flash('Reason required (min 5 characters).', 'error')
+        return redirect(url_for('statement_detail', statement_id=statement_id))
+
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        txn = conn.execute("SELECT * FROM bank_transactions WHERE id = ? AND statement_id = ?",
+                           (txn_id, statement_id)).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+        if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (txn_id,)).fetchone():
+            flash('Already assigned.', 'warning')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
+        prop_row = conn.execute(
+            "SELECT p.id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? LIMIT 1",
+            (unit_id,)).fetchone()
+        pay_property_id = prop_row['id'] if prop_row else None
+
+        payment_id = generate_id('PAY')
+        conn.execute("""
+            INSERT INTO payments
+            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+             assignment_type, assignment_reason, assigned_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
+        """, (payment_id, pay_property_id, unit_id, txn_id, statement_id,
+              txn['amount'], txn['txn_date'] or '', reason))
+        allocate_payment(conn, payment_id, unit_id, txn['amount'])
+
+        unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
+        unit_number = unit_row['unit_number'] if unit_row else unit_id
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_manual_assigned', 'payment', payment_id,
+             f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):.2f} | Unit: {unit_number} | Reason: {reason} | Statement: {statement_id}",
+             'admin'),
+        )
+        try:
+            _tenant = conn.execute(
+                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                (unit_id,)).fetchone()
+            if _tenant and _tenant['phone']:
+                _token = _tenant['access_token'] or secrets.token_urlsafe(32)
+                if not _tenant['access_token']:
+                    conn.execute("UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                                 (_token, unit_id))
+                _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
+                        f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
+                from src.messaging.delivery import send_sms
+                send_sms([{'phone': _tenant['phone']}], _sms)
+        except Exception:
+            pass
+
+    flash(f'Payment assigned to Unit {unit_number}.', 'success')
+    return redirect(url_for('statement_detail', statement_id=statement_id))
+
+
+@app.route('/statements/<statement_id>/correct/<payment_id>', methods=['POST'])
+def statement_correct_payment(statement_id, payment_id):
+    """Correct a wrong assignment: unassign and optionally reassign to a different unit. Audited."""
+    reason = request.form.get('reason', '').strip()
+    new_unit_id = request.form.get('new_unit_id', '').strip() or None
+
+    if len(reason) < 5:
+        flash('Correction reason required (min 5 characters).', 'error')
+        return redirect(url_for('statement_detail', statement_id=statement_id))
+
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        payment = conn.execute(
+            "SELECT p.*, u.unit_number FROM payments p LEFT JOIN units u ON u.id = p.unit_id WHERE p.id = ?",
+            (payment_id,)).fetchone()
+        if not payment or payment['statement_id'] != statement_id:
+            flash('Payment not found.', 'error')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
+        old_unit = payment['unit_number'] or '-'
+        old_amount = float(payment['amount'])
+        txn_id = payment['bank_txn_id']
+
+        if payment['claim_id']:
+            conn.execute(
+                "UPDATE payment_claims SET status = 'pending', verified_at = NULL WHERE id = ?",
+                (payment['claim_id'],))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_corrected', 'payment', payment_id,
+             f"Unassigned | KES {old_amount:.2f} | Was: Unit {old_unit} | Reason: {reason} | Statement: {statement_id}",
+             'admin'),
+        )
+        conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+
+        new_unit_number = None
+        if new_unit_id:
+            txn = conn.execute("SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)).fetchone()
+            prop_row = conn.execute(
+                "SELECT p.id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? LIMIT 1",
+                (new_unit_id,)).fetchone()
+            pay_property_id = prop_row['id'] if prop_row else None
+            new_payment_id = generate_id('PAY')
+            conn.execute("""
+                INSERT INTO payments
+                (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+                 assignment_type, assignment_reason, assigned_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
+            """, (new_payment_id, pay_property_id, new_unit_id, txn_id, statement_id,
+                  txn['amount'], txn['txn_date'] or '',
+                  f"Correction from Unit {old_unit}: {reason}"))
+            allocate_payment(conn, new_payment_id, new_unit_id, txn['amount'])
+            unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (new_unit_id,)).fetchone()
+            new_unit_number = unit_row['unit_number'] if unit_row else new_unit_id
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('payment_manual_assigned', 'payment', new_payment_id,
+                 f"Correction reassign | Ref: {txn['mpesa_ref'] or '-'} | KES {old_amount:.2f} | From: Unit {old_unit} → Unit {new_unit_number} | Reason: {reason} | Statement: {statement_id}",
+                 'admin'),
+            )
+
+    if new_unit_number:
+        flash(f'Corrected: moved KES {old_amount:,.0f} from Unit {old_unit} → Unit {new_unit_number}.', 'success')
+    else:
+        flash(f'Payment unassigned from Unit {old_unit}. Credit is now unmatched.', 'info')
+    return redirect(url_for('statement_detail', statement_id=statement_id))
 
 
 @app.route('/payments/auto-assign/<txn_id>', methods=['POST'])
@@ -3038,7 +3464,7 @@ def export_page():
 def review():
     """Phase 4 Human Review: tabs for Confirmed, Unreported, Unconfirmed, Reversals, Parse errors."""
     tab = request.args.get('tab', 'confirmed').strip().lower()
-    if tab not in ('confirmed', 'unreported', 'unconfirmed', 'reversals', 'parse_errors'):
+    if tab not in ('confirmed', 'unconfirmed', 'unreported', 'reversals', 'parse_errors'):
         tab = 'confirmed'
 
     with get_connection() as conn:
@@ -3073,7 +3499,9 @@ def review():
             org_filter = review_org_id or property_id
             if review_org_id:
                 raw_unreported = conn.execute("""
-                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+                           bs.id AS statement_id, bs.filename AS statement_filename,
+                           bs.bank_format AS statement_bank_format
                     FROM bank_transactions bt
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE bs.org_id = ?
@@ -3090,7 +3518,9 @@ def review():
                 """, (review_org_id,)).fetchall()
             else:
                 raw_unreported = conn.execute("""
-                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+                           bs.id AS statement_id, bs.filename AS statement_filename,
+                           bs.bank_format AS statement_bank_format
                     FROM bank_transactions bt
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE bs.property_id = ?
