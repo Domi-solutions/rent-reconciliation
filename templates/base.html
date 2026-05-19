@@ -17,7 +17,7 @@
     else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field')
     else 'reports'    if request.endpoint.startswith('reports.')
     else 'activity'   if request.endpoint == 'activity'
-    else 'water'      if request.endpoint == 'upload_water_charges'
+    else 'water'      if request.endpoint in ('upload_water_charges', 'water_uploads_list', 'water_upload_detail')
     else 'workflow'   if request.endpoint in ('tools_index', 'generate_charges', 'export_page')
     else 'caretakers' if request.endpoint in ('manage_caretakers', 'create_caretaker', 'set_caretaker_password', 'edit_caretaker', 'delete_caretaker')
     else 'owners'     if request.endpoint in ('manage_owners', 'create_owner', 'generate_owner_token', 'set_owner_password', 'assign_property_to_owner', 'remove_property_from_owner', 'delete_owner')
@@ -63,7 +63,7 @@
         Bank Statements
       </a>
 
-      <a class="sidebar-item {% if active_nav == 'water' %}active{% endif %}" href="{{ url_for('upload_water_charges') }}">
+      <a class="sidebar-item {% if active_nav == 'water' %}active{% endif %}" href="{{ url_for('water_uploads_list') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
         Water Charges
       </a>

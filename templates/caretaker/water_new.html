@@ -1,0 +1,179 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Record Water Readings — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .reading-table th { font-size:12px; font-weight:600; color:var(--ink-2); padding:8px 12px; white-space:nowrap; }
+  .reading-table td { padding:6px 12px; vertical-align:middle; }
+  .reading-input { width:90px; text-align:right; font-size:13px; }
+  .computed-cell { font-size:13px; color:var(--ink-2); text-align:right; min-width:60px; }
+  .amount-cell { font-size:13px; font-weight:600; text-align:right; min-width:90px; }
+  .prev-note { font-size:11px; color:var(--ink-3); }
+  .unit-label { font-size:13px; font-weight:600; }
+  .tenant-label { font-size:12px; color:var(--ink-3); }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="POST" id="readingsForm">
+  <input type="hidden" name="reading_period" value="{{ reading_period }}">
+  <input type="hidden" name="charge_period" value="{{ charge_period }}">
+
+  <div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+      <div style="font-size:20px; font-weight:700; color:var(--ink);">Record Water Readings</div>
+      <div style="font-size:13px; color:var(--ink-3); margin-top:4px;">
+        Readings taken in <strong>{{ reading_period }}</strong> &mdash; charges billed to <strong>{{ charge_period }}</strong> &mdash; rate: KES {{ '{:,.0f}'.format(rate) }}/unit
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('caretaker.water_list', property_id=property.id) }}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+      <button type="submit" class="btn btn-primary btn-sm">Save Readings</button>
+    </div>
+  </div>
+
+  {% if units %}
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow-x:auto;">
+    <table class="reading-table table mb-0">
+      <thead style="background:var(--bg);">
+        <tr>
+          <th>Unit</th>
+          <th>Tenant</th>
+          <th style="text-align:right;">Previous</th>
+          <th style="text-align:right;">Current</th>
+          <th style="text-align:right;">Units Used</th>
+          <th style="text-align:right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in units %}
+        <tr id="row_{{ u.unit_id }}">
+          <td>
+            <span class="unit-label">{{ u.unit_number }}</span>
+          </td>
+          <td>
+            <span class="tenant-label">{{ u.tenant_name or '—' }}</span>
+          </td>
+          <td style="text-align:right;">
+            <input type="number" step="0.1" min="0"
+                   id="prev_{{ u.unit_id }}"
+                   name="prev_{{ u.unit_id }}"
+                   class="form-control form-control-sm reading-input prev-input"
+                   value="{{ u.last_reading if u.last_reading is not none else '' }}"
+                   data-unit="{{ u.unit_id }}"
+                   {% if u.last_reading is not none %}readonly{% endif %}
+                   placeholder="0">
+            {% if u.last_reading is none %}
+            <div class="prev-note">First reading — enter previous</div>
+            {% endif %}
+          </td>
+          <td style="text-align:right;">
+            <input type="number" step="0.1" min="0"
+                   id="curr_{{ u.unit_id }}"
+                   name="curr_{{ u.unit_id }}"
+                   class="form-control form-control-sm reading-input curr-input"
+                   data-unit="{{ u.unit_id }}"
+                   placeholder="Enter reading"
+                   autocomplete="off">
+          </td>
+          <td>
+            <span class="computed-cell" id="consumed_{{ u.unit_id }}">—</span>
+          </td>
+          <td>
+            <span class="amount-cell" id="amount_{{ u.unit_id }}">—</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot style="border-top:2px solid var(--border); background:var(--bg);">
+        <tr>
+          <td colspan="4" style="padding:10px 12px; font-size:13px; font-weight:600; color:var(--ink-2);">Total</td>
+          <td style="padding:10px 12px; text-align:right; font-size:13px; font-weight:600;" id="total-consumed">—</td>
+          <td style="padding:10px 12px; text-align:right; font-size:14px; font-weight:700;" id="grand-total">—</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div style="margin-top:16px; padding:12px 16px; background:#fefce8; border:1px solid #fef08a; border-radius:8px; font-size:12px; color:#854d0e;">
+    Only units with a current reading entered will be saved. Units with no entry are skipped.
+  </div>
+
+  <div class="d-flex justify-content-end mt-3">
+    <button type="submit" class="btn btn-primary">Save Readings</button>
+  </div>
+
+  {% else %}
+  <div style="text-align:center; padding:40px; color:var(--ink-3); font-size:13px;">
+    No active units found for this property.
+  </div>
+  {% endif %}
+
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const RATE = {{ rate }};
+
+function fmt(n) {
+  return 'KES ' + Math.round(n).toLocaleString('en-KE');
+}
+
+function updateRow(unitId) {
+  const prevEl = document.getElementById('prev_' + unitId);
+  const currEl = document.getElementById('curr_' + unitId);
+  const prev = parseFloat(prevEl.value) || 0;
+  const curr = parseFloat(currEl.value);
+
+  if (isNaN(curr) || currEl.value.trim() === '') {
+    document.getElementById('consumed_' + unitId).textContent = '—';
+    document.getElementById('amount_' + unitId).textContent = '—';
+    document.getElementById('amount_' + unitId).dataset.amount = '0';
+    updateTotal();
+    return;
+  }
+
+  const consumed = Math.max(0, curr - prev);
+  const amount = consumed * RATE;
+
+  document.getElementById('consumed_' + unitId).textContent = consumed % 1 === 0 ? consumed.toFixed(0) : consumed.toFixed(1);
+  const amountEl = document.getElementById('amount_' + unitId);
+  amountEl.textContent = fmt(amount);
+  amountEl.dataset.amount = amount;
+
+  // Warn if current < previous
+  currEl.style.borderColor = curr < prev ? '#dc2626' : '';
+  updateTotal();
+}
+
+function updateTotal() {
+  let totalAmount = 0;
+  let totalConsumed = 0;
+  document.querySelectorAll('.amount-cell').forEach(el => {
+    totalAmount += parseFloat(el.dataset.amount) || 0;
+  });
+  document.querySelectorAll('.computed-cell').forEach(el => {
+    const v = parseFloat(el.textContent);
+    if (!isNaN(v)) totalConsumed += v;
+  });
+
+  const grandTotalEl = document.getElementById('grand-total');
+  const totalConsumedEl = document.getElementById('total-consumed');
+  if (totalAmount > 0) {
+    grandTotalEl.textContent = fmt(totalAmount);
+    totalConsumedEl.textContent = totalConsumed % 1 === 0 ? totalConsumed.toFixed(0) : totalConsumed.toFixed(1);
+  } else {
+    grandTotalEl.textContent = '—';
+    totalConsumedEl.textContent = '—';
+  }
+}
+
+document.querySelectorAll('.curr-input').forEach(el => {
+  el.addEventListener('input', () => updateRow(el.dataset.unit));
+});
+document.querySelectorAll('.prev-input').forEach(el => {
+  el.addEventListener('input', () => updateRow(el.dataset.unit));
+});
+</script>
+{% endblock %}

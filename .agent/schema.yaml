@@ -19,6 +19,7 @@ tables:
       owner_id: {type: TEXT, fk: owners.id, added_by: migrate_add_owners}
       rent_due_day: {type: INTEGER, default: 5, added_by: migrate_add_rent_due_day}
       management_fee_rate: {type: REAL, default: 0.08, added_by: migrate_add_payment_transactions}
+      water_rate: {type: REAL, default: 300, added_by: migrate_add_water_readings, note: "KES per unit consumed; property-level default; snapshotted onto water_uploads at time of reading"}
       status: {type: TEXT, default: active}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
@@ -507,6 +508,42 @@ tables:
       status: {type: TEXT, default: open, values: [open, dismissed]}
       created_at: {type: DATETIME, default: CURRENT_TIMESTAMP}
       dismissed_at: {type: DATETIME}
+
+  water_uploads:
+    status: live
+    migration: migrate_add_water_readings
+    note: "One row per batch of meter readings. reading_period = month readings were taken (YYYY-MM). charge_period = month charges apply to (always reading_period + 1 month). rate is snapshotted from properties.water_rate at upload time."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      reading_period: {type: TEXT, required: true, note: "YYYY-MM when readings were taken (e.g. 2026-05)"}
+      charge_period: {type: TEXT, required: true, note: "YYYY-MM when charges are billed (always reading_period + 1)"}
+      unit_count: {type: INTEGER}
+      total_amount: {type: REAL}
+      rate: {type: REAL, note: "KES/unit consumed; snapshotted from properties.water_rate at upload time"}
+      source: {type: TEXT, values: [admin_excel, caretaker_form]}
+      submitted_by: {type: TEXT}
+      submitted_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    constraints:
+      - UNIQUE(property_id, charge_period) — prevents duplicate uploads per charge period
+
+  water_readings:
+    status: live
+    migration: migrate_add_water_readings
+    note: "One row per unit per upload. previous_reading auto-populated from last recorded current_reading for that unit."
+    columns:
+      id: {type: TEXT, pk: true}
+      upload_id: {type: TEXT, fk: water_uploads.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      previous_reading: {type: REAL, required: true}
+      current_reading: {type: REAL, required: true}
+      units_consumed: {type: REAL, note: "current_reading − previous_reading"}
+      rate: {type: REAL, note: "KES per unit; copied from water_uploads.rate"}
+      amount: {type: REAL, note: "units_consumed × rate; written to rent_charges as charge_type='water'"}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    indexes:
+      - idx_water_readings_upload ON (upload_id)
+      - idx_water_readings_unit ON (unit_id)
 
 views:
   unit_balances:

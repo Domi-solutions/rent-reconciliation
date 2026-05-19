@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Water Charges{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div class="page-title">Water Charges</div>
+    <div class="page-meta">Meter reading batches — each month's readings recorded by the caretaker.</div>
+  </div>
+  <a href="{{ url_for('upload_water_charges') }}" class="btn btn-outline-secondary btn-sm">Upload Excel</a>
+</div>
+
+<!-- Rate card -->
+<div class="surface-card mb-4" style="padding:14px 18px;">
+  <div class="d-flex align-items-center gap-3">
+    <div>
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); margin-bottom:2px;">Water Rate</div>
+      <div id="rate-display" style="font-size:18px; font-weight:700; color:var(--ink);">
+        KES {{ '{:,.0f}'.format(property.water_rate or 300) }}<span style="font-size:13px; font-weight:400; color:var(--ink-3);">/unit consumed</span>
+      </div>
+    </div>
+    <button type="button" onclick="toggleRateEdit()" id="rate-edit-btn"
+            style="margin-left:8px; background:none; border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:12px; color:var(--ink-2); cursor:pointer;">
+      Edit
+    </button>
+    <form id="rate-form" method="POST" action="{{ url_for('water_set_rate') }}"
+          style="display:none; align-items:center; gap:8px;">
+      <input type="number" name="water_rate" id="rate-input" step="1" min="1"
+             value="{{ property.water_rate or 300 }}"
+             style="width:100px; padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; text-align:right;">
+      <span style="font-size:13px; color:var(--ink-3);">KES/unit</span>
+      <button type="submit" style="padding:4px 12px; background:var(--ink); color:#fff; border:none; border-radius:6px; font-size:12px; cursor:pointer;">Save</button>
+      <button type="button" onclick="toggleRateEdit()"
+              style="padding:4px 10px; background:none; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--ink-2); cursor:pointer;">Cancel</button>
+    </form>
+  </div>
+  <div style="font-size:12px; color:var(--ink-3); margin-top:6px;">
+    Applied to all new caretaker web entries. Snapshotted per reading batch at submission time.
+  </div>
+</div>
+
+{% if uploads %}
+<div class="surface-card p-0">
+  <table class="table table-hover mb-0" style="font-size:13px;">
+    <thead>
+      <tr>
+        <th>Reading Month</th>
+        <th>Billed To</th>
+        <th>Units</th>
+        <th>Total (KES)</th>
+        <th>Source</th>
+        <th>Submitted By</th>
+        <th>Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in uploads %}
+      <tr>
+        <td>{{ u.reading_period }}</td>
+        <td>
+          <span class="badge" style="background:#eff6ff; color:#1d4ed8; font-size:11px;">{{ u.charge_period }}</span>
+        </td>
+        <td>{{ u.unit_count }}</td>
+        <td style="font-weight:600;">{{ '{:,.0f}'.format(u.total_amount) }}</td>
+        <td>
+          {% if u.source == 'caretaker_web' %}
+            <span class="badge bg-success-subtle text-success" style="font-size:10px;">Caretaker</span>
+          {% else %}
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">Excel</span>
+          {% endif %}
+        </td>
+        <td style="color:var(--ink-2);">{{ u.submitted_by or '—' }}</td>
+        <td style="color:var(--ink-3);">{{ u.submitted_at[:10] if u.submitted_at }}</td>
+        <td>
+          <a href="{{ url_for('water_upload_detail', upload_id=u.id) }}" style="font-size:12px;">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="surface-card" style="text-align:center; padding:60px 20px;">
+  <div style="font-size:32px; margin-bottom:12px;">💧</div>
+  <div style="font-size:15px; font-weight:600; color:var(--ink); margin-bottom:6px;">No water readings recorded yet</div>
+  <div style="font-size:13px; color:var(--ink-3); margin-bottom:20px;">
+    Water readings are recorded by the caretaker at the end of each month via their portal,
+    or you can upload an Excel file directly.
+  </div>
+  <a href="{{ url_for('upload_water_charges') }}" class="btn btn-outline-secondary btn-sm">Upload Excel</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleRateEdit() {
+  const form = document.getElementById('rate-form');
+  const btn = document.getElementById('rate-edit-btn');
+  const display = document.getElementById('rate-display');
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : 'flex';
+  btn.style.display = showing ? '' : 'none';
+  display.style.display = showing ? '' : 'none';
+  if (!showing) document.getElementById('rate-input').focus();
+}
+</script>
+{% endblock %}

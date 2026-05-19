@@ -250,6 +250,47 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ---
 
+#### Session 11 — Water Readings, Reports Portals, Suggestion Refactor, Metrics Consolidation (2026-05-19) ✅ COMPLETE
+
+**Water charges — storage and web view:**
+- [x] `migrate_add_water_readings()` in `db.py`: adds `properties.water_rate` (REAL DEFAULT 300), creates `water_uploads` and `water_readings` tables with indexes
+- [x] `POST /water-uploads/set-rate` — updates property water rate; audited
+- [x] `GET /water-uploads` — admin list with rate card + inline rate edit (JS toggle)
+- [x] `GET /water-uploads/<upload_id>` — detail: readings table with prev/current/consumed/amount; anomaly flags (amount > 2× previous); fallback charges_only table for Excel uploads
+- [x] Updated `/charges/water` Excel upload to create `water_uploads` + `water_readings` records; redirects to detail instead of dashboard
+- [x] Templates: `templates/water_uploads.html`, `templates/water_upload_detail.html`
+
+**Caretaker water entry form:**
+- [x] `GET /caretaker/<pid>/water` — list of past batches
+- [x] `GET/POST /caretaker/<pid>/water/new` — meter reading form; previous reading auto-populated from last upload; live JS calculation (rate × consumed); validates current >= previous; creates water_upload + readings + rent_charges; prevents duplicate per charge_period
+- [x] Templates: `templates/caretaker/water.html`, `templates/caretaker/water_new.html`
+- [x] Caretaker nav: "Reports" and "Water" tabs added to `base_caretaker.html`
+
+**Caretaker reports portal:**
+- [x] `GET /caretaker/<pid>/reports` — list of landlord_reports; occupancy + arrears badges from JSON blob
+- [x] `GET /caretaker/<pid>/reports/<report_id>` — operational report (occupancy, arrears follow-up with phone links, tenant movement, vacant units); no KES amounts; calls `enrich_report_data()`
+- [x] Template: `templates/caretaker/report_detail.html`
+
+**Owner report generation from portal:**
+- [x] `POST /view/<property_id>/reports/generate` — owner selects month, derives period_start/period_end using `calendar.monthrange`, calls `generate_landlord_report`, inserts to `landlord_reports`; no SMS
+- [x] `GET /view/<property_id>/reports` — passes `default_period` (last month) to template; generate form at top
+- [x] Removed "Owner View ↗" button from `templates/reports/preview.html`
+
+**Bug fix — suggestion "None" in unreported payments:**
+- [x] `templates/review.html` single-transaction section was missing `{% elif t.unit_hint %}` branch; grouped-transaction section had it; fixed to match. Now shows "Hint: M10 — no match" consistently with `statement_detail.html`
+
+**Architectural refactor — shared suggestion logic:**
+- [x] `enrich_with_suggestions(rows, conn, property_id, org_id=None)` extracted to `src/reconciliation/matcher.py`
+- [x] Both `statement_detail` and `review` unreported-tab inline implementations replaced with calls to canonical function
+- [x] Dead `tenant_rows` queries removed from both routes (function runs its own)
+
+**Architectural refactor — canonical utils:**
+- [x] `src/utils/metrics.py` created: `get_property_occupancy()`, `get_expected_monthly_income()`, `get_months_behind()`
+- [x] Used in `app.py` (admin dashboard + arrears), `viewer_routes.py` (owner dashboard + arrears), `caretaker_routes.py` (via `_occupancy_data` wrapper), `owner_routes.py` (portfolio loop)
+- [x] Phone normalization consolidated: 3 inline copies in `app.py` replaced with `_normalize_phone()` from `src/utils/phone.py`; `link_tenant_person` now returns an error on unrecognised format instead of silently storing garbage
+
+---
+
 #### Session 10 — Bank Statement Workflow (2026-05-19) ✅ COMPLETE
 
 - Fixed `manage_statements()` redirect bug (org_id not set on master-key login path) + `property_list()`/`select_property()` now backfill `session['org_id']`

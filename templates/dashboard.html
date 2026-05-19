@@ -107,9 +107,9 @@
     <div class="alert-banner-title">{{ unassigned_stats.total_count }} unassigned bank payment{{ 's' if unassigned_stats.total_count != 1 }} · KES {{ "{:,.0f}".format(unassigned_stats.total_amount) }}</div>
     <div class="alert-banner-sub">
       {% if unassigned_stats.hint_count > 0 %}
-        {{ unassigned_stats.hint_count }} with suggested unit{{ 's' if unassigned_stats.hint_count != 1 }} (KES {{ "{:,.0f}".format(unassigned_stats.hint_amount) }}) — ready to assign in one click
+        {{ unassigned_stats.hint_count }} with narration hint{{ 's' if unassigned_stats.hint_count != 1 }} (KES {{ "{:,.0f}".format(unassigned_stats.hint_amount) }}) — manual match required
       {% else %}
-        No automatic suggestions — manual assignment required
+        Manual assignment required
       {% endif %}
     </div>
   </div>

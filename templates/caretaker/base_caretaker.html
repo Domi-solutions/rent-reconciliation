@@ -45,8 +45,12 @@
          href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
       <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"
          href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Arrears</a>
+      <a class="ct-nav-tab {% if active_tab == 'reports' %}active{% endif %}"
+         href="{{ url_for('caretaker.reports_list', property_id=property.id) }}">Reports</a>
       <a class="ct-nav-tab {% if active_tab == 'tenants' %}active{% endif %}"
          href="{{ url_for('caretaker.tenants', property_id=property.id) }}">Tenants</a>
+      <a class="ct-nav-tab {% if active_tab == 'water' %}active{% endif %}"
+         href="{{ url_for('caretaker.water_list', property_id=property.id) }}">Water</a>
       <a class="ct-nav-tab {% if active_tab == 'log_payment' %}active{% endif %}"
          href="{{ url_for('caretaker.log_payment', property_id=property.id) }}">Log Payment</a>
       <a class="ct-nav-tab {% if active_tab == 'issues' %}active{% endif %}"

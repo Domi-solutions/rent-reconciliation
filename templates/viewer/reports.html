@@ -1,10 +1,19 @@
 {% extends "viewer/base_viewer.html" %}
-{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block title %}{{ property.name }} — Reports{% endblock %}
 {% block active_tab %}reports{% endblock %}
 {% block content %}
-<div class="mb-3">
-  <div class="page-title">Monthly Reports</div>
-  <div class="page-meta">Period summaries verified against bank records.</div>
+
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+  <div>
+    <div class="page-title">Monthly Reports</div>
+    <div class="page-meta">Period summaries verified against bank records.</div>
+  </div>
+  <form method="POST" action="{{ url_for('viewer.owner_generate_report', property_id=property.id) }}"
+        style="display:flex; align-items:center; gap:8px;">
+    <input type="month" name="period" value="{{ default_period }}" max="{{ default_period }}"
+           style="padding:5px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <button type="submit" class="btn btn-primary btn-sm">Generate Report</button>
+  </form>
 </div>
 
 {% if reports %}
@@ -18,19 +27,13 @@
               {{ r.period_start }} to {{ r.period_end }}
             </div>
             <div class="report-meta">
-              Generated {{ r.created_at }}
+              Generated {{ r.created_at[:10] if r.created_at }}
             </div>
-            <div class="mt-2" style="display: flex; flex-wrap: wrap; gap: 6px;">
-              <span class="report-badge">
-                {{ r.collection_rate }}% collection rate
-              </span>
-              <span class="report-badge">
-                KES {{ "{:,.0f}".format(r.total_collected or 0) }} verified
-              </span>
+            <div class="mt-2" style="display:flex; flex-wrap:wrap; gap:6px;">
+              <span class="report-badge">{{ r.collection_rate }}% collection rate</span>
+              <span class="report-badge">KES {{ "{:,.0f}".format(r.total_collected or 0) }} verified</span>
               {% if r.total_arrears > 0 %}
-              <span class="report-badge report-badge-warn">
-                KES {{ "{:,.0f}".format(r.total_arrears or 0) }} outstanding
-              </span>
+              <span class="report-badge report-badge-warn">KES {{ "{:,.0f}".format(r.total_arrears or 0) }} outstanding</span>
               {% endif %}
             </div>
           </div>
@@ -45,25 +48,21 @@
   </div>
 {% else %}
   <div class="empty-state">
-    <div class="empty-state-title">No reports available</div>
-    <div class="empty-state-sub">
-      No reports have been generated yet. Reports are created by the property management team.
-    </div>
+    <div class="empty-state-title">No reports yet</div>
+    <div class="empty-state-sub">Select a month above and click Generate Report to create your first report.</div>
   </div>
 {% endif %}
 
 {% if disbursements %}
 <div class="mt-5">
-  <div class="page-title" style="font-size: 18px; margin-bottom: 4px;">Disbursements</div>
+  <div class="page-title" style="font-size:18px; margin-bottom:4px;">Disbursements</div>
   <div class="page-meta mb-3">Monthly net payouts — collected via Paybill minus management fee.</div>
   <div class="surface-card">
     {% for d in disbursements %}
     <div class="data-row">
       <div class="d-flex justify-content-between align-items-start">
         <div>
-          <div class="data-row-amount amount-success">
-            KES {{ "{:,.0f}".format(d.net_amount or 0) }} net
-          </div>
+          <div class="data-row-amount amount-success">KES {{ "{:,.0f}".format(d.net_amount or 0) }} net</div>
           <div class="data-row-meta">
             {{ d.period }} · KES {{ "{:,.0f}".format(d.total_collected or 0) }} collected ·
             {{ "{:.0f}".format((d.fee_rate or 0) * 100) }}% fee (KES {{ "{:,.0f}".format(d.fee_amount or 0) }})
@@ -72,13 +71,11 @@
         <div class="text-end">
           {% if d.status == 'completed' %}
             <span class="status-paid">Disbursed</span>
-            {% if d.disbursed_at %}
-            <div class="data-row-meta mt-1">{{ d.disbursed_at[:10] }}</div>
-            {% endif %}
+            {% if d.disbursed_at %}<div class="data-row-meta mt-1">{{ d.disbursed_at[:10] }}</div>{% endif %}
           {% elif d.status == 'processing' %}
             <span class="status-pending">Processing</span>
           {% else %}
-            <span class="badge bg-secondary" style="font-size: 11px;">Pending</span>
+            <span class="badge bg-secondary" style="font-size:11px;">Pending</span>
           {% endif %}
         </div>
       </div>

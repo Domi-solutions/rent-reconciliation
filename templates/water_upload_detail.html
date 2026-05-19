@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Water — {{ upload.charge_period }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <div style="font-size:12px; color:var(--ink-3); margin-bottom:4px;">
+      <a href="{{ url_for('water_uploads_list') }}" style="color:var(--ink-3); text-decoration:none;">Water Charges</a>
+      &rsaquo; {{ upload.charge_period }}
+    </div>
+    <div class="page-title">Water — {{ upload.charge_period }}</div>
+    <div class="page-meta">
+      Readings taken in <strong>{{ upload.reading_period }}</strong>
+      &mdash; billed to <strong>{{ upload.charge_period }}</strong>
+      {% if upload.source == 'caretaker_web' %}
+        &mdash; recorded by {{ upload.submitted_by or 'Caretaker' }}
+      {% else %}
+        &mdash; uploaded via Excel
+      {% endif %}
+      &mdash; {{ upload.submitted_at[:10] if upload.submitted_at }}
+    </div>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px;">
+      <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ upload.unit_count }}</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Units</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px;">
+      <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ '{:,.0f}'.format(total_amount) }}</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Total KES</div>
+    </div>
+  </div>
+  {% if total_consumed %}
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px;">
+      <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ '{:,.0f}'.format(total_consumed) }}</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Units Consumed</div>
+    </div>
+  </div>
+  {% endif %}
+  {% if anomalies %}
+  <div class="col-6 col-md-3">
+    <div class="surface-card text-center" style="padding:16px; border-color:#fbbf24;">
+      <div style="font-size:22px; font-weight:700; color:#b45309;">{{ anomalies|length }}</div>
+      <div style="font-size:11px; color:#b45309; text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Anomalies</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if anomalies %}
+<div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:13px; color:#92400e;">
+  <strong>Anomalies flagged:</strong> {{ anomalies|length }} unit{{ 's' if anomalies|length != 1 }} show water charges more than 2× their previous month — check for meter misreads or leaks.
+</div>
+{% endif %}
+
+<!-- Readings breakdown -->
+{% if readings %}
+<div class="surface-card p-0">
+  <div style="padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:600;">Per-unit readings</div>
+  <table class="table table-hover mb-0" style="font-size:13px;">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Tenant</th>
+        <th style="text-align:right;">Previous</th>
+        <th style="text-align:right;">Current</th>
+        <th style="text-align:right;">Used</th>
+        <th style="text-align:right;">Rate</th>
+        <th style="text-align:right;">Amount</th>
+        <th style="text-align:right;">vs Last Month</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in readings %}
+      {% set is_anomaly = r.unit_id in anomalies %}
+      <tr {% if is_anomaly %}style="background:#fffbeb;"{% endif %}>
+        <td style="font-weight:600;">
+          {{ r.unit_number }}
+          {% if is_anomaly %}<span style="color:#b45309; font-size:11px; margin-left:4px;">⚠</span>{% endif %}
+        </td>
+        <td style="color:var(--ink-2);">{{ r.tenant_name or '—' }}</td>
+        <td style="text-align:right; color:var(--ink-3);">{{ '{:.0f}'.format(r.previous_reading) }}</td>
+        <td style="text-align:right;">{{ '{:.0f}'.format(r.current_reading) }}</td>
+        <td style="text-align:right; color:var(--ink-2);">{{ '{:.0f}'.format(r.units_consumed) }}</td>
+        <td style="text-align:right; color:var(--ink-3);">{{ '{:,.0f}'.format(r.rate) }}</td>
+        <td style="text-align:right; font-weight:600;">{{ '{:,.0f}'.format(r.amount) }}</td>
+        <td style="text-align:right;">
+          {% if r.prev_amount %}
+            {% set pct = ((r.amount - r.prev_amount) / r.prev_amount * 100)|round(0)|int %}
+            <span style="font-size:12px; color:{% if pct > 50 %}#b45309{% elif pct > 0 %}#6b7280{% else %}#16a34a{% endif %};">
+              {% if pct > 0 %}+{% endif %}{{ pct }}%
+            </span>
+          {% else %}
+            <span style="color:var(--ink-3); font-size:12px;">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot style="border-top:2px solid var(--border); background:var(--bg);">
+      <tr>
+        <td colspan="6" style="padding:10px 16px; font-size:13px; font-weight:600; color:var(--ink-2);">Total</td>
+        <td style="padding:10px 16px; text-align:right; font-size:14px; font-weight:700;">{{ '{:,.0f}'.format(total_amount) }}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+{% elif charges_only %}
+<!-- Excel upload — no raw readings, show charge amounts -->
+<div class="surface-card p-0">
+  <div style="padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:center;">
+    <span>Per-unit charges</span>
+    <span style="font-size:12px; color:var(--ink-3);">Uploaded via Excel — meter readings not stored</span>
+  </div>
+  <table class="table table-hover mb-0" style="font-size:13px;">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Tenant</th>
+        <th style="text-align:right;">Amount (KES)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in charges_only %}
+      <tr>
+        <td style="font-weight:600;">{{ c.unit_number }}</td>
+        <td style="color:var(--ink-2);">{{ c.tenant_name or '—' }}</td>
+        <td style="text-align:right; font-weight:600;">{{ '{:,.0f}'.format(c.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot style="border-top:2px solid var(--border); background:var(--bg);">
+      <tr>
+        <td colspan="2" style="padding:10px 16px; font-size:13px; font-weight:600; color:var(--ink-2);">Total</td>
+        <td style="padding:10px 16px; text-align:right; font-size:14px; font-weight:700;">{{ '{:,.0f}'.format(total_amount) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

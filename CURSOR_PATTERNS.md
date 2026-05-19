@@ -254,6 +254,30 @@
 
 ---
 
+## Session 6 — 2026-05-19
+
+---
+
+### Template suggestion branches must be kept in sync across all render paths in the same template
+**File(s):** `templates/review.html`
+**Root cause:** The same template had two separate `{% if t.suggested_unit_number %}...{% endif %}` blocks — one for grouped transactions and one for single transactions. Cursor added the `{% elif t.unit_hint %}` fallback branch to the grouped block but not the single block. Because both blocks look visually similar, this asymmetry is invisible in code review without side-by-side comparison.
+**What Cursor did:** Single-transaction block went directly to `<span class="text-muted">None</span>` when `suggested_unit_number` was falsy, skipping the unit_hint fallback entirely.
+**What it should do:** Any template that renders the same data structure in multiple table/card layouts must have identical conditional branch structure in every layout. Before adding or changing a suggestion/badge branch, search the template for all other places the same field is rendered and apply the same change.
+**Why it matters:** Two render paths showing different information for the same underlying data is an information asymmetry bug — users see "None" in one view and "Hint: M10" in another, creating confusion and eroding trust in the data.
+**Spotted:** 2026-05-19 (Session 6)
+
+---
+
+### Inline business logic in routes creates silent divergence — use canonical helpers
+**File(s):** `app.py` (3 locations), `src/routes/viewer_routes.py`, `src/routes/caretaker_routes.py`, `src/routes/owner_routes.py`
+**Root cause:** Cursor writes self-contained route functions and repeats the computation inline rather than checking whether a shared utility already exists. Each inline copy diverges subtly: different variable names, different edge-case handling (e.g. `monthly_rent > 0` vs no check), different query structure (3 separate `COUNT(*)` queries vs one grouped query). The divergence is invisible until a bug appears in one copy but not the others.
+**What Cursor did:** Inline phone normalization (`if phone.startswith('07'): phone_norm = '+254' + phone[1:]`) in 3 separate route functions; inline occupancy counts as 3 separate `COUNT(*)` queries in 4 route files; inline `ceil(balance / monthly_rent)` in 3 arrears routes.
+**What it should do:** Before writing any route-level computation, check `src/utils/` for an existing canonical function. If it doesn't exist but the same logic appears in more than one route, create a utility function first. The canonical files are: `src/utils/phone.py` (phone normalization), `src/utils/metrics.py` (occupancy, income, months-behind), `src/reconciliation/matcher.py` (unit suggestion enrichment). Never define these inline.
+**Why it matters:** A bug fixed in one inline copy is not fixed in the others. A business rule change (e.g. phone format or occupancy definition) requires updating N files instead of 1. The divergence only surfaces in production, often on edge cases.
+**Spotted:** 2026-05-19 (Session 6)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

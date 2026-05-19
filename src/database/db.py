@@ -1160,3 +1160,47 @@ def migrate_add_payout_fields():
         if 'payout_otp_expires_at' not in cols:
             conn.execute("ALTER TABLE owners ADD COLUMN payout_otp_expires_at TIMESTAMP")
     print("Migration complete: owner payout fields ready.")
+
+
+def migrate_add_water_readings():
+    """Add water_rate to properties; create water_uploads and water_readings tables. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if 'water_rate' not in cols:
+            conn.execute("ALTER TABLE properties ADD COLUMN water_rate REAL DEFAULT 300")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS water_uploads (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL,
+                reading_period TEXT NOT NULL,
+                charge_period TEXT NOT NULL,
+                unit_count INTEGER DEFAULT 0,
+                total_amount REAL DEFAULT 0,
+                source TEXT DEFAULT 'caretaker_web',
+                submitted_by TEXT,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (property_id) REFERENCES properties(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_wu_property ON water_uploads(property_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_wu_charge_period ON water_uploads(charge_period)")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS water_readings (
+                id TEXT PRIMARY KEY,
+                upload_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                previous_reading REAL NOT NULL,
+                current_reading REAL NOT NULL,
+                units_consumed REAL NOT NULL,
+                rate REAL NOT NULL,
+                amount REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (upload_id) REFERENCES water_uploads(id),
+                FOREIGN KEY (unit_id) REFERENCES units(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_wr_upload ON water_readings(upload_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_wr_unit ON water_readings(unit_id)")
+    print("Migration complete: water_rate, water_uploads, water_readings ready.")

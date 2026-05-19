@@ -11,6 +11,7 @@ from werkzeug.security import check_password_hash
 
 from src.database.db import get_connection
 from src.utils.phone import normalize_to_e164 as _normalize_phone
+from src.utils.metrics import get_property_occupancy, get_expected_monthly_income
 
 owner_bp = Blueprint("owner", __name__, url_prefix="/owner")
 
@@ -97,25 +98,12 @@ def dashboard():
         for prop in properties:
             pid = prop["id"]
 
-            total = conn.execute(
-                "SELECT COUNT(*) FROM units WHERE property_id = ?", (pid,)
-            ).fetchone()[0]
-            occupied = conn.execute(
-                "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'occupied'", (pid,)
-            ).fetchone()[0]
-            vacant = conn.execute(
-                "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'vacant'", (pid,)
-            ).fetchone()[0]
-            office = conn.execute(
-                "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'office'", (pid,)
-            ).fetchone()[0]
-
-            income = conn.execute(
-                """SELECT COALESCE(SUM(monthly_rent), 0) AS r, COALESCE(SUM(service_charge), 0) AS s
-                   FROM units WHERE property_id = ? AND status = 'occupied'""",
-                (pid,),
-            ).fetchone()
-            expected = float(income["r"]) + float(income["s"])
+            occ = get_property_occupancy(conn, pid)
+            total    = occ['total']
+            occupied = occ['occupied']
+            vacant   = occ['vacant']
+            office   = occ['office']
+            expected = get_expected_monthly_income(conn, pid)
 
             collected = float(conn.execute(
                 "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ? AND payment_date >= ?",

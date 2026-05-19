@@ -21,6 +21,9 @@ from openpyxl.styles import Font, Alignment, PatternFill
 from src.database.db import get_connection, init_database, generate_id, allocate_payment
 from src.parsers.pdf_parser import parse_bank_statement
 from src.parsers.sms_parser import parse_mpesa_message
+from src.reconciliation.matcher import enrich_with_suggestions
+from src.utils.phone import normalize_to_e164 as _normalize_phone
+from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 from src.parsers.excel_parser import parse_tenant_excel
 from src.parsers.water_parser import parse_water_excel
 from src.routes.test_routes import test_bp
@@ -91,6 +94,7 @@ from src.database.db import (
     migrate_add_tenant_disputes,
     migrate_add_platform_alerts,
     migrate_add_payout_fields,
+    migrate_add_water_readings,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -127,6 +131,7 @@ migrate_add_platform_shadow_log()
 migrate_add_tenant_disputes()
 migrate_add_platform_alerts()
 migrate_add_payout_fields()
+migrate_add_water_readings()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -545,9 +550,6 @@ def dashboard():
             'total_units': conn.execute(
                 "SELECT COUNT(*) FROM units WHERE property_id = ?", (property_id,)
             ).fetchone()[0],
-            'occupied_units': conn.execute(
-                "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'occupied'", (property_id,)
-            ).fetchone()[0],
             'pending_claims': conn.execute(
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'pending'", (property_id,)
             ).fetchone()[0],
@@ -565,22 +567,13 @@ def dashboard():
         stats['units_in_arrears'] = len(arrears)
         stats['total_arrears'] = sum(float(row['balance']) for row in arrears)
 
-        office_units = conn.execute(
-            "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'office'", (property_id,)
-        ).fetchone()[0]
-        vacant_units = conn.execute(
-            "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'vacant'", (property_id,)
-        ).fetchone()[0]
-        income_row = conn.execute(
-            "SELECT COALESCE(SUM(monthly_rent), 0) as rent, COALESCE(SUM(service_charge), 0) as svc FROM units WHERE property_id = ? AND status = 'occupied'",
-            (property_id,),
-        ).fetchone()
-        expected_monthly = float(income_row['rent']) + float(income_row['svc'])
+        occ = get_property_occupancy(conn, property_id)
+        expected_monthly = get_expected_monthly_income(conn, property_id)
 
-        stats['office_units'] = office_units
-        stats['vacant_units'] = vacant_units
-        rentable = stats['total_units'] - office_units
-        stats['occupancy_rate'] = round(stats['occupied_units'] / rentable * 100, 1) if rentable > 0 else 0
+        stats['office_units'] = occ['office']
+        stats['vacant_units'] = occ['vacant']
+        stats['occupied_units'] = occ['occupied']
+        stats['occupancy_rate'] = occ['occupancy_rate']
         stats['expected_monthly'] = expected_monthly
         # Collection rate: this month's verified vs expected monthly income (per CLAUDE.md)
         stats['collection_rate'] = (
@@ -713,7 +706,6 @@ def admin_arrears():
             ORDER BY ub.balance DESC
         """, (property_id, property_id)).fetchall()
 
-        from math import ceil
         arrears = []
         for r in rows:
             balance = float(r['balance'])
@@ -727,7 +719,7 @@ def admin_arrears():
                 'monthly_rent': monthly_rent,
                 'pending_amount': pending_amount,
                 'projected_balance': max(balance - pending_amount, 0),
-                'months_behind': ceil(balance / monthly_rent) if monthly_rent > 0 else 0,
+                'months_behind': get_months_behind(balance, monthly_rent),
             })
 
         total_arrears = sum(a['balance'] for a in arrears)
@@ -1014,12 +1006,13 @@ def add_tenant():
             # Auto-link to persons if phone matches an existing record
             person_id = None
             if phone:
-                phone_norm = ('+254' + phone[1:]) if phone.startswith(('07', '01')) else ('+' + phone if phone.startswith('254') else phone)
-                existing_person = conn.execute(
-                    "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
-                ).fetchone()
-                if existing_person:
-                    person_id = existing_person['id']
+                phone_norm = _normalize_phone(phone)
+                if phone_norm:
+                    existing_person = conn.execute(
+                        "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
+                    ).fetchone()
+                    if existing_person:
+                        person_id = existing_person['id']
 
             tenant_id = generate_id('TENANT')
             conn.execute(
@@ -1106,12 +1099,10 @@ def link_tenant_person(tenant_id):
         flash('Phone number is required to link.', 'error')
         return redirect(url_for('manage_tenants'))
 
-    if phone_raw.startswith('07') or phone_raw.startswith('01'):
-        phone_norm = '+254' + phone_raw[1:]
-    elif phone_raw.startswith('254'):
-        phone_norm = '+' + phone_raw
-    else:
-        phone_norm = phone_raw
+    phone_norm = _normalize_phone(phone_raw)
+    if not phone_norm:
+        flash('Invalid phone number format.', 'error')
+        return redirect(url_for('manage_tenants'))
 
     with get_connection() as conn:
         tenant = conn.execute(
@@ -1239,14 +1230,7 @@ def create_owner():
     password_hash = generate_password_hash(password) if password else None
 
     # Normalize phone for persons lookup
-    phone_norm = None
-    if phone:
-        if phone.startswith('07') or phone.startswith('01'):
-            phone_norm = '+254' + phone[1:]
-        elif phone.startswith('254'):
-            phone_norm = '+' + phone
-        else:
-            phone_norm = phone
+    phone_norm = _normalize_phone(phone) if phone else None
 
     with get_connection() as conn:
         # Create or link persons row if phone is provided
@@ -2227,12 +2211,6 @@ def statement_detail(statement_id):
                 WHERE p.organization_id = ?
                 ORDER BY p.name, u.unit_number
             """, (effective_org,)).fetchall()
-            tenant_rows = conn.execute("""
-                SELECT t.id, t.name, t.unit_id, u.unit_number
-                FROM tenants t JOIN units u ON t.unit_id = u.id
-                JOIN properties p ON u.property_id = p.id
-                WHERE p.organization_id = ? AND t.status = 'active'
-            """, (effective_org,)).fetchall()
         else:
             prop_count = 1
             units = conn.execute("""
@@ -2244,53 +2222,16 @@ def statement_detail(statement_id):
                 WHERE u.property_id = ?
                 ORDER BY u.unit_number
             """, (property_row['id'],)).fetchall()
-            tenant_rows = conn.execute("""
-                SELECT t.id, t.name, t.unit_id, u.unit_number
-                FROM tenants t JOIN units u ON t.unit_id = u.id
-                WHERE t.property_id = ? AND t.status = 'active'
-            """, (property_row['id'],)).fetchall()
-
-        def _name_tokens(s):
-            if not s:
-                return []
-            return [tok for tok in re.sub(r'[^A-Za-z0-9]+', ' ', s).strip().lower().split() if tok]
-
-        tenant_index = [
-            {'unit_id': t['unit_id'], 'unit_number': t['unit_number'],
-             'name': t['name'], 'tokens': set(_name_tokens(t['name']))}
-            for t in tenant_rows if len(_name_tokens(t['name'])) >= 2
-        ]
 
         matched, unmatched = [], []
         for row in credits:
             r = dict(row)
             if r['payment_id']:
                 matched.append(r)
-                continue
-            # Tier 1 — unit hint
-            hint = (r.get('unit_hint') or '').strip()
-            if hint and effective_org:
-                hit = conn.execute("""
-                    SELECT u.id, u.unit_number FROM units u
-                    JOIN properties p ON u.property_id = p.id
-                    WHERE p.organization_id = ? AND UPPER(TRIM(u.unit_number)) = ?
-                """, (effective_org, hint.upper())).fetchall()
-                if len(hit) == 1:
-                    r['suggested_unit_id'] = hit[0]['id']
-                    r['suggested_unit_number'] = hit[0]['unit_number']
-                    r['suggestion_source'] = 'unit_hint'
-            # Tier 2 — sender name match
-            if not r.get('suggested_unit_id'):
-                stokens = set(_name_tokens(r.get('sender_name') or ''))
-                if len(stokens) >= 2:
-                    for tenant in tenant_index:
-                        if len(stokens & tenant['tokens']) >= 2:
-                            r['suggested_unit_id'] = tenant['unit_id']
-                            r['suggested_unit_number'] = tenant['unit_number']
-                            r['suggested_tenant_name'] = tenant['name']
-                            r['suggestion_source'] = 'name_match'
-                            break
-            unmatched.append(r)
+            else:
+                unmatched.append(r)
+
+        enrich_with_suggestions(unmatched, conn, property_row['id'], effective_org)
 
     return render_template(
         'statement_detail.html',
@@ -2960,9 +2901,100 @@ def generate_charges():
         return render_template('generate_charges.html', property=property_row)
 
 
+@app.route('/water-uploads/set-rate', methods=['POST'])
+def water_set_rate():
+    """Update the water rate (KES per unit) for the current property."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        try:
+            rate = float(request.form.get('water_rate', '').strip())
+            if rate <= 0:
+                raise ValueError
+        except ValueError:
+            flash('Invalid rate — enter a positive number.', 'error')
+            return redirect(url_for('water_uploads_list'))
+        conn.execute("UPDATE properties SET water_rate = ? WHERE id = ?", (rate, prop['id']))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('water_rate_updated', 'property', prop['id'], f'Water rate set to KES {rate:,.0f}/unit', 'admin')
+        )
+    flash(f'Water rate updated to KES {rate:,.0f}/unit.', 'success')
+    return redirect(url_for('water_uploads_list'))
+
+
+@app.route('/water-uploads')
+def water_uploads_list():
+    """List all water reading uploads for the current property."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        uploads = conn.execute("""
+            SELECT wu.*
+            FROM water_uploads wu
+            WHERE wu.property_id = ?
+            ORDER BY wu.submitted_at DESC
+        """, (prop['id'],)).fetchall()
+    return render_template('water_uploads.html', property=prop, uploads=uploads)
+
+
+@app.route('/water-uploads/<upload_id>')
+def water_upload_detail(upload_id):
+    """Detail view for a water upload — readings breakdown and comparison."""
+    with get_connection() as conn:
+        upload = conn.execute("SELECT * FROM water_uploads WHERE id = ?", (upload_id,)).fetchone()
+        if not upload:
+            abort(404)
+        prop = get_current_property(conn)
+        if not prop or prop['id'] != upload['property_id']:
+            abort(403)
+
+        readings = conn.execute("""
+            SELECT wr.*,
+                   u.unit_number,
+                   COALESCE(t.name, '') AS tenant_name,
+                   (SELECT wr2.amount
+                    FROM water_readings wr2
+                    JOIN water_uploads wu2 ON wr2.upload_id = wu2.id
+                    WHERE wr2.unit_id = wr.unit_id
+                      AND wu2.property_id = ?
+                      AND wu2.charge_period < ?
+                    ORDER BY wu2.submitted_at DESC LIMIT 1) AS prev_amount
+            FROM water_readings wr
+            JOIN units u ON wr.unit_id = u.id
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            WHERE wr.upload_id = ?
+            ORDER BY u.unit_number
+        """, (prop['id'], upload['charge_period'], upload_id)).fetchall()
+
+        # Excel uploads: no water_readings rows — fall back to rent_charges
+        charges_only = []
+        if not readings:
+            charges_only = conn.execute("""
+                SELECT rc.amount, u.unit_number, COALESCE(t.name, '') AS tenant_name
+                FROM rent_charges rc
+                JOIN units u ON rc.unit_id = u.id
+                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                WHERE rc.property_id = ? AND rc.period = ? AND rc.charge_type = 'water'
+                ORDER BY u.unit_number
+            """, (prop['id'], upload['charge_period'])).fetchall()
+
+        total_amount = sum(r['amount'] for r in readings) if readings else sum(r['amount'] for r in charges_only)
+        total_consumed = sum(r['units_consumed'] for r in readings) if readings else 0
+        anomalies = {r['unit_id'] for r in readings if r['prev_amount'] and r['amount'] > r['prev_amount'] * 2}
+
+    return render_template('water_upload_detail.html',
+                           property=prop, upload=upload,
+                           readings=readings, charges_only=charges_only,
+                           total_amount=total_amount, total_consumed=total_consumed,
+                           anomalies=anomalies)
+
+
 @app.route('/charges/water', methods=['GET', 'POST'])
 def upload_water_charges():
-    """Upload water readings Excel and create water charge records."""
+    """Upload water charges via Excel (admin legacy path)."""
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
@@ -3001,7 +3033,6 @@ def upload_water_charges():
                 flash('No valid water charge rows found.', 'error')
                 return redirect(url_for('upload_water_charges'))
 
-            # Match unit_numbers to DB
             units = conn.execute(
                 "SELECT id, unit_number FROM units WHERE property_id = ?",
                 (property_row['id'],)
@@ -3034,6 +3065,14 @@ def upload_water_charges():
                 )
                 created += 1
 
+            # Create water_uploads anchor record for this Excel batch
+            if created > 0:
+                upload_id = generate_id('WU')
+                conn.execute("""
+                    INSERT INTO water_uploads (id, property_id, reading_period, charge_period, unit_count, total_amount, source, submitted_by)
+                    VALUES (?, ?, ?, ?, ?, ?, 'admin_excel', 'admin')
+                """, (upload_id, property_row['id'], period, period, created, float(result['total_water_charges'])))
+
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('water_charges_uploaded', 'charge', period,
@@ -3046,7 +3085,9 @@ def upload_water_charges():
             if not_found:
                 msg += f' Units not found: {", ".join(not_found[:5])}.'
             flash(msg, 'success')
-            return redirect(url_for('dashboard'))
+            if created > 0:
+                return redirect(url_for('water_upload_detail', upload_id=upload_id))
+            return redirect(url_for('water_uploads_list'))
 
         return render_template('upload_water_charges.html', property=property_row)
 
@@ -3509,13 +3550,6 @@ def review():
                     AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
                     ORDER BY bt.txn_date DESC
                 """, (review_org_id,)).fetchall()
-                tenant_rows = conn.execute("""
-                    SELECT t.id, t.name, t.unit_id, u.unit_number
-                    FROM tenants t
-                    JOIN units u ON t.unit_id = u.id
-                    JOIN properties p ON u.property_id = p.id
-                    WHERE p.organization_id = ? AND t.status = 'active'
-                """, (review_org_id,)).fetchall()
             else:
                 raw_unreported = conn.execute("""
                     SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
@@ -3528,76 +3562,9 @@ def review():
                     AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
                     ORDER BY bt.txn_date DESC
                 """, (property_id,)).fetchall()
-                tenant_rows = conn.execute("""
-                    SELECT t.id, t.name, t.unit_id, u.unit_number
-                    FROM tenants t
-                    JOIN units u ON t.unit_id = u.id
-                    WHERE t.property_id = ? AND t.status = 'active'
-                """, (property_id,)).fetchall()
 
-            def _name_tokens(s):
-                if not s:
-                    return []
-                # Normalize: lowercase, replace non-alphanumeric with space, split on whitespace
-                cleaned = re.sub(r'[^A-Za-z0-9]+', ' ', s).strip().lower()
-                return [tok for tok in cleaned.split() if tok]
-
-            tenant_index = []
-            for t in tenant_rows:
-                tokens = _name_tokens(t['name'])
-                if len(tokens) < 2:
-                    continue
-                tenant_index.append(
-                    {
-                        'tenant_id': t['id'],
-                        'unit_id': t['unit_id'],
-                        'unit_number': t['unit_number'],
-                        'name': t['name'],
-                        'tokens': set(tokens),
-                    }
-                )
-
-            unreported = []
-            for row in raw_unreported:
-                r = dict(row)
-
-                # Tier 1: unit_hint-based suggestion (org-scoped)
-                unit_hint = (r.get('unit_hint') or '').strip()
-                if unit_hint:
-                    hint_key = unit_hint.upper()
-                    if review_org_id:
-                        matches = conn.execute("""
-                            SELECT u.id, u.unit_number FROM units u
-                            JOIN properties p ON u.property_id = p.id
-                            WHERE p.organization_id = ? AND UPPER(TRIM(u.unit_number)) = ?
-                        """, (review_org_id, hint_key)).fetchall()
-                    else:
-                        matches = conn.execute("""
-                            SELECT id, unit_number FROM units
-                            WHERE property_id = ? AND UPPER(TRIM(unit_number)) = ?
-                        """, (property_id, hint_key)).fetchall()
-                    if len(matches) == 1:
-                        match = matches[0]
-                        r['suggested_unit_id'] = match['id']
-                        r['suggested_unit_number'] = match['unit_number']
-                        r['suggestion_source'] = 'unit_hint'
-
-                # Tier 2: tenant name matching (only if no unit_hint suggestion)
-                if not r.get('suggested_unit_id'):
-                    sender_name = r.get('sender_name') or ''
-                    sender_tokens = _name_tokens(sender_name)
-                    if len(sender_tokens) >= 2 and tenant_index:
-                        sender_token_set = set(sender_tokens)
-                        for tenant in tenant_index:
-                            common = sender_token_set & tenant['tokens']
-                            if len(common) >= 2:
-                                r['suggested_unit_id'] = tenant['unit_id']
-                                r['suggested_unit_number'] = tenant['unit_number']
-                                r['suggested_tenant_name'] = tenant['name']
-                                r['suggestion_source'] = 'name_match'
-                                break
-
-                unreported.append(r)
+            unreported = [dict(row) for row in raw_unreported]
+            enrich_with_suggestions(unreported, conn, property_id, review_org_id)
 
             # Tier 3: group by sender_name (case-insensitive, trimmed)
             groups_by_sender = {}

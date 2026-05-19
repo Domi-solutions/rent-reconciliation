@@ -18,7 +18,10 @@ blueprints:
       - "GET /units — unit list"
       - "GET /tenants — tenant list"
       - "POST /charges/generate — generate rent+service charges"
-      - "POST /charges/water — upload water readings"
+      - "POST /charges/water — upload water readings (Excel); creates water_uploads + water_readings records; redirects to detail"
+      - "GET /water-uploads — list of water reading batches for current property; rate card with inline edit"
+      - "GET /water-uploads/<upload_id> — detail: readings table with prev/current/consumed/amount per unit; anomaly flags (>2× previous); fallback charges_only table for Excel uploads"
+      - "POST /water-uploads/set-rate — update properties.water_rate; logged to audit_log"
       - "POST /statements/upload — upload bank statement PDF; optional property_id tag from form; org-scoped under org_id"
       - "GET /statements/<statement_id> — statement detail hub: verified, unmatched, assign, correct, parse errors, audit"
       - "GET /statements/<statement_id>/view — serve stored PDF via send_file() (opens in browser tab)"
@@ -52,6 +55,7 @@ blueprints:
       - "GET /view/<property_id>/reports/<report_id>"
       - "GET /view/<property_id>/maintenance"
       - "GET /view/<property_id>/notifications — owner inbox"
+      - "POST /view/<property_id>/reports/generate — owner generates report for selected month; derives period_start/period_end; calls generate_landlord_report; no SMS notification"
 
   tenant:
     file: src/routes/tenant_routes.py
@@ -89,6 +93,11 @@ blueprints:
       - "POST /caretaker/<property_id>/issues/<id>/resolve"
       - "GET /caretaker/<property_id>/log-payment"
       - "POST /caretaker/<property_id>/log-payment"
+      - "GET /caretaker/<property_id>/reports — list of landlord_reports for this property (operational view only, no financials)"
+      - "GET /caretaker/<property_id>/reports/<report_id> — report detail (occupancy, arrears follow-up, tenant movement, vacant units — no KES amounts)"
+      - "GET /caretaker/<property_id>/water — list of past water reading batches"
+      - "GET /caretaker/<property_id>/water/new — meter reading entry form; previous reading auto-populated from last upload"
+      - "POST /caretaker/<property_id>/water/new — submit meter readings; validates current >= previous; creates water_upload + water_readings + rent_charges (charge_type='water'); prevents duplicate per charge_period"
 
   messaging:
     file: src/routes/messaging_routes.py

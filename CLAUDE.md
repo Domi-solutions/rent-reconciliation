@@ -137,8 +137,12 @@ rent-reconciliation/
 │   ├── database/
 │   │   ├── db.py             # get_connection(), generate_id(), all migrations
 │   │   └── schema.sql
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── phone.py          # normalize_to_e164(), normalize_to_daraja() — ONLY place phone normalization lives
+│   │   └── metrics.py        # get_property_occupancy(), get_expected_monthly_income(), get_months_behind() — ONLY place these are computed
 │   └── reconciliation/
-│       ├── matcher.py        # Match claims to transactions
+│       ├── matcher.py        # enrich_with_suggestions() (shared Tier 1/2 suggestion logic), match_sms_to_bank()
 │       └── state_machine.py  # Payment lifecycle
 ├── templates/
 │   ├── base.html             # Admin base (sidebar, property selector) — never modify for viewer changes
@@ -147,7 +151,7 @@ rent-reconciliation/
 │   ├── tenant/               # base_tenant.html + portal, charges, payments, messages, maintenance
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
-│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment
+│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, reports.html, report_detail.html, water.html, water_new.html
 │   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
 │   ├── owners.html
@@ -176,7 +180,9 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
-- `bank_statements` is **org-scoped** (as of 2026-05-12): new uploads set `org_id`, `property_id` is legacy/nullable. Always query by `WHERE org_id = ?` for new code. `bank_format` is stored at upload time (`cooperative`|`tabular_kes`|`unknown`).
+- `bank_statements` is **org-scoped** (as of 2026-05-12): new uploads set `org_id`, `property_id` is legacy/nullable. Always query by `WHERE org_id = ?` for new code. `bank_format` is stored at upload time (`cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`unknown`).
+- `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
+- `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
 - `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
 - `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
@@ -186,6 +192,30 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 ---
 
 ## Key Patterns
+
+**Phone normalization — single source of truth, never define inline:**
+```python
+from src.utils.phone import normalize_to_e164 as _normalize_phone
+phone = _normalize_phone('0712345678')  # → '+254712345678'; returns None for unrecognised input
+```
+
+**Property metrics — single source of truth, never inline in routes:**
+```python
+from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
+occ = get_property_occupancy(conn, property_id)
+# → {'total', 'occupied', 'vacant', 'office', 'rentable', 'occupancy_rate'}
+income = get_expected_monthly_income(conn, property_id)  # → float KES
+months = get_months_behind(balance, monthly_rent)         # → int, 0 if monthly_rent == 0
+```
+
+**Unit suggestion enrichment — single source of truth for both statement_detail and review routes:**
+```python
+from src.reconciliation.matcher import enrich_with_suggestions
+enrich_with_suggestions(rows, conn, property_id, org_id=None)
+# Modifies dicts in-place. Sets: suggested_unit_id, suggested_unit_number, suggestion_source,
+# suggested_tenant_name (name_match only).
+# Tier 1: unit_hint exact match (org-scoped). Tier 2: sender name token overlap >= 2 tokens.
+```
 
 **ID generation:**
 ```python
@@ -265,7 +295,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 ```
 
 Full migration call order in `app.py` startup (append-only, never reorder):
-`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day`
+`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings`
 
 ---
 

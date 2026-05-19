@@ -2,13 +2,15 @@
 Caretaker portal routes — live operational view.
 Auth: CARETAKER_PASSWORD env var; session key 'caretaker_authenticated'.
 """
+import json
 import os
 import re
-from math import ceil
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 
 from src.database.db import get_connection, generate_id
+from src.reports.landlord_report import enrich_report_data
+from src.utils.metrics import get_property_occupancy, get_months_behind
 
 caretaker_bp = Blueprint('caretaker', __name__, url_prefix='/caretaker')
 
@@ -109,16 +111,9 @@ def index():
 
 
 def _occupancy_data(conn, property_id):
-    total = conn.execute("SELECT COUNT(*) FROM units WHERE property_id = ?", (property_id,)).fetchone()[0]
-    occupied = conn.execute("SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'occupied'", (property_id,)).fetchone()[0]
-    vacant = conn.execute("SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'vacant'", (property_id,)).fetchone()[0]
-    office = conn.execute("SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'office'", (property_id,)).fetchone()[0]
-    rentable = total - office
-    occ_rate = round(occupied / rentable * 100, 1) if rentable > 0 else 0
-    return {
-        'total': total, 'occupied': occupied, 'vacant': vacant,
-        'office': office, 'rentable': rentable, 'occ_rate': occ_rate,
-    }
+    occ = get_property_occupancy(conn, property_id)
+    occ['occ_rate'] = occ['occupancy_rate']  # alias for templates that use occ_rate
+    return occ
 
 
 def _arrears_rows(conn, property_id):
@@ -141,7 +136,7 @@ def _arrears_rows(conn, property_id):
     result = []
     for r in rows:
         d = dict(r)
-        d['months_behind'] = ceil(d['balance'] / d['monthly_rent']) if d.get('monthly_rent') and d['monthly_rent'] > 0 else 0
+        d['months_behind'] = get_months_behind(d['balance'], d.get('monthly_rent'))
         result.append(d)
     return result
 
@@ -629,6 +624,235 @@ def new_issue(property_id):
 
     flash('Maintenance issue recorded.', 'success')
     return redirect(url_for('caretaker.issues', property_id=property_id))
+
+
+@caretaker_bp.route('/<property_id>/reports')
+def reports_list(property_id):
+    """List all monthly reports for this property."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        rows = conn.execute("""
+            SELECT id, period_start, period_end, created_at, report_data
+            FROM landlord_reports
+            WHERE property_id = ?
+            ORDER BY created_at DESC
+        """, (property_id,)).fetchall()
+
+        reports = []
+        for r in rows:
+            data = json.loads(r['report_data'])
+            reports.append({
+                'id': r['id'],
+                'period_start': r['period_start'],
+                'period_end': r['period_end'],
+                'created_at': r['created_at'],
+                'units_behind': data.get('arrears', {}).get('units_in_arrears', 0),
+                'occupied': data.get('occupancy', {}).get('occupied_units', 0),
+                'total_units': data.get('occupancy', {}).get('total_units', 0),
+            })
+
+    return render_template('caretaker/reports.html',
+                           property=prop, reports=reports, active_tab='reports')
+
+
+@caretaker_bp.route('/<property_id>/reports/<report_id>')
+def report_detail(property_id, report_id):
+    """Caretaker view of a monthly report — operational only, no financials."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        report_row = conn.execute(
+            "SELECT * FROM landlord_reports WHERE id = ? AND property_id = ?",
+            (report_id, property_id)
+        ).fetchone()
+        if not report_row:
+            abort(404)
+
+        report_data = json.loads(report_row['report_data'])
+        enrich_report_data(report_data, conn, property_id,
+                           report_row['period_start'], report_row['period_end'])
+
+        vacant_units = conn.execute("""
+            SELECT unit_number, apartment_size FROM units
+            WHERE property_id = ? AND status = 'vacant'
+            ORDER BY unit_number
+        """, (property_id,)).fetchall()
+
+    return render_template('caretaker/report_detail.html',
+                           property=prop,
+                           report=report_data,
+                           report_id=report_id,
+                           period_start=report_row['period_start'],
+                           period_end=report_row['period_end'],
+                           created_at=report_row['created_at'],
+                           vacant_units=vacant_units,
+                           active_tab='reports')
+
+
+@caretaker_bp.route('/<property_id>/water')
+def water_list(property_id):
+    """List past water reading uploads for this property."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        uploads = conn.execute("""
+            SELECT wu.*
+            FROM water_uploads wu
+            WHERE wu.property_id = ?
+            ORDER BY wu.submitted_at DESC
+        """, (property_id,)).fetchall()
+
+    return render_template('caretaker/water.html',
+                           property=prop, uploads=uploads, active_tab='water')
+
+
+@caretaker_bp.route('/<property_id>/water/new', methods=['GET', 'POST'])
+def water_new(property_id):
+    """Record meter readings for all units — creates water charges for next billing period."""
+    from datetime import date as _date
+
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        today = _date.today()
+        reading_period = today.strftime('%Y-%m')
+        if today.month == 12:
+            charge_period = f"{today.year + 1}-01"
+        else:
+            charge_period = f"{today.year}-{today.month + 1:02d}"
+
+        rate = float(prop['water_rate']) if prop['water_rate'] else 300.0
+
+        units = conn.execute("""
+            SELECT
+                u.id AS unit_id,
+                u.unit_number,
+                u.status AS unit_status,
+                COALESCE(t.name, '') AS tenant_name,
+                (SELECT wr.current_reading
+                 FROM water_readings wr
+                 JOIN water_uploads wu ON wr.upload_id = wu.id
+                 WHERE wr.unit_id = u.id AND wu.property_id = u.property_id
+                 ORDER BY wu.submitted_at DESC LIMIT 1) AS last_reading
+            FROM units u
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            WHERE u.property_id = ? AND u.status != 'vacant'
+            ORDER BY u.unit_number
+        """, (property_id,)).fetchall()
+
+        if request.method == 'POST':
+            rp = request.form.get('reading_period', reading_period).strip()
+            cp = request.form.get('charge_period', charge_period).strip()
+            submitter = session.get('caretaker_name', 'Caretaker')
+
+            existing_upload = conn.execute(
+                "SELECT id FROM water_uploads WHERE property_id = ? AND charge_period = ?",
+                (property_id, cp)
+            ).fetchone()
+            if existing_upload:
+                flash(f'Water readings for {cp} billing have already been recorded.', 'error')
+                return render_template('caretaker/water_new.html',
+                                       property=prop, units=units, rate=rate,
+                                       reading_period=rp, charge_period=cp, active_tab='water')
+
+            readings = []
+            errors = []
+            for u in units:
+                uid = u['unit_id']
+                prev_str = request.form.get(f'prev_{uid}', '').strip()
+                curr_str = request.form.get(f'curr_{uid}', '').strip()
+
+                if not curr_str:
+                    continue
+
+                try:
+                    prev = float(prev_str) if prev_str else 0.0
+                    curr = float(curr_str)
+                except ValueError:
+                    errors.append(f"Unit {u['unit_number']}: invalid reading.")
+                    continue
+
+                if curr < prev:
+                    errors.append(f"Unit {u['unit_number']}: current ({curr:.0f}) is less than previous ({prev:.0f}).")
+                    continue
+
+                consumed = curr - prev
+                readings.append({
+                    'unit_id': uid,
+                    'unit_number': u['unit_number'],
+                    'prev': prev, 'curr': curr,
+                    'consumed': consumed,
+                    'amount': consumed * rate,
+                })
+
+            if errors:
+                for e in errors:
+                    flash(e, 'error')
+                return render_template('caretaker/water_new.html',
+                                       property=prop, units=units, rate=rate,
+                                       reading_period=rp, charge_period=cp, active_tab='water')
+
+            if not readings:
+                flash('No readings entered.', 'error')
+                return render_template('caretaker/water_new.html',
+                                       property=prop, units=units, rate=rate,
+                                       reading_period=rp, charge_period=cp, active_tab='water')
+
+            total_amount = sum(r['amount'] for r in readings)
+
+            upload_id = generate_id('WU')
+            conn.execute("""
+                INSERT INTO water_uploads
+                    (id, property_id, reading_period, charge_period, unit_count, total_amount, source, submitted_by)
+                VALUES (?, ?, ?, ?, ?, ?, 'caretaker_web', ?)
+            """, (upload_id, property_id, rp, cp, len(readings), total_amount, submitter))
+
+            created = skipped = 0
+            for r in readings:
+                wr_id = generate_id('WR')
+                conn.execute("""
+                    INSERT INTO water_readings
+                        (id, upload_id, unit_id, previous_reading, current_reading, units_consumed, rate, amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (wr_id, upload_id, r['unit_id'], r['prev'], r['curr'], r['consumed'], rate, r['amount']))
+
+                existing_charge = conn.execute(
+                    "SELECT id FROM rent_charges WHERE unit_id = ? AND period = ? AND charge_type = 'water'",
+                    (r['unit_id'], cp)
+                ).fetchone()
+                if not existing_charge:
+                    charge_id = generate_id('CHG')
+                    conn.execute(
+                        "INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount) VALUES (?, ?, ?, ?, 'water', ?)",
+                        (charge_id, property_id, r['unit_id'], cp, r['amount'])
+                    )
+                    created += 1
+                else:
+                    skipped += 1
+
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('water_readings_recorded', 'water_upload', upload_id,
+                 f'Reading period: {rp} | Charge period: {cp} | {len(readings)} units | {created} charges created | Total: KES {total_amount:,.0f} | by: {submitter}',
+                 'caretaker')
+            )
+
+            flash(f'Water readings recorded — {len(readings)} units, KES {total_amount:,.0f} total. Billed to {cp}.', 'success')
+            return redirect(url_for('caretaker.water_list', property_id=property_id))
+
+    return render_template('caretaker/water_new.html',
+                           property=prop, units=units, rate=rate,
+                           reading_period=reading_period, charge_period=charge_period,
+                           active_tab='water')
 
 
 @caretaker_bp.route('/<property_id>/issues/<issue_id>/resolve', methods=['POST'])

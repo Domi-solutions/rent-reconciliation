@@ -159,8 +159,10 @@
                             {% else %}
                               <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
                             {% endif %}
+                          {% elif t.unit_hint %}
+                            <span style="font-size:11px; color:#6b7280;">Hint: <code>{{ t.unit_hint }}</code> — no match</span>
                           {% else %}
-                            <span class="text-muted">None</span>
+                            <span class="text-muted" style="font-size:11px;">—</span>
                           {% endif %}
                         </td>
                         <td>
@@ -228,8 +230,10 @@
                 {% else %}
                   <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
                 {% endif %}
+              {% elif t.unit_hint %}
+                <span style="font-size:11px; color:#6b7280;">Hint: <code>{{ t.unit_hint }}</code> — no match</span>
               {% else %}
-                <span class="text-muted">None</span>
+                <span class="text-muted" style="font-size:11px;">—</span>
               {% endif %}
             </td>
             <td>

@@ -13,12 +13,12 @@ import json
 import random
 import string
 from datetime import datetime, timedelta, timezone
-from math import ceil
 
 from flask import Blueprint, render_template, abort, request, redirect, session, url_for, flash
 from src.database.db import get_connection
-from src.reports.landlord_report import enrich_report_data
+from src.reports.landlord_report import enrich_report_data, generate_landlord_report
 from src.utils.phone import normalize_to_e164 as _normalize_phone
+from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 
 viewer_bp = Blueprint('viewer', __name__, url_prefix='/view')
 
@@ -134,26 +134,13 @@ def property_dashboard(property_id):
         total_units = conn.execute(
             "SELECT COUNT(*) FROM units WHERE property_id = ?", (property_id,)
         ).fetchone()[0]
-        occupied_units = conn.execute(
-            "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'occupied'", (property_id,)
-        ).fetchone()[0]
-        vacant_units = conn.execute(
-            "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'vacant'", (property_id,)
-        ).fetchone()[0]
-        office_units = conn.execute(
-            "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'office'", (property_id,)
-        ).fetchone()[0]
-
-        rentable_units = total_units - office_units
-        occupancy_rate = round(occupied_units / rentable_units * 100, 1) if rentable_units > 0 else 0
-
-        income_row = conn.execute(
-            "SELECT COALESCE(SUM(monthly_rent), 0) as rent, COALESCE(SUM(service_charge), 0) as svc FROM units WHERE property_id = ? AND status = 'occupied'",
-            (property_id,)
-        ).fetchone()
-        total_monthly_rent = float(income_row['rent'])
-        total_service_charge = float(income_row['svc'])
-        total_expected = total_monthly_rent + total_service_charge
+        occ = get_property_occupancy(conn, property_id)
+        occupied_units  = occ['occupied']
+        vacant_units    = occ['vacant']
+        office_units    = occ['office']
+        rentable_units  = occ['rentable']
+        occupancy_rate  = occ['occupancy_rate']
+        total_expected  = get_expected_monthly_income(conn, property_id)
 
         arrears_row = conn.execute(
             "SELECT COUNT(*) as cnt, COALESCE(SUM(balance), 0) as total FROM unit_balances WHERE property_id = ? AND balance > 0",
@@ -230,8 +217,6 @@ def property_dashboard(property_id):
             'office_units': office_units,
             'rentable_units': rentable_units,
             'occupancy_rate': occupancy_rate,
-            'total_monthly_rent': total_monthly_rent,
-            'total_service_charge': total_service_charge,
             'total_expected': total_expected,
             'total_arrears': total_arrears,
             'units_in_arrears': units_in_arrears,
@@ -410,7 +395,7 @@ def property_arrears(property_id):
         arrears = []
         for row in arrears_rows:
             d = dict(row)
-            d['months_behind'] = ceil(d['balance'] / d['monthly_rent']) if d.get('monthly_rent') and d['monthly_rent'] > 0 else 0
+            d['months_behind'] = get_months_behind(d['balance'], d.get('monthly_rent'))
             pending = pending_by_unit.get(d['unit_id'])
             d['pending_amount'] = pending['amount'] if pending else 0
             d['pending_count'] = pending['count'] if pending else 0
@@ -757,6 +742,52 @@ def property_message_detail(property_id, batch_id):
     )
 
 
+@viewer_bp.route('/<property_id>/reports/generate', methods=['POST'])
+def owner_generate_report(property_id):
+    """Owner-initiated report generation for a selected month."""
+    import calendar as _cal
+    from src.database.db import generate_id
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+
+        period = (request.form.get('period') or '').strip()
+        if not period or len(period) != 7:
+            flash('Select a valid month.', 'error')
+            return redirect(url_for('viewer.property_reports', property_id=property_id))
+
+        try:
+            year, month = int(period[:4]), int(period[5:7])
+            last_day = _cal.monthrange(year, month)[1]
+            period_start = f"{year:04d}-{month:02d}-01"
+            period_end = f"{year:04d}-{month:02d}-{last_day:02d}"
+        except (ValueError, IndexError):
+            flash('Invalid period format.', 'error')
+            return redirect(url_for('viewer.property_reports', property_id=property_id))
+
+        report_data = generate_landlord_report(conn, property_id, period_start, period_end)
+        report_id = generate_id('RPT')
+        conn.execute("""
+            INSERT INTO landlord_reports (id, property_id, period_start, period_end, report_type, report_data)
+            VALUES (?, ?, ?, ?, 'manual', ?)
+        """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('report_generated', 'report', report_id,
+             f'Period: {period_start} → {period_end} | generated by owner', 'owner')
+        )
+
+    return redirect(url_for('viewer.viewer_report_detail', property_id=property_id, report_id=report_id))
+
+
 @viewer_bp.route('/<property_id>/reports')
 def property_reports(property_id):
     """List all stored reports for property."""
@@ -810,10 +841,18 @@ def property_reports(property_id):
         """, (property_id,)).fetchall()
         disbursements = [dict(d) for d in disbursements]
 
+        from datetime import date as _date
+        today = _date.today()
+        if today.month == 1:
+            default_period = f"{today.year - 1}-12"
+        else:
+            default_period = f"{today.year}-{today.month - 1:02d}"
+
     return render_template('viewer/reports.html',
                           property=prop,
                           reports=reports_with_summary,
                           disbursements=disbursements,
+                          default_period=default_period,
                           active_tab='reports')
 
 
