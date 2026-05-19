@@ -7,6 +7,12 @@ import os
 import re
 import secrets
 import sqlite3
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import io
 import atexit
 from datetime import datetime
@@ -54,7 +60,7 @@ if os.environ.get('ADMIN_PASSWORD') and app.secret_key == 'dev-secret-change-in-
         stacklevel=1,
     )
 app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'data/statements')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024  # 64MB
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 init_database()
@@ -95,6 +101,7 @@ from src.database.db import (
     migrate_add_platform_alerts,
     migrate_add_payout_fields,
     migrate_add_water_readings,
+    migrate_bank_statements_nullable_property,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -132,6 +139,7 @@ migrate_add_tenant_disputes()
 migrate_add_platform_alerts()
 migrate_add_payout_fields()
 migrate_add_water_readings()
+migrate_bank_statements_nullable_property()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -1284,6 +1292,49 @@ def create_owner():
     return redirect(url_for('manage_owners'))
 
 
+@app.route('/owners/<owner_id>/edit', methods=['POST'])
+def edit_owner(owner_id):
+    """Update owner name/email/phone. Sending SMS to old phone if phone changes (D1 — blocks T1)."""
+    from src.platform.guardian import platform_log
+    from src.messaging.delivery import send_sms
+    name = request.form.get('name', '').strip()
+    phone = request.form.get('phone', '').strip()
+    email = request.form.get('email', '').strip()
+    if not name:
+        flash('Name is required.', 'error')
+        return redirect(url_for('manage_owners'))
+    with get_connection() as conn:
+        owner = conn.execute(
+            "SELECT name, phone FROM owners WHERE id = ?", (owner_id,)
+        ).fetchone()
+        if not owner:
+            flash('Owner not found.', 'error')
+            return redirect(url_for('manage_owners'))
+        old_phone = owner['phone']
+        phone_norm = _normalize_phone(phone) if phone else None
+        conn.execute(
+            "UPDATE owners SET name = ?, phone = ?, email = ? WHERE id = ?",
+            (name, phone_norm or phone or None, email or None, owner_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('owner_edited', 'owner', owner_id,
+             f"Name: {name} | Phone: {phone_norm or phone or '—'}", 'admin'),
+        )
+        _org_id = session.get('org_id')
+        platform_log(conn, 'owner_phone_changed', 'owner', owner_id,
+                     f"Owner '{name}' phone updated from {old_phone or 'unset'} to {phone_norm or phone or 'unset'} by agency.",
+                     org_id=_org_id)
+        if old_phone and old_phone != (phone_norm or phone or ''):
+            send_sms(
+                [{'phone': old_phone}],
+                f"Domi: Your contact number on your owner profile has been updated by the managing agency. "
+                f"If you did not request this, contact Domi support immediately.",
+            )
+    flash(f"Owner '{name}' updated.", 'success')
+    return redirect(url_for('manage_owners'))
+
+
 @app.route('/owners/<owner_id>/generate-token', methods=['POST'])
 def generate_owner_token(owner_id):
     """Generate (or regenerate) the owner's shareable portal link token."""
@@ -1305,16 +1356,19 @@ def generate_owner_token(owner_id):
 
 @app.route('/owners/<owner_id>/set-password', methods=['POST'])
 def set_owner_password(owner_id):
-    """Set or change an owner's portal password."""
+    """Set an owner's initial portal password. Blocked once a password is already set."""
     from werkzeug.security import generate_password_hash
     password = request.form.get('password', '').strip()
     if not password:
         flash('Password cannot be empty.', 'error')
         return redirect(url_for('manage_owners'))
     with get_connection() as conn:
-        owner = conn.execute("SELECT name FROM owners WHERE id = ?", (owner_id,)).fetchone()
+        owner = conn.execute("SELECT name, password_hash FROM owners WHERE id = ?", (owner_id,)).fetchone()
         if not owner:
             flash('Owner not found.', 'error')
+            return redirect(url_for('manage_owners'))
+        if owner['password_hash']:
+            flash('Owner password is already set. For security, only the owner can change an existing password.', 'error')
             return redirect(url_for('manage_owners'))
         conn.execute(
             "UPDATE owners SET password_hash = ? WHERE id = ?",
@@ -1322,9 +1376,13 @@ def set_owner_password(owner_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('owner_password_set', 'owner', owner_id, f"Owner: {owner['name']} | Password updated", 'admin'),
+            ('owner_password_set', 'owner', owner_id, f"Owner: {owner['name']} | Initial portal password set by admin", 'admin'),
         )
-    flash(f"Password updated for {owner['name']}.", 'success')
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'owner_password_set', 'owner', owner_id,
+                     f"Admin set initial portal password for owner '{owner['name']}'.",
+                     org_id=session.get('org_id'))
+    flash(f"Password set for {owner['name']}.", 'success')
     return redirect(url_for('manage_owners'))
 
 
@@ -1350,6 +1408,7 @@ def assign_property_to_owner(owner_id):
              f"Property '{prop['name']}' assigned to {owner['name']}", 'admin'),
         )
         from src.platform.guardian import platform_log, raise_alert
+        from src.messaging.delivery import send_sms
         _org_id = session.get('org_id')
         platform_log(conn, 'owner_assigned_to_property', 'owner', owner_id,
                      f"Agency assigned '{owner['name']}' to property '{prop['name']}'.",
@@ -1358,6 +1417,16 @@ def assign_property_to_owner(owner_id):
                     f"Agency assigned owner '{owner['name']}' to '{prop['name']}'. "
                     f"Confirm this is the legitimate owner before disbursements run.",
                     org_id=_org_id, property_id=property_id, severity='critical')
+        existing_owners = conn.execute("""
+            SELECT o.name, o.phone FROM owners o
+            JOIN property_owners po ON po.owner_id = o.id
+            WHERE po.property_id = ? AND po.owner_id != ?
+        """, (property_id, owner_id)).fetchall()
+        for eo in existing_owners:
+            if eo['phone']:
+                send_sms([{'phone': eo['phone']}],
+                         f"Domi: A new owner ({owner['name']}) has been added to "
+                         f"{prop['name']}. If unexpected, contact Domi support.")
     flash(f"'{prop['name']}' assigned to {owner['name']}.", 'success')
     return redirect(url_for('manage_owners'))
 
@@ -1366,10 +1435,31 @@ def assign_property_to_owner(owner_id):
 def delete_owner(owner_id):
     """Delete an owner. Unassigns their properties first."""
     with get_connection() as conn:
-        owner = conn.execute("SELECT name FROM owners WHERE id = ?", (owner_id,)).fetchone()
+        owner = conn.execute("SELECT name, phone FROM owners WHERE id = ?", (owner_id,)).fetchone()
         if not owner:
             flash('Owner not found.', 'error')
             return redirect(url_for('manage_owners'))
+        from src.platform.guardian import platform_log, raise_alert
+        from src.messaging.delivery import send_sms
+        _org_id = session.get('org_id')
+        # Get the owner's properties before deleting
+        owner_props = conn.execute("""
+            SELECT p.name FROM properties p
+            JOIN property_owners po ON po.property_id = p.id
+            WHERE po.owner_id = ?
+        """, (owner_id,)).fetchall()
+        prop_names = ', '.join(p['name'] for p in owner_props) or 'none'
+        platform_log(conn, 'owner_deleted', 'owner', owner_id,
+                     f"Owner '{owner['name']}' deleted by agency. Was assigned to: {prop_names}.",
+                     org_id=_org_id)
+        raise_alert(conn, 'owner_deleted',
+                    f"Agency deleted owner '{owner['name']}' (id={owner_id}). "
+                    f"Was assigned to: {prop_names}. Verify no active disbursements are affected.",
+                    org_id=_org_id, severity='critical')
+        if owner['phone']:
+            send_sms([{'phone': owner['phone']}],
+                     f"Domi: Your owner account has been removed by the managing agency. "
+                     f"If unexpected, contact Domi support immediately.")
         conn.execute("DELETE FROM property_owners WHERE owner_id = ?", (owner_id,))
         conn.execute("UPDATE properties SET owner_id = NULL WHERE owner_id = ?", (owner_id,))
         conn.execute("DELETE FROM owners WHERE id = ?", (owner_id,))
@@ -1415,6 +1505,17 @@ def remove_property_from_owner(owner_id, property_id):
             send_sms([{'phone': owner['phone']}],
                      f"Domi: Your access to {prop_name} has been removed by the managing agency. "
                      f"If this was not expected, contact Domi support.")
+        remaining_owners = conn.execute(
+            "SELECT o.name, o.phone FROM owners o JOIN property_owners po ON po.owner_id = o.id "
+            "WHERE po.property_id = ? AND po.owner_id != ?",
+            (property_id, owner_id),
+        ).fetchall()
+        for ro in remaining_owners:
+            if ro['phone']:
+                send_sms(
+                    [{'phone': ro['phone']}],
+                    f"Domi: Owner {owner_name} has been removed from {prop_name} by the managing agency.",
+                )
     flash('Property removed from owner.', 'success')
     return redirect(url_for('manage_owners'))
 
@@ -1655,12 +1756,31 @@ def manage_statements():
                 WHERE org_id = ? GROUP BY statement_id
             """, (org_id,)).fetchall()
         }
+        # Per-statement: how many distinct properties have verified payments
+        stmt_coverage = {}
+        for row in conn.execute("""
+            SELECT bs.id,
+                   COUNT(DISTINCT py.property_id) AS prop_count,
+                   GROUP_CONCAT(DISTINCT pr.name) AS prop_names
+            FROM bank_statements bs
+            LEFT JOIN bank_transactions bt ON bt.statement_id = bs.id
+                AND bt.txn_type = 'PAYBILL_CREDIT'
+            LEFT JOIN payments py ON py.bank_txn_id = bt.id
+            LEFT JOIN properties pr ON pr.id = py.property_id
+            WHERE bs.org_id = ?
+            GROUP BY bs.id
+        """, (org_id,)).fetchall():
+            stmt_coverage[row[0]] = {
+                'prop_count': row[1] or 0,
+                'prop_names': row[2] or '',
+            }
 
     return render_template(
         'statements.html',
         property=property_row,
         statements=statements,
         parse_error_counts=parse_error_counts,
+        stmt_coverage=stmt_coverage,
         bank_label=_bank_label,
     )
 
@@ -1702,6 +1822,7 @@ def upload_statement():
             bank_format = result.get('statement_format', 'unknown')
             validation = result.get('validation') or {}
             transactions = result.get('transactions') or []
+            parse_warnings = result.get('warnings') or []
 
             period_start = None
             period_end = None
@@ -1831,6 +1952,9 @@ def upload_statement():
                 )
             else:
                 flash(f'Statement uploaded ({_bank_label(bank_format)}). {paybill_count} rent payments found.', 'success')
+
+            for w in parse_warnings:
+                flash(w, 'warning')
 
             return redirect(url_for('verify_payments', statement_id=statement_id))
 
@@ -2233,6 +2357,16 @@ def statement_detail(statement_id):
 
         enrich_with_suggestions(unmatched, conn, property_row['id'], effective_org)
 
+        # Property-level breakdown for multi-property statements
+        prop_breakdown = {}
+        for r in matched:
+            pname = r['property_name'] or 'Unknown property'
+            if pname not in prop_breakdown:
+                prop_breakdown[pname] = {'count': 0, 'amount': 0.0}
+            prop_breakdown[pname]['count'] += 1
+            prop_breakdown[pname]['amount'] += float(r['payment_amount'] or 0)
+        prop_breakdown = dict(sorted(prop_breakdown.items()))
+
     return render_template(
         'statement_detail.html',
         stmt=stmt,
@@ -2244,6 +2378,7 @@ def statement_detail(statement_id):
         bank_label=_bank_label,
         property=property_row,
         prop_count=prop_count,
+        prop_breakdown=prop_breakdown,
     )
 
 
@@ -2417,6 +2552,11 @@ def statement_correct_payment(statement_id, payment_id):
         old_amount = float(payment['amount'])
         txn_id = payment['bank_txn_id']
 
+        tenant_info = conn.execute(
+            "SELECT name, phone FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1",
+            (payment['unit_id'],),
+        ).fetchone() if payment['unit_id'] else None
+
         if payment['claim_id']:
             conn.execute(
                 "UPDATE payment_claims SET status = 'pending', verified_at = NULL WHERE id = ?",
@@ -2427,7 +2567,23 @@ def statement_correct_payment(statement_id, payment_id):
              f"Unassigned | KES {old_amount:.2f} | Was: Unit {old_unit} | Reason: {reason} | Statement: {statement_id}",
              'admin'),
         )
+        from src.platform.guardian import platform_log as _plog
+        _plog(conn, 'payment_corrected', 'payment', payment_id,
+              f"KES {old_amount:.2f} on Unit {old_unit} corrected by agency. Reason: {reason}.",
+              org_id=session.get('org_id'))
         conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+
+        if tenant_info and tenant_info['phone']:
+            from src.messaging.delivery import send_sms
+            txn_row = conn.execute(
+                "SELECT mpesa_ref FROM bank_transactions WHERE id = ?", (txn_id,)
+            ).fetchone() if txn_id else None
+            mpesa_ref = txn_row['mpesa_ref'] if txn_row and txn_row['mpesa_ref'] else '-'
+            send_sms(
+                [{'phone': tenant_info['phone']}],
+                f"Domi: KES {old_amount:,.0f} recorded against your account (Ref: {mpesa_ref}) "
+                f"was corrected by the agency. If unexpected, contact Domi support.",
+            )
 
         new_unit_number = None
         if new_unit_id:
@@ -2571,6 +2727,11 @@ def delete_payment(payment_id):
         unit_number = unit_info['unit_number'] if unit_info else '-'
         amount = float(payment['amount'])
 
+        tenant_info = conn.execute(
+            "SELECT name, phone FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1",
+            (payment['unit_id'],),
+        ).fetchone() if payment['unit_id'] else None
+
         if payment['claim_id']:
             conn.execute(
                 "UPDATE payment_claims SET status = 'pending', verified_at = NULL WHERE id = ?",
@@ -2581,7 +2742,23 @@ def delete_payment(payment_id):
             ('payment_deleted', 'payment', payment_id,
              f"Deleted | KES {amount:.2f} | Unit: {unit_number} | Type: {payment['assignment_type'] or '-'}", 'admin'),
         )
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'payment_reversed', 'payment', payment_id,
+                     f"KES {amount:.2f} on Unit {unit_number} reversed by agency.",
+                     org_id=session.get('org_id'), property_id=property_row['id'])
         conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+
+        if tenant_info and tenant_info['phone']:
+            from src.messaging.delivery import send_sms
+            txn_row = conn.execute(
+                "SELECT mpesa_ref FROM bank_transactions WHERE id = ?", (payment['bank_txn_id'],)
+            ).fetchone() if payment['bank_txn_id'] else None
+            mpesa_ref = txn_row['mpesa_ref'] if txn_row and txn_row['mpesa_ref'] else '-'
+            send_sms(
+                [{'phone': tenant_info['phone']}],
+                f"Domi: KES {amount:,.0f} recorded against your account (Ref: {mpesa_ref}) "
+                f"was reversed by the agency. If unexpected, contact Domi support.",
+            )
 
     flash(f'Payment undone — KES {amount:,.0f} removed from Unit {unit_number}.', 'success')
     next_url = request.args.get('next') or url_for('review', tab='unreported')
@@ -3039,16 +3216,28 @@ def upload_water_charges():
             ).fetchall()
             unit_map = {u['unit_number'].strip().upper(): u['id'] for u in units}
 
+            # Prefix fallback: Excel "4A" → DB "4A NBK". Keys sorted longest-first so
+            # "4AB" beats "4A" when both are valid prefixes of a DB unit number.
+            db_keys_by_length = sorted(unit_map.keys(), key=len, reverse=True)
+
             created = 0
             skipped = 0
             not_found = []
+            prefix_matched = []  # (excel_value, db_unit_number) pairs for the flash message
 
             for row in result['rows']:
                 unit_key = row['unit_number'].strip().upper()
                 unit_id = unit_map.get(unit_key)
+
                 if not unit_id:
-                    not_found.append(row['unit_number'])
-                    continue
+                    # Prefix fallback: find DB units that start with the Excel value
+                    matches = [k for k in db_keys_by_length if k.startswith(unit_key)]
+                    if len(matches) == 1:
+                        unit_id = unit_map[matches[0]]
+                        prefix_matched.append((row['unit_number'], matches[0].title()))
+                    else:
+                        not_found.append(row['unit_number'])
+                        continue
 
                 existing = conn.execute(
                     "SELECT id FROM rent_charges WHERE unit_id = ? AND period = ? AND charge_type = 'water'",
@@ -3082,9 +3271,14 @@ def upload_water_charges():
             msg = f'Uploaded {created} water charges for {period}.'
             if skipped:
                 msg += f' {skipped} skipped (already exist).'
+            if prefix_matched:
+                matched_str = ', '.join(f'{e}→{d}' for e, d in prefix_matched[:5])
+                if len(prefix_matched) > 5:
+                    matched_str += f' (+{len(prefix_matched) - 5} more)'
+                msg += f' Auto-matched by prefix: {matched_str}.'
             if not_found:
                 msg += f' Units not found: {", ".join(not_found[:5])}.'
-            flash(msg, 'success')
+            flash(msg, 'success' if not not_found else 'warning')
             if created > 0:
                 return redirect(url_for('water_upload_detail', upload_id=upload_id))
             return redirect(url_for('water_uploads_list'))

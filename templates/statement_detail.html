@@ -66,6 +66,23 @@
   </div>
 </div>
 
+{# ── Property breakdown (multi-property statements) ─────────────────────── #}
+{% if prop_breakdown and prop_breakdown|length > 0 %}
+<div class="mb-4 p-3 rounded" style="background:#f8fafc;border:1px solid #e5e7eb;font-size:13px;">
+  <span style="font-weight:600;color:#374151;margin-right:12px;">Assigned to:</span>
+  {% for pname, info in prop_breakdown.items() %}
+  <span class="badge bg-primary-subtle text-primary me-2" style="font-size:11px;font-weight:500;">
+    {{ pname }} — {{ info.count }} payment{{ 's' if info.count != 1 }} · KES {{ "{:,.0f}".format(info.amount) }}
+  </span>
+  {% endfor %}
+  {% if unmatched %}
+  <span class="badge bg-danger-subtle text-danger" style="font-size:11px;font-weight:500;">
+    {{ unmatched|length }} unmatched
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ── Verified payments ────────────────────────────────────────────────────── #}
 <div class="surface-card mb-4">
   <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">

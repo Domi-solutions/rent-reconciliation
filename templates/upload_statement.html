@@ -8,7 +8,7 @@
   <div class="surface-card-header"><h6>PDF Upload</h6></div>
   <div style="padding: 20px;">
     <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">Upload a bank statement PDF. The format is detected automatically. After upload you'll be taken to verify pending payment claims against this statement.</p>
-    <form method="post" action="{{ url_for('upload_statement') }}" enctype="multipart/form-data">
+    <form id="upload-form" method="post" action="{{ url_for('upload_statement') }}" enctype="multipart/form-data">
       <div class="mb-3">
         <label for="file" class="form-label">PDF File *</label>
         <input type="file" class="form-control" id="file" name="file" accept=".pdf" required>
@@ -25,11 +25,33 @@
         <div class="form-text">Tag to a specific property to scope verification to that property only. Leave as "All properties" if this statement covers multiple properties.</div>
       </div>
       {% endif %}
-      <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary">Upload & Process</button>
-        <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-secondary">Cancel</a>
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <button type="submit" class="btn btn-primary" id="upload-btn">Upload & Process</button>
+        <a href="{{ url_for('manage_statements') }}" class="btn btn-outline-secondary" id="cancel-btn">Cancel</a>
+        <span id="upload-spinner" class="text-muted d-none" style="font-size:13px;">
+          <span class="spinner-border spinner-border-sm" role="status"></span>
+          Processing… <span id="upload-timer">0</span>s elapsed
+        </span>
       </div>
     </form>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function() {
+    var form = document.getElementById('upload-form');
+    if (!form) return;
+    form.addEventListener('submit', function() {
+      document.getElementById('upload-btn').disabled = true;
+      document.getElementById('cancel-btn').classList.add('disabled');
+      document.getElementById('upload-spinner').classList.remove('d-none');
+      var secs = 0;
+      setInterval(function() {
+        document.getElementById('upload-timer').textContent = ++secs;
+      }, 1000);
+    });
+  })();
+</script>
 {% endblock %}

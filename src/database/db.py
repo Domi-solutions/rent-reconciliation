@@ -1203,4 +1203,68 @@ def migrate_add_water_readings():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_wr_upload ON water_readings(upload_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_wr_unit ON water_readings(unit_id)")
+
+
+def migrate_bank_statements_nullable_property():
+    """Remove NOT NULL constraint from bank_statements.property_id. Idempotent.
+
+    SQLite cannot ALTER a column constraint directly — we recreate the table.
+    This allows statements to be truly org-scoped with no required property tag.
+    """
+    with get_connection() as conn:
+        info = conn.execute("PRAGMA table_info(bank_statements)").fetchall()
+        prop = next((c for c in info if c[1] == 'property_id'), None)
+        if not prop or prop[3] == 0:
+            print("Migration: bank_statements.property_id already nullable, skipping.")
+            return
+
+        # Drop any leftover temp table from a previous failed attempt
+        conn.execute("DROP TABLE IF EXISTS _bank_statements_new")
+
+    # executescript issues an implicit COMMIT — use separately from get_connection context
+    import sqlite3 as _sqlite3, os as _os
+    db_path = _os.environ.get('DATABASE_PATH', 'data/rent.db')
+    raw = _sqlite3.connect(db_path)
+    try:
+        raw.executescript("""
+            PRAGMA foreign_keys = OFF;
+
+            CREATE TABLE _bank_statements_new (
+                id TEXT PRIMARY KEY,
+                org_id TEXT,
+                property_id TEXT,
+                filename TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                period_start DATE,
+                period_end DATE,
+                opening_balance DECIMAL(12,2),
+                closing_balance DECIMAL(12,2),
+                total_transactions INTEGER,
+                rent_transactions INTEGER,
+                bank_format TEXT,
+                status TEXT DEFAULT 'active',
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (property_id) REFERENCES properties(id)
+            );
+
+            INSERT INTO _bank_statements_new
+                (id, org_id, property_id, filename, file_path,
+                 period_start, period_end, opening_balance, closing_balance,
+                 total_transactions, rent_transactions, bank_format, status, uploaded_at)
+            SELECT id, org_id, property_id, filename, file_path,
+                   period_start, period_end, opening_balance, closing_balance,
+                   total_transactions, rent_transactions, bank_format, status, uploaded_at
+            FROM bank_statements;
+
+            DROP TABLE bank_statements;
+            ALTER TABLE _bank_statements_new RENAME TO bank_statements;
+
+            CREATE INDEX IF NOT EXISTS idx_stmts_org ON bank_statements(org_id);
+
+            PRAGMA foreign_keys = ON;
+        """)
+    finally:
+        raw.close()
+
+    print("Migration complete: bank_statements.property_id now nullable.")
     print("Migration complete: water_rate, water_uploads, water_readings ready.")

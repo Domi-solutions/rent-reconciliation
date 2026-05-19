@@ -16,6 +16,7 @@
         <th>Bank</th>
         <th>Period</th>
         <th>Rent Txns</th>
+        <th>Properties</th>
         <th>Status</th>
         <th>Uploaded</th>
         <th></th>
@@ -38,6 +39,16 @@
         </td>
         <td style="font-size:12px; color:#6b7280;">{{ s.period_start or '-' }} → {{ s.period_end or '-' }}</td>
         <td>{{ s.rent_transactions }}</td>
+        <td style="font-size:12px;">
+          {% set cov = stmt_coverage.get(s.id, {}) %}
+          {% if cov.prop_count == 0 %}
+            <span style="color:#d1d5db;">—</span>
+          {% elif cov.prop_count == 1 %}
+            <span class="badge bg-primary-subtle text-primary" style="font-size:10px;">{{ cov.prop_names }}</span>
+          {% else %}
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;" title="{{ cov.prop_names }}">Multi-property ({{ cov.prop_count }})</span>
+          {% endif %}
+        </td>
         <td>
           {% if s.status == 'active' %}
             <span class="badge bg-success-subtle text-success" style="font-size:10px;">Active</span>
@@ -69,7 +80,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" style="padding: 40px 16px; text-align: center;">
+        <td colspan="8" style="padding: 40px 16px; text-align: center;">
           <div style="font-weight: 600; font-size: 15px; margin-bottom: 6px;">No bank statements uploaded yet</div>
           <div class="data-row-meta" style="max-width: 420px; margin: 0 auto 16px;">
             Upload a PDF bank statement to import M-Pesa transactions and begin matching payments to tenants.

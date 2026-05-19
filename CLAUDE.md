@@ -107,7 +107,7 @@ rent-reconciliation/
 │   │   └── state.py          # Conversation session state (inbound_sessions)
 │   ├── parsers/
 │   │   ├── router.py         # Input auto-detection & routing
-│   │   ├── pdf_parser.py     # Bank statement parsing (detect_bank_statement_format → 'cooperative'|'tabular_kes'|'unknown')
+│   │   ├── pdf_parser.py     # Bank statement parsing (detect_bank_statement_format → 'cooperative'|'tabular_kes'|'unknown'|'scanned'); scanned PDFs use call_llm_vision (Claude Haiku) as last resort
 │   │   ├── sms_parser.py     # M-Pesa SMS parsing (exports parse_mpesa_message)
 │   │   ├── excel_parser.py   # Tenant Excel import (exports parse_currency)
 │   │   ├── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate)
@@ -152,7 +152,7 @@ rent-reconciliation/
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
 │   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, reports.html, report_detail.html, water.html, water_new.html
-│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html
+│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
 │   ├── owners.html
 │   └── caretakers.html
@@ -180,7 +180,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
-- `bank_statements` is **org-scoped** (as of 2026-05-12): new uploads set `org_id`, `property_id` is legacy/nullable. Always query by `WHERE org_id = ?` for new code. `bank_format` is stored at upload time (`cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`unknown`).
+- `bank_statements` is **org-scoped**: statements belong to the org (bank account), not a property. `property_id` is nullable — NULL means org-wide. Always query by `WHERE org_id = ?`. Upload never forces a property tag. Verify/assign always runs org-wide. The statements list shows all org statements with a per-statement coverage badge (which properties have verified payments). `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = image PDF parsed via Claude Haiku vision; balance validation is skipped for scanned statements (vision can't read running totals reliably).
 - `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
 - `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
 - `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
@@ -269,10 +269,19 @@ result = parse_input(data)  # Auto-detects SMS/PDF/Excel
 from src.parsers.banks.registry import bank_display_name, SUPPORTED_FORMATS
 label = bank_display_name('cooperative')  # → 'Co-operative Bank'
 label = bank_display_name('unknown')      # → 'Unknown format'
+label = bank_display_name('scanned')      # → 'Scanned PDF (AI)'
 # To add a new bank: add entry to BANK_DISPLAY_NAMES in registry.py,
 # write parser in src/parsers/banks/<bank>.py,
 # add detection branch in detect_bank_statement_format() in pdf_parser.py
 ```
+
+**Scanned PDF parsing — LLM vision fallback (last resort only):**
+- Triggered automatically when pdfplumber extracts zero text from a PDF
+- Requires `ANTHROPIC_API_KEY` env var; without it, returns a clear error message
+- Uses Claude Haiku (`call_llm_vision`) with 2 pages per chunk to avoid output token limits
+- Balance validation is bypassed for scanned results (vision doesn't read running totals)
+- Result includes a `warnings` list with advisory to request a digital statement instead
+- Cost: ~$0.05–$0.20 per 7-page statement — factor into per-property pricing
 
 **Platform guardian — call from any route that performs a sensitive agency action:**
 ```python
@@ -504,6 +513,38 @@ Key gotcha: Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by 
 - Kenya property management agency (2-3 person team). One property: "Mowin Apartments" (44 units, `PROP-45ED445A`)
 - Target: 3-5 properties near-term. Management fee: ~8% (embedded in disbursement spread, not a visible line item)
 - Tenants pay M-Pesa; bank statements confirm. Custom tech is a genuine differentiator in the Kenya market
+
+---
+
+## Security Architecture
+
+**Full threat model and agent registry:** `.agent/security.yaml` — read before touching any code that affects owners, property_owners, payments, management_fee_rate, or payout_mpesa.
+**Owner talking points and technical notes:** `SECURITY.md`
+**Platform UI:** `/platform/trust` — trust dashboard with implementation status badges.
+
+### Core principle
+Agency admin and property owner are different parties with potentially conflicting interests. Defenses give owners an independent, platform-delivered channel to observe anything admin does that affects them.
+
+### Separation of control (never violate)
+- `owners.phone` — admin-writable; any change SMSes the old number (D1)
+- `owners.payout_mpesa` — owner-write-only ONLY; no admin write path; never appears in admin SELECT queries (D7)
+- `owners.password_hash` — admin-settable at creation; Sprint 2 will lock after first owner login (D2)
+
+### Implemented defenses (Sprint 1 — 2026-05-19)
+- **D1**: `POST /owners/<id>/edit` — phone change SMSes old number + platform_log
+- **D3**: All property_owners writes (assign/remove/delete) SMS affected owners + raise critical alert
+- **D4**: `_get_confirmed_payout_owner()` in `disbursements.py` — hard blocks if >1 confirmed payout owner
+- **D7**: `manage_owners` query never SELECTs `payout_mpesa`; disbursements log last 4 digits only
+- **D9**: `delete_payment` + `statement_correct_payment` — SMS active tenant on unit when payment reversed
+
+### Planned defenses (Sprint 2+)
+- **D2**: Lock `set_owner_password` write path after first owner login
+- **D5**: Guard on `properties.management_fee_rate` changes (when property settings UI is built)
+- **D6**: Owner activity tab at `/view/<property_id>/activity` (reads platform_shadow_log)
+- **D8**: Cumulative rent drift detection in `src/agent/detector.py` (Phase 5)
+
+### Sensitive actions that MUST call platform_log()
+owner phone change, owner removed from property, owner added to property, owner deleted, payment reversed, payment corrected, unit rent/service changed >10%, management_fee_rate changed.
 
 ---
 

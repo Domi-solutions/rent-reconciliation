@@ -250,6 +250,62 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ---
 
+#### Session 13 — Scanned PDF Vision Parsing, Multi-Property Statements, Platform Parser Tools (2026-05-19) ✅ COMPLETE
+
+**Scanned PDF support (LLM vision fallback):**
+- [x] `src/agent/llm.py` — added `call_llm_vision(pages_b64, prompt, model, max_tokens)` using Anthropic vision API (images + text content block)
+- [x] `src/parsers/pdf_parser.py` — `_parse_scanned_statement()`: renders PDF pages to base64 PNG via PyMuPDF (fitz), calls Haiku vision in 2-page chunks, merges JSON results; balance validation bypassed for scanned results (vision can't read running totals); adds advisory warning to result recommending digital statements
+- [x] `parse_bank_statement()` checks for zero extracted text → triggers vision fallback if `ANTHROPIC_API_KEY` set; returns clear error if not set
+- [x] `bank_format = 'scanned'` stored in DB for vision-parsed statements
+- [x] `requirements.txt` — added `pymupdf>=1.24.0` and `python-dotenv>=1.0.0`
+- [x] `app.py` — `load_dotenv()` called at startup (via try/import) so API key loads from `.env` without relying on bash source
+- [x] Advisory warning flashed on admin upload and shown in platform parser test for scanned PDFs
+- [x] Upload spinner + live second counter added to both admin upload page and platform parser test tool
+
+**Multi-property bank statement model:**
+- [x] `src/database/db.py` — `migrate_bank_statements_nullable_property()`: recreates `bank_statements` table removing NOT NULL from `property_id` (idempotent; skips if already nullable; uses raw sqlite3 + executescript to bypass get_connection context)
+- [x] `app.py` — upload route: removed session property fallback; statements are now truly org-scoped with no forced property tag
+- [x] `app.py` — `manage_statements`: added `stmt_coverage` query (COUNT DISTINCT properties with verified payments per statement); passed to template
+- [x] `app.py` — `statement_detail`: added `prop_breakdown` dict from matched rows (per-property payment count + KES total); passed to template
+- [x] `templates/statements.html` — added "Properties" column with coverage badge (property name / "Multi-property (N)" / "—")
+- [x] `templates/statement_detail.html` — added property breakdown strip below summary cards
+
+**Platform parser test tools:**
+- [x] `src/routes/platform_routes.py` — `GET/POST /platform/parsers`: calls parsers directly (not via ParseResult wrapper); full result dict passed to template for PDF/SMS/Excel
+- [x] `templates/platform/parsers.html` — Bootstrap tab nav; PDF/SMS/Excel forms; results rendered inline; warnings block for scanned PDF advisory
+- [x] `templates/platform/base_platform.html` — Parser Tools nav link added
+
+**Water charges robustness (prefix-fallback unit matching):**
+- [x] `app.py` upload_water_charges: prefix-fallback matching for unit numbers like "4A" when DB has "4A NBK"; uniqueness check prevents false positives; flash message shows matched units
+
+---
+
+#### Session 12 — Security Architecture: Threat Model + Sprint 1 Defenses (2026-05-19) ✅ COMPLETE
+
+**Documentation (new files):**
+- [x] `.agent/security.yaml` — full threat/defense registry for AI agents; 10 threats, 9 defenses, owner talking points, implementation status per defense
+- [x] `SECURITY.md` — owner-facing talking points (Section 1, plain English, use when pitching to landlords) + technical implementation notes (Section 2, for developers/agents)
+- [x] `templates/platform/trust.html` — replaced stub with full trust dashboard: agency trust scores, owner guarantees (9 cards with Live/Planned badges), platform oversight monitor, sprint status
+- [x] `CLAUDE.md` — Security Architecture section added (separation of control rules, implemented defenses, planned defenses, guardian call requirements)
+- [x] `CURSOR_PLAN.md` — security sprint blocks added here
+
+**Sprint 1 code (before disbursements go live):**
+- [x] D1 — `POST /owners/<owner_id>/edit` route in `app.py`: updates name/phone/email; if phone changes, SMS old number + platform_log; UI added to `owners.html` (Edit Details section above Set Password)
+- [x] D3 (complete) — `remove_property_from_owner`: now also SMSes remaining owners on property when one is removed (was: only SMSed the removed owner)
+- [x] D4 — already implemented in `_get_confirmed_payout_owner()` in `disbursements.py` — confirmed complete
+- [x] D7 — confirmed: `manage_owners` query does not SELECT `payout_mpesa`; disbursements.py logs last 4 digits only
+- [x] D9 — `delete_payment` + `statement_correct_payment` in `app.py`: SMS active tenant on unit when payment reversed or corrected; mpesa_ref looked up from bank_transactions via bank_txn_id; also logs to platform_shadow_log via platform_log()
+
+**Sprint 2 — before onboarding external owners (not yet started):**
+- [ ] D2: Lock `set_owner_password` route to owner-initiated only after first login; admin cannot change password once owner has logged in
+- [ ] D5: Guard on `properties.management_fee_rate` changes — add when property settings UI is built; fire critical alert + SMS all owners + platform_log
+- [ ] D6: `GET /view/<property_id>/activity` — owner activity tab; reads `platform_shadow_log` filtered to property; new template `templates/viewer/activity.html`; add Activity to `base_viewer.html` nav
+
+**Sprint 3 — Phase 5 intelligence:**
+- [ ] D8: Extend `src/agent/detector.py` anomaly_check_job — flag if monthly_rent on any unit has decreased >20% over 90 days (catches gradual skimming that per-change >10% threshold misses)
+
+---
+
 #### Session 11 — Water Readings, Reports Portals, Suggestion Refactor, Metrics Consolidation (2026-05-19) ✅ COMPLETE
 
 **Water charges — storage and web view:**

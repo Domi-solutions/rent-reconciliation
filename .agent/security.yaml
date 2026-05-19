@@ -1,0 +1,239 @@
+# Domi — Security & Trust Architecture
+# Read this before writing any code that touches: owners, property_owners, payments,
+# management_fee_rate, payout_mpesa, or audit_log.
+#
+# Threat model: the agency admin (your tenant/customer) and the property owner (their client)
+# are different parties with potentially conflicting interests. Admin has CRUD on most things.
+# The attacks below are not technical exploits — they're legitimate admin capabilities misused.
+# Defenses give owners an independent, platform-delivered channel to observe anything admin does.
+
+threats:
+
+  T1:
+    name: Phone substitution + OTP interception
+    description: >
+      Admin edits owners.phone to their own number. Owner doesn't notice.
+      When an OTP for payout_mpesa is requested, it goes to the admin's phone.
+      Admin completes the OTP flow and activates payout to their own M-Pesa.
+      The 48h hold is useless here — OTP completed legitimately against the substituted phone.
+    defense: D1
+    status: implemented
+
+  T2:
+    name: Owner credential takeover
+    description: >
+      If admin can write owners.password_hash (set_owner_password route allows this),
+      they can set a new password, log in as the owner, and initiate the payout OTP flow
+      from the owner's portal session.
+    defense: D2
+    status: planned — Sprint 2
+
+  T3:
+    name: Silent ownership removal
+    description: >
+      Admin removes the real owner from property_owners. Owner loses /view/* access and
+      stops receiving owner inbox messages. If owner doesn't actively try to log in,
+      they may not notice for months. Disbursements stop (no confirmed payout owner),
+      which may be what the admin wants — buying time to set up the next step.
+    defense: D3
+    status: implemented
+
+  T4:
+    name: Rogue co-owner addition
+    description: >
+      Admin adds a second owner they control to a property. This owner completes the OTP
+      flow for their own M-Pesa. Two confirmed payout owners now exist.
+    defense: D4
+    status: implemented
+
+  T5:
+    name: Management fee manipulation
+    description: >
+      properties.management_fee_rate is admin-writable. Admin raises it to 50% or 99%.
+      Disbursements shrink. Owner sees reduced payout but may not know fee changed.
+      Current: no guard on fee rate changes — platform alert fires for rent >10% but not fee.
+    defense: D5
+    status: planned — Sprint 2 (no property settings UI yet; add guard when UI is built)
+
+  T6:
+    name: Gradual rent reduction skimming
+    description: >
+      Admin reduces unit rents slightly over time. Tenants pay less via Domi Paybill.
+      Difference disappears. Platform alerts fire for single >10% changes, but multiple
+      9% changes are invisible.
+    defense: D8
+    status: planned — Sprint 3 (Phase 5 detector job)
+
+  T7:
+    name: Payment misdirection
+    description: >
+      Admin manually assigns a large bank credit to a fake/shell unit they created,
+      or corrects a real payment away from a legitimate unit. Money is in DB as "assigned"
+      but to a ghost unit that will never disburse to the real owner.
+    defense: D9
+    status: implemented (tenant SMS on reversal/correction)
+
+  T8:
+    name: Audit trail gaps
+    description: >
+      All writes to audit_log come from application code. A rogue admin cannot delete rows
+      via the UI, but could avoid triggering writes by exploiting gaps.
+    defense: platform_shadow_log (write-once, platform-only, never admin-visible)
+    status: implemented (platform_shadow_log for all sensitive actions)
+
+  T9:
+    name: Access token theft → tenant impersonation
+    description: >
+      tenants.access_token is visible in admin UI. Admin can copy it, use the tenant portal,
+      view financial data, or file platform disputes to frame the tenant.
+    defense: >
+      Tenant portal is read-only. Disputes go directly to platform, not agency. Admin cannot
+      resolve disputes. Low-risk until tenant portal gains write capabilities.
+    status: accepted risk — monitor when payment tab goes live
+
+  T10:
+    name: Owner payout_mpesa visibility
+    description: >
+      Even though admin cannot write owners.payout_mpesa, if the admin portal SELECT includes
+      it, the full number is in HTML source. Admin learns the real owner's phone for social
+      engineering.
+    defense: D7
+    status: implemented (manage_owners query does not SELECT payout_mpesa)
+
+defenses:
+
+  D1:
+    name: SMS on owners.phone change
+    threat: T1
+    status: implemented
+    how: >
+      POST /owners/<owner_id>/edit added (2026-05-19). When owners.phone changes,
+      immediately SMS the old number: "Your Domi contact number was updated. If you did not
+      request this, call Domi support now." Also logged to platform_shadow_log.
+      Breaks the OTP interception chain at source.
+    files:
+      - app.py (edit_owner route)
+      - src/platform/guardian.py (platform_log)
+      - src/messaging/delivery.py (send_sms)
+
+  D2:
+    name: Lock owner password after first login
+    threat: T2
+    status: planned — Sprint 2
+    how: >
+      Two options: (A) Admin sets temp password; owner forced to change on first login;
+      after that, admin write path to password_hash is removed.
+      (B) Admin never sets password; owner receives "set password" SMS link on creation.
+      Option B is cleaner; requires SMS channel live. Current set_owner_password route
+      will be locked to owner-only once implemented.
+    files:
+      - app.py (set_owner_password route — lock to owner-initiated only)
+      - src/routes/viewer_routes.py or owner_routes.py (add self-serve password change)
+
+  D3:
+    name: Ownership changes trigger direct SMS to all affected owners
+    threat: T3, T4
+    status: implemented
+    how: >
+      Any write to property_owners — add or remove — triggers:
+      - SMS to the affected owner's phone via platform (not agency messaging pipeline)
+      - Critical platform alert
+      assign_property_to_owner: SMS to all existing owners on property.
+      remove_property_from_owner: SMS to removed owner + all remaining owners.
+      delete_owner: SMS to deleted owner.
+    files:
+      - app.py (assign_property_to_owner, remove_property_from_owner, delete_owner)
+      - src/messaging/delivery.py (send_sms)
+
+  D4:
+    name: Two confirmed payout owners = disbursement hard block
+    threat: T4
+    status: implemented
+    how: >
+      _get_confirmed_payout_owner() in disbursements.py: if more than one confirmed, active
+      payout owner found, raises ValueError + critical platform alert. Disbursement blocked
+      entirely — platform must resolve manually. Does not pick "most recent" — no path exists
+      for rogue co-owner to receive funds.
+    files:
+      - src/payments/disbursements.py (_get_confirmed_payout_owner)
+
+  D5:
+    name: Management fee rate change guard
+    threat: T5
+    status: planned — Sprint 2
+    how: >
+      Any change to properties.management_fee_rate triggers:
+      - platform_shadow_log entry
+      - platform_alert (critical if >5% change, warning otherwise)
+      - SMS to all property owners: "The management fee on [Property] was updated from X% to Y%."
+      Fee rate must be visible in owner portal (currently shows in wallet as read-only label).
+    files:
+      - app.py (property settings route — not yet built)
+      - src/platform/guardian.py
+      - src/messaging/delivery.py
+
+  D6:
+    name: Owner activity tab in portal
+    threat: T1, T2, T3, T4, T5
+    status: planned — Sprint 2
+    how: >
+      GET /view/<property_id>/activity — read-only tab in owner portal showing
+      platform_shadow_log entries scoped to their property:
+      owner changes, phone changes, payout changes, fee changes, ownership changes.
+      Owner has independent visibility without relying on agency to tell them anything.
+    files:
+      - src/routes/viewer_routes.py (new route)
+      - templates/viewer/activity.html (new template)
+      - templates/viewer/base_viewer.html (add Activity tab)
+
+  D7:
+    name: Mask payout_mpesa in all admin-facing queries
+    threat: T10
+    status: implemented
+    how: >
+      manage_owners query in app.py does NOT select payout_mpesa (never has — confirmed 2026-05-19).
+      Admin sees only payout status ('confirmed'/'unset') via separate status field.
+      Full number only visible in owner portal (after owner auth) on wallet page.
+      Disbursements log only last 4 digits: "****1234".
+    files:
+      - app.py (manage_owners — verified clean)
+      - src/payments/disbursements.py (logs payout_mpesa[-4:] only)
+
+  D8:
+    name: Cumulative rent drift detection
+    threat: T6
+    status: planned — Sprint 3
+    how: >
+      Detector job extension: if monthly_rent on any unit has decreased by >20% over 90 days
+      (via multiple small changes), raise platform alert + SMS property owners.
+      Catches gradual skimming that per-change thresholds miss.
+    files:
+      - src/agent/detector.py (anomaly_check_job extension)
+
+  D9:
+    name: SMS to tenant on payment reversal or correction
+    threat: T7
+    status: implemented
+    how: >
+      delete_payment and correct_payment routes (2026-05-19): if the deleted/corrected payment
+      has a unit with an active tenant who has a phone, send SMS:
+      "KES [amount] recorded against your account (Ref: [mpesa_ref]) was reversed by the agency.
+      If unexpected, contact Domi support."
+      Tenant reporting an unexpected reversal is a strong fraud signal.
+    files:
+      - app.py (delete_payment, correct_payment routes)
+      - src/messaging/delivery.py (send_sms)
+
+# Summary table (for quick agent reference)
+# D1 ✅ D2 ⏳ D3 ✅ D4 ✅ D5 ⏳ D6 ⏳ D7 ✅ D8 ⏳ D9 ✅
+
+# Owner-facing talking points (use when onboarding a new landlord):
+talking_points:
+  - "Your payout M-Pesa number is set by you — not the agency. We verify it with a code sent to the number itself."
+  - "After you set a payout number, there's a 48-hour security hold before any money moves."
+  - "If your contact number is ever changed, you get an immediate SMS on your old number."
+  - "You're notified directly by Domi (not through the agency) any time someone is added to or removed from your property."
+  - "If two payout accounts are ever registered for one property, all disbursements freeze until we resolve it."
+  - "Every reversal of a tenant payment triggers an SMS to the tenant — a fraud signal we monitor independently."
+  - "The agency cannot see your M-Pesa number — only its confirmation status."
+  - "Domi maintains a write-once audit trail the agency cannot edit or delete."

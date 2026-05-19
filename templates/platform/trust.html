@@ -1,60 +1,210 @@
 {% extends "platform/base_platform.html" %}
-{% block title %}Trust Scores — Domi Platform{% endblock %}
+{% block title %}Trust & Security — Domi Platform{% endblock %}
 {% block content %}
+
 <div class="mb-4">
-  <h4 class="mb-1">Agency Trust Scores</h4>
+  <h4 class="mb-1">Trust &amp; Security</h4>
   <div style="font-size:13px;color:#718096;">
-    Score = 100 − (critical alerts × 20) − (warnings × 5) − (open disputes × 10). Updated in real time.
+    Owner protections, threat coverage, and implementation status. Open this page when pitching to a new landlord.
   </div>
 </div>
 
-{% if scores %}
-<div class="d-flex flex-column gap-3">
-  {% for s in scores %}
-  <div class="card border-0 shadow-sm p-4">
-    <div class="d-flex justify-content-between align-items-center">
-      <div>
-        <div style="font-weight:600;font-size:16px;">{{ s.name }}</div>
-        <div style="font-size:12px;color:#718096;margin-top:2px;">
-          {{ s.total_tenants }} active tenant{{ 's' if s.total_tenants != 1 }}
-          · {{ s.open_critical }} critical alert{{ 's' if s.open_critical != 1 }}
-          · {{ s.open_warnings }} warning{{ 's' if s.open_warnings != 1 }}
-          · {{ s.open_disputes }} open dispute{{ 's' if s.open_disputes != 1 }}
+{# ── Agency Trust Scores ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">Agency Trust Scores</div>
+  <div class="card-body p-0">
+    {% if scores %}
+    <div class="d-flex flex-column gap-0">
+      {% for s in scores %}
+      <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+        <div>
+          <div style="font-weight:600;font-size:14px;">{{ s.name }}</div>
+          <div style="font-size:12px;color:#718096;margin-top:2px;">
+            {{ s.total_tenants }} active tenant{{ 's' if s.total_tenants != 1 }}
+            · {{ s.open_critical }} critical alert{{ 's' if s.open_critical != 1 }}
+            · {{ s.open_warnings }} warning{{ 's' if s.open_warnings != 1 }}
+            · {{ s.open_disputes }} open dispute{{ 's' if s.open_disputes != 1 }}
+          </div>
+          {% if s.open_critical > 0 or s.open_disputes > 0 %}
+          <div class="mt-2 d-flex gap-2">
+            {% if s.open_critical > 0 %}
+            <a href="{{ url_for('platform.alerts') }}?status=open" class="btn btn-sm btn-outline-danger py-0" style="font-size:12px;">
+              {{ s.open_critical }} critical →
+            </a>
+            {% endif %}
+            {% if s.open_disputes > 0 %}
+            <a href="{{ url_for('platform.disputes') }}?status=open" class="btn btn-sm btn-outline-warning py-0" style="font-size:12px;">
+              {{ s.open_disputes }} dispute{{ 's' if s.open_disputes != 1 }} →
+            </a>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        <div style="text-align:right;min-width:80px;">
+          <div style="font-size:28px;font-weight:700;
+            color:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};">
+            {{ s.trust_score }}
+          </div>
+          <div style="font-size:10px;color:#a0aec0;text-transform:uppercase;letter-spacing:.04em;">/ 100</div>
+          <div style="margin-top:6px;background:#e2e8f0;border-radius:9999px;height:4px;width:60px;margin-left:auto;">
+            <div style="width:{{ s.trust_score }}%;
+              background:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};
+              height:4px;border-radius:9999px;"></div>
+          </div>
         </div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-size:32px;font-weight:700;
-          color:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};">
-          {{ s.trust_score }}
-        </div>
-        <div style="font-size:11px;color:#a0aec0;text-transform:uppercase;letter-spacing:.04em;">/ 100</div>
-      </div>
+      {% endfor %}
     </div>
-    <div class="mt-3" style="background:#e2e8f0;border-radius:9999px;height:6px;">
-      <div style="width:{{ s.trust_score }}%;
-        background:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};
-        height:6px;border-radius:9999px;transition:width .3s;"></div>
-    </div>
-    {% if s.open_critical > 0 or s.open_disputes > 0 %}
-    <div class="mt-3 d-flex gap-2">
-      {% if s.open_critical > 0 %}
-      <a href="{{ url_for('platform.alerts') }}?status=open" class="btn btn-sm btn-outline-danger">
-        {{ s.open_critical }} critical alert{{ 's' if s.open_critical != 1 }} →
-      </a>
-      {% endif %}
-      {% if s.open_disputes > 0 %}
-      <a href="{{ url_for('platform.disputes') }}?status=open" class="btn btn-sm btn-outline-warning">
-        {{ s.open_disputes }} open dispute{{ 's' if s.open_disputes != 1 }} →
-      </a>
-      {% endif %}
-    </div>
+    {% else %}
+    <div class="p-4 text-center" style="color:#718096;font-size:13px;">No active organisations.</div>
     {% endif %}
   </div>
-  {% endfor %}
 </div>
-{% else %}
-<div class="card border-0 shadow-sm p-5 text-center">
-  <div style="color:#718096;">No active organisations.</div>
+
+{# ── How owner funds are protected ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">
+    How owner funds are protected
+    <span style="font-size:11px;color:#718096;font-weight:400;margin-left:8px;">These are your talking points when onboarding a new landlord.</span>
+  </div>
+  <div class="card-body p-0">
+
+    {% set guarantees = [
+      {
+        'title': 'Your payout account is set by you — not the agency',
+        'body': "The M-Pesa number that receives rent is registered through your owner portal, verified by SMS to that number (proving SIM ownership). The agency has zero write access to this field.",
+        'technical': "owners.payout_mpesa is owner-write-only. Admin routes never SELECT or UPDATE it. _get_confirmed_payout_owner() enforces payout_confirmed=1 + 48h hold.",
+        'status': 'live'
+      },
+      {
+        'title': '48-hour security hold after any payout number change',
+        'body': "After verifying a new payout number, disbursements wait 48 hours before the new account becomes active. Window to cancel if something looks wrong.",
+        'technical': "payout_active_at = now + 48h set at OTP confirmation. _get_confirmed_payout_owner() checks payout_active_at <= now().",
+        'status': 'live'
+      },
+      {
+        'title': 'Your contact number change triggers an immediate SMS to the old number',
+        'body': "If anyone changes the phone number on your Domi profile, your previous number gets a text immediately. Breaks the OTP interception attack at source.",
+        'technical': "POST /owners/<id>/edit: if phone changes, send_sms([old_phone], warning) + platform_log(). Added 2026-05-19.",
+        'status': 'live'
+      },
+      {
+        'title': 'Ownership changes notify you directly — via Domi, not the agency',
+        'body': "Any change to property ownership triggers a notification from Domi's infrastructure. If you're removed from a property you own, you know within seconds.",
+        'technical': "assign_property_to_owner, remove_property_from_owner, delete_owner: all call send_sms() + raise_alert() + platform_log().",
+        'status': 'live'
+      },
+      {
+        'title': 'Two payout accounts on one property = automatic freeze',
+        'body': "If two payout accounts are ever registered for the same property, all disbursements halt and a platform alert fires. No money moves until Domi resolves it.",
+        'technical': "_get_confirmed_payout_owner() raises ValueError + critical alert if len(confirmed) > 1.",
+        'status': 'live'
+      },
+      {
+        'title': 'The agency cannot see your M-Pesa number',
+        'body': "Your payout M-Pesa number never appears in the agency admin interface — not in any list, table, or page source. They see only confirmation status.",
+        'technical': "manage_owners query does not SELECT payout_mpesa. Disbursement logs only last 4 digits.",
+        'status': 'live'
+      },
+      {
+        'title': 'Tenant payment reversals trigger an SMS to the tenant',
+        'body': "If a payment is reversed or corrected, the tenant gets an SMS. Tenants can flag unexpected reversals to Domi — independently of the agency.",
+        'technical': "delete_payment + correct_payment routes: SMS to active tenant on unit if phone is set. Added 2026-05-19.",
+        'status': 'live'
+      },
+      {
+        'title': 'Management fee changes notify you directly',
+        'body': "If the management fee rate on your property changes, you get an SMS and Domi raises a platform alert. The current fee rate is visible on your owner portal.",
+        'technical': "Planned for Sprint 2 when property settings UI is built. Guard: platform_log + raise_alert + SMS to all property owners.",
+        'status': 'planned'
+      },
+      {
+        'title': 'You have an independent activity log in your portal',
+        'body': "Your owner portal will show a read-only activity tab: every sensitive action on your property — ownership changes, phone changes, fee changes — from Domi's write-once audit trail.",
+        'technical': "GET /view/<property_id>/activity — planned Sprint 2. Reads platform_shadow_log scoped to property.",
+        'status': 'planned'
+      }
+    ] %}
+
+    {% for g in guarantees %}
+    <div class="p-3 border-bottom">
+      <div class="d-flex align-items-start gap-3">
+        <div style="margin-top:2px;min-width:20px;">
+          {% if g.status == 'live' %}
+          <span style="color:#38a169;font-size:16px;">&#10003;</span>
+          {% else %}
+          <span style="color:#d97706;font-size:14px;">&#9679;</span>
+          {% endif %}
+        </div>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">
+            {{ g.title }}
+            {% if g.status == 'live' %}
+            <span class="badge bg-success ms-2" style="font-size:10px;font-weight:500;">Live</span>
+            {% else %}
+            <span class="badge bg-warning text-dark ms-2" style="font-size:10px;font-weight:500;">Planned</span>
+            {% endif %}
+          </div>
+          <div style="font-size:13px;color:#2d3748;margin-top:3px;">{{ g.body }}</div>
+          <div style="font-size:11px;color:#a0aec0;margin-top:4px;font-family:monospace;">{{ g.technical }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
 </div>
-{% endif %}
+
+{# ── Platform oversight ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">
+    Platform oversight
+    <span style="font-size:11px;color:#718096;font-weight:400;margin-left:8px;">What Domi monitors automatically, independent of the agency.</span>
+  </div>
+  <div class="card-body p-0">
+    {% set monitors = [
+      ('Ownership structure changes', 'assign_property_to_owner, remove_property_from_owner, delete_owner → critical alert each time', 'live'),
+      ('Payout account changes', 'OTP confirmation → platform_log + SMS to contact phone', 'live'),
+      ('Owner phone changes', 'edit_owner → platform_log + SMS to old number', 'live'),
+      ('Payment reversals', 'delete_payment, correct_payment → platform_log + tenant SMS', 'live'),
+      ('Multiple confirmed payout owners', '_get_confirmed_payout_owner → critical alert + disbursement block', 'live'),
+      ('Rent / service charge changes > 10%', 'POST /units/<id>/field → platform_log + raise_alert + owner SMS', 'live'),
+      ('Management fee rate changes', 'Property settings route (not yet built)', 'planned'),
+      ('Cumulative rent drift > 20% over 90 days', 'detector.py anomaly_check_job extension', 'planned'),
+    ] %}
+    {% for label, note, status in monitors %}
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+      <div>
+        <div style="font-size:13px;font-weight:500;">{{ label }}</div>
+        <div style="font-size:11px;color:#a0aec0;margin-top:2px;font-family:monospace;">{{ note }}</div>
+      </div>
+      {% if status == 'live' %}
+      <span class="badge bg-success" style="font-size:10px;font-weight:500;white-space:nowrap;">Live</span>
+      {% else %}
+      <span class="badge bg-warning text-dark" style="font-size:10px;font-weight:500;white-space:nowrap;">Planned</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Sprint status ── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">Implementation sprints</div>
+  <div class="card-body p-0">
+    <div class="p-3 border-bottom">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#38a169;">Sprint 1 — Before disbursements go live ✓</div>
+      <div style="font-size:12px;color:#718096;margin-top:4px;">D1 · D3 · D4 · D7 · D9 — all implemented 2026-05-19</div>
+    </div>
+    <div class="p-3 border-bottom">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#d97706;">Sprint 2 — Before onboarding external owners</div>
+      <div style="font-size:12px;color:#718096;margin-top:4px;">D2 (lock owner password write path) · D5 (fee rate guard) · D6 (owner activity tab)</div>
+    </div>
+    <div class="p-3">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#718096;">Sprint 3 — Phase 5 intelligence</div>
+      <div style="font-size:12px;color:#718096;margin-top:4px;">D8 (cumulative rent drift detection in detector.py)</div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

@@ -1373,6 +1373,210 @@ def parse_tabular_kes_bank_statement(pdf_path: str) -> dict:
     return _parse_tabular_kes_from_raw(raw_text, page_numbers)
 
 
+_VISION_PROMPT = """You are extracting structured data from scanned bank statement images.
+Return ONLY valid JSON — no markdown, no explanation, no code fences.
+
+Schema:
+{
+  "bank_name": "string or null",
+  "account_number": "string or null",
+  "opening_balance": float or null,
+  "closing_balance": float or null,
+  "transactions": [
+    {
+      "date": "DD Mon YYYY e.g. 01 Mar 2025",
+      "description": "full raw description text",
+      "reference": "M-Pesa reference code if present (10-11 alphanumeric chars, e.g. QKA1B2C3D4) or null",
+      "sender": "payer name if visible else null",
+      "amount": float (always positive),
+      "direction": "credit or debit",
+      "txn_type": "PAYBILL_CREDIT | REVERSAL | CHEQUE | SETTLEMENT | OTHER"
+    }
+  ]
+}
+
+Rules:
+- Include EVERY transaction row visible across all pages. Do not skip any.
+- PAYBILL_CREDIT: M-Pesa Paybill payments coming IN to the account (rent payments).
+  These often say "MPESA", "PAYBILL", "PAY BILL" in the description.
+- REVERSAL: a transaction being reversed or returned.
+- CHEQUE: cheque deposits or withdrawals.
+- SETTLEMENT: Lipa Na M-Pesa or merchant settlements.
+- OTHER: everything else (bank charges, transfers, fees).
+- direction = "credit" if money came IN; "debit" if money went OUT.
+- amounts are always positive numbers.
+- opening_balance: account balance at the very start of the statement period.
+- closing_balance: account balance at the very end.
+- If a field cannot be read, use null.
+- For reference codes: M-Pesa refs start with letters, are 10-11 chars, all caps alphanumeric.
+"""
+
+
+def _pdf_pages_to_b64(pdf_path: str, dpi: int = 130) -> list[str]:
+    """Render each PDF page to a base64-encoded PNG. Requires pymupdf."""
+    import base64
+    try:
+        import fitz
+    except ImportError:
+        raise RuntimeError(
+            "pymupdf is required for scanned PDF parsing. "
+            "Install it: pip install pymupdf"
+        )
+    doc = fitz.open(pdf_path)
+    scale = dpi / 72.0
+    mat = fitz.Matrix(scale, scale)
+    pages_b64 = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=mat)
+        png_bytes = pix.tobytes("png")
+        pages_b64.append(base64.standard_b64encode(png_bytes).decode("ascii"))
+    doc.close()
+    return pages_b64
+
+
+def _vision_json_to_transactions(data: dict) -> list[Transaction]:
+    """Convert the LLM JSON response into Transaction objects."""
+    transactions = []
+    for row in data.get("transactions", []):
+        raw_date = (row.get("date") or "").strip()
+        # Normalise date to DD-MON-YYYY
+        txn_date = None
+        import re as _re
+        m = _re.match(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', raw_date)
+        if m:
+            dd, mon, yyyy = m.groups()
+            txn_date = f"{int(dd):02d}-{mon.upper()}-{yyyy}"
+
+        raw_type = (row.get("txn_type") or "OTHER").upper()
+        if raw_type not in ("PAYBILL_CREDIT", "REVERSAL", "CHEQUE", "SETTLEMENT", "OTHER"):
+            raw_type = "OTHER"
+
+        try:
+            amount = Decimal(str(row.get("amount") or 0)).quantize(Decimal("0.01"))
+        except Exception:
+            amount = Decimal("0.00")
+
+        direction = "credit" if str(row.get("direction", "credit")).lower() == "credit" else "debit"
+        reference = row.get("reference") or None
+        sender = row.get("sender") or None
+        description = row.get("description") or ""
+
+        # Extract unit hint from description (MOWIN 3A style)
+        unit_hint = None
+        uh = _re.search(r'MOWIN\s*([A-Z0-9]{1,4})', description.upper())
+        if uh:
+            unit_hint = uh.group(1)
+
+        transactions.append(Transaction(
+            transaction_date=txn_date,
+            txn_type=raw_type,
+            reference=reference,
+            sender=sender,
+            narration=description,
+            unit_hint=unit_hint,
+            amount=amount,
+            direction=direction,
+            running_balance=Decimal("0.00"),
+            raw_text=description,
+            page_number=0,
+            parse_warnings=[],
+        ))
+    return transactions
+
+
+def _parse_scanned_statement(pdf_path: str) -> dict:
+    """
+    Vision fallback for scanned (image-only) PDFs.
+    Renders pages to PNG, sends to Claude Haiku, parses returned JSON.
+    """
+    import json
+
+    from src.agent.llm import call_llm_vision
+
+    try:
+        pages_b64 = _pdf_pages_to_b64(pdf_path)
+    except RuntimeError as e:
+        return {
+            "success": False,
+            "statement_format": "scanned",
+            "opening_balance": None,
+            "closing_balance": None,
+            "transactions": [],
+            "validation": {"valid": False, "error": str(e)},
+            "summary": {},
+            "errors": [str(e)],
+        }
+
+    if not pages_b64:
+        return {
+            "success": False,
+            "statement_format": "scanned",
+            "opening_balance": None,
+            "closing_balance": None,
+            "transactions": [],
+            "validation": {"valid": False, "error": "No pages rendered from PDF"},
+            "summary": {},
+            "errors": ["No pages rendered from PDF"],
+        }
+
+    # 2 pages per call — conservative limit for dense statements with many transactions
+    MAX_PAGES = 2
+    all_txns: list[Transaction] = []
+    opening_balance = None
+    closing_balance = None
+    errors: list[str] = []
+
+    chunks = [pages_b64[i:i + MAX_PAGES] for i in range(0, len(pages_b64), MAX_PAGES)]
+    for chunk_idx, chunk in enumerate(chunks):
+        raw = call_llm_vision(chunk, _VISION_PROMPT, model="fast", max_tokens=8096)
+        if not raw:
+            errors.append(f"LLM returned empty response for pages {chunk_idx * MAX_PAGES + 1}–{chunk_idx * MAX_PAGES + len(chunk)}")
+            continue
+
+        # Strip markdown fences if the model wraps in ```json ... ```
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:])
+        if raw.endswith("```"):
+            raw = "\n".join(raw.split("\n")[:-1])
+        raw = raw.strip()
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            errors.append(f"JSON parse error on chunk {chunk_idx + 1}: {e}")
+            continue
+
+        # Take opening balance from first chunk, closing from last chunk that has one
+        if chunk_idx == 0:
+            ob = data.get("opening_balance")
+            opening_balance = Decimal(str(ob)) if ob is not None else None
+        cb = data.get("closing_balance")
+        if cb is not None:
+            closing_balance = Decimal(str(cb))
+
+        all_txns.extend(_vision_json_to_transactions(data))
+
+    result = _finalize_bank_statement_result(
+        opening_balance, closing_balance, all_txns, errors, "scanned"
+    )
+    # Balance validation is unreliable for scanned PDFs — the vision model does not
+    # extract per-transaction running balances. Accept the statement as long as at
+    # least one transaction was extracted successfully.
+    if result['summary']['total_transactions'] > 0:
+        result['validation'] = {
+            'valid': True,
+            'note': 'Scanned PDF — balance validation skipped (AI vision extraction)',
+        }
+        result['success'] = len(result['errors']) == 0
+    result['warnings'] = result.get('warnings', []) + [
+        'This is a scanned (image) PDF. AI vision was used to extract transactions — accuracy may vary. '
+        'For best results, request a digital bank statement (PDF exported directly from online banking) '
+        'from your bank instead of a scanned copy.'
+    ]
+    return result
+
+
 def parse_bank_statement(pdf_path: str) -> dict:
     """
     Orchestrated entry: extract text once, detect format, dispatch to cooperative or tabular parser.
@@ -1402,13 +1606,34 @@ def parse_bank_statement(pdf_path: str) -> dict:
             result = _parse_tabular_kes_from_raw(raw_text, page_numbers)
             result['statement_format'] = fmt
             return result
+
+        # Unknown format — check if the PDF is a scanned image (no text at all)
+        is_scanned = not raw_text.strip()
+        import os as _os
+        has_api_key = bool(_os.environ.get("ANTHROPIC_API_KEY"))
+
+        if is_scanned and has_api_key:
+            return _parse_scanned_statement(pdf_path)
+
+        if is_scanned and not has_api_key:
+            return {
+                'success': False,
+                'statement_format': 'scanned',
+                'opening_balance': None,
+                'closing_balance': None,
+                'transactions': [],
+                'validation': {'valid': False, 'error': 'Scanned PDF detected. Set ANTHROPIC_API_KEY to enable AI extraction.'},
+                'summary': {},
+                'errors': ['Scanned PDF detected but ANTHROPIC_API_KEY is not set.'],
+            }
+
         return {
             'success': False,
             'statement_format': 'unknown',
             'opening_balance': None,
             'closing_balance': None,
             'transactions': [],
-            'validation': {'valid': False, 'error': 'Bank statement format not recognised. Supported: Co-operative Bank, KCB.'},
+            'validation': {'valid': False, 'error': 'Bank statement format not recognised. Supported: Co-operative Bank, Family Bank, National Bank, KCB.'},
             'summary': {},
             'errors': ['Bank statement format not recognised'],
         }

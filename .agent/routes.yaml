@@ -171,6 +171,8 @@ blueprints:
       - "POST /platform/orgs/<org_id>/set-password — set org admin password"
       - "GET /platform/parse-errors — all parse errors across all orgs; ?org_id= filter"
       - "GET /platform/statements/<statement_id>/pdf — serve stored PDF file via send_file()"
+      - "GET /platform/parsers — parser test tools (PDF/SMS/Excel tabs); no DB writes; calls parsers directly"
+      - "POST /platform/parsers — submit file or SMS text for parse preview; returns result inline"
 
   inbound:
     file: src/routes/inbound_routes.py

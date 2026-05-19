@@ -62,13 +62,13 @@ tables:
 
   bank_statements:
     status: live
-    migration: schema.sql (base) + migrate_add_org_scoped_statements
-    note: "Org-scoped as of 2026-05-12. New uploads set org_id. property_id is now optional — set when admin tags statement to a specific property at upload; NULL = org-wide (covers all properties). Supersede logic and verify_payments scope are both driven by property_id tag."
+    migration: schema.sql (base) + migrate_add_org_scoped_statements + migrate_bank_statements_nullable_property
+    note: "Org-scoped. Statements belong to the org (bank account), not a property. property_id is nullable — set only when admin explicitly tags a statement to one property at upload; NULL means org-wide. Both upload and verify_payments are always org-scoped. Statements list shows all org statements regardless of which property the admin is viewing. Per-statement coverage badge shows which properties have verified payments assigned."
     columns:
       id: {type: TEXT, pk: true}
-      property_id: {type: TEXT, fk: properties.id, note: "Optional property tag set at upload. NULL = org-wide; non-null = verify_payments scopes claims to this property only. Supersede only affects statements with the same property_id tag."}
+      property_id: {type: TEXT, fk: properties.id, required: false, note: "Optional. NULL = org-wide (all properties). Non-null = admin tagged at upload for convenience; does NOT restrict verify_payments scope — all pending claims across the org are always checked."}
       org_id: {type: TEXT, fk: organizations.id, added_by: migrate_add_org_scoped_statements, note: "Set on all new uploads; primary query key; always query by this for multi-property orgs"}
-      bank_format: {type: TEXT, added_by: migrate_add_org_scoped_statements, values: [cooperative, family_bank, national_bank, tabular_kes, unknown], note: "Detected format; stored so reparse can skip re-detection. family_bank uses cooperative parser. national_bank uses tabular parser."}
+      bank_format: {type: TEXT, added_by: migrate_add_org_scoped_statements, values: [cooperative, family_bank, national_bank, tabular_kes, scanned, unknown], note: "Detected format; stored so reparse can skip re-detection. family_bank uses cooperative parser. national_bank uses tabular parser. scanned = image-only PDF parsed via Claude Haiku vision API."}
       filename: {type: TEXT, required: true}
       file_path: {type: TEXT, required: true}
       period_start: {type: DATE}

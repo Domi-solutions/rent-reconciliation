@@ -1,0 +1,262 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Parser Test Tools — Domi Platform{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <h4 class="mb-1">Parser Test Tools</h4>
+  <div style="font-size:13px;color:#718096;">
+    Runs parsers only — no data is saved to the database.
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'pdf' %}active{% endif %}"
+       href="{{ url_for('platform.parsers', tab='pdf') }}">PDF Parser</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'sms' %}active{% endif %}"
+       href="{{ url_for('platform.parsers', tab='sms') }}">SMS Parser</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'excel' %}active{% endif %}"
+       href="{{ url_for('platform.parsers', tab='excel') }}">Excel Parser</a>
+  </li>
+</ul>
+
+{# ── PDF ── #}
+{% if tab == 'pdf' %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">Test PDF Parser</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">Upload a bank statement PDF to see parsed transactions and validation. No data is saved.</p>
+    <form method="post" enctype="multipart/form-data" id="pdf-form">
+      <input type="hidden" name="tab" value="pdf">
+      <div class="mb-3" style="max-width:400px;">
+        <input type="file" class="form-control" name="file" accept=".pdf" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm" id="pdf-btn">Parse PDF</button>
+      <span id="pdf-spinner" class="ms-2 text-muted small d-none">
+        <span class="spinner-border spinner-border-sm" role="status"></span>
+        Parsing… <span id="pdf-timer">0</span>s elapsed
+      </span>
+    </form>
+
+    {% if result %}
+    <hr class="my-4">
+    <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+      <span class="badge {% if result.success %}bg-success{% else %}bg-danger{% endif %}">
+        {% if result.success %}Parse Successful{% else %}Parse Failed{% endif %}
+      </span>
+      {% if result.validation %}
+      <span class="badge {% if result.validation.valid %}bg-success{% else %}bg-warning text-dark{% endif %}">
+        Checksum: {% if result.validation.valid %}PASS{% else %}FAIL{% endif %}
+      </span>
+      {% endif %}
+      {% if result.transactions %}
+      <span class="badge bg-secondary">{{ result.transactions|length }} transactions</span>
+      {% endif %}
+    </div>
+
+    {% if result.errors %}
+    <div class="alert alert-danger py-2">
+      <strong>Errors:</strong>
+      <ul class="mb-0 mt-1">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if result.warnings %}
+    <div class="alert alert-warning py-2" style="font-size:13px;">
+      <ul class="mb-0">{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if result.opening_balance is not none or result.closing_balance is not none %}
+    <div class="d-flex gap-4 mb-3" style="font-size:13px;">
+      <div><span style="color:#718096;">Opening:</span> KES {{ "{:,.2f}".format((result.opening_balance or 0)|float) }}</div>
+      <div><span style="color:#718096;">Closing:</span> KES {{ "{:,.2f}".format((result.closing_balance or 0)|float) }}</div>
+    </div>
+    {% endif %}
+
+    {% if result.summary %}
+    <div class="mb-3 p-3 rounded" style="background:#f7fafc;font-size:12px;color:#4a5568;">
+      {{ result.summary.total_transactions }} transactions ·
+      {{ result.summary.paybill_credits }} Paybill credits ·
+      KES {{ "{:,.0f}".format((result.summary.total_rent_amount or 0)|float) }} rent ·
+      {{ result.summary.reversals }} reversals ·
+      {{ result.summary.parse_errors }} parse errors
+    </div>
+    {% endif %}
+
+    {% if result.transactions %}
+    <div class="table-responsive">
+      <table class="table table-sm" style="font-size:12px;">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th><th>Ref</th><th class="text-end">Amount</th><th>Type</th><th>Sender</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for txn in result.transactions[:100] %}
+          <tr>
+            <td>{{ txn.transaction_date or '—' }}</td>
+            <td><code style="font-size:11px;">{{ txn.reference or '—' }}</code></td>
+            <td class="text-end">{{ "{:,.2f}".format((txn.amount or 0)|float) }}</td>
+            <td>{{ txn.txn_type }}</td>
+            <td>{{ txn.sender or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if result.transactions|length > 100 %}
+      <div style="font-size:12px;color:#718096;">{{ result.transactions|length - 100 }} more transactions not shown.</div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── SMS ── #}
+{% if tab == 'sms' %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">Test SMS Parser</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">Paste an M-Pesa message or reference code. No data is saved.</p>
+    <form method="post">
+      <input type="hidden" name="tab" value="sms">
+      <div class="mb-3" style="max-width:480px;">
+        <textarea class="form-control" name="message" rows="5"
+          placeholder="e.g. QKA1B2C3D4 Confirmed. Ksh5,000.00 sent to MOWIN APARTMENTS..." required>{{ message or '' }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Parse SMS</button>
+    </form>
+
+    {% if result %}
+    <hr class="my-4">
+    <div class="mb-3">
+      <span class="badge {% if result.success %}bg-success{% else %}bg-danger{% endif %}">
+        {% if result.success %}Parse Successful{% else %}Parse Failed{% endif %}
+      </span>
+    </div>
+
+    {% if result.error %}
+    <div class="alert alert-danger py-2">{{ result.error }}</div>
+    {% endif %}
+
+    {% if result.success %}
+    <dl class="row mb-0" style="font-size:13px;">
+      <dt class="col-sm-3">Reference</dt>
+      <dd class="col-sm-9"><code>{{ result.reference }}</code></dd>
+      <dt class="col-sm-3">Amount</dt>
+      <dd class="col-sm-9">{% if result.amount %}KES {{ "{:,.2f}".format(result.amount|float) }}{% else %}N/A{% endif %}</dd>
+      <dt class="col-sm-3">Timestamp</dt>
+      <dd class="col-sm-9">{{ result.timestamp or 'N/A' }}</dd>
+      <dt class="col-sm-3">Format</dt>
+      <dd class="col-sm-9">{{ result.format_detected or 'unknown' }}</dd>
+      <dt class="col-sm-3">Sender hint</dt>
+      <dd class="col-sm-9">{{ result.sender_hint or '—' }}</dd>
+    </dl>
+    {% if result.parse_warnings %}
+    <div class="alert alert-warning py-2 mt-3" style="font-size:12px;">
+      <strong>Warnings:</strong>
+      <ul class="mb-0 mt-1">{% for w in result.parse_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Excel ── #}
+{% if tab == 'excel' %}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white fw-semibold" style="font-size:14px;">Test Excel Parser</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">Upload a tenant/unit Excel file to preview parsed rows. No data is saved.</p>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="tab" value="excel">
+      <div class="mb-3" style="max-width:400px;">
+        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Parse Excel</button>
+    </form>
+
+    {% if result %}
+    <hr class="my-4">
+    <div class="mb-3 d-flex gap-2 align-items-center">
+      <span class="badge {% if result.success %}bg-success{% else %}bg-danger{% endif %}">
+        {% if result.success %}Parse Successful{% else %}Parse Failed{% endif %}
+      </span>
+      {% if result.rows %}
+      <span class="badge bg-secondary">{{ result.rows|length }} rows</span>
+      {% endif %}
+    </div>
+
+    {% if result.errors %}
+    <div class="alert alert-danger py-2">
+      <strong>Errors:</strong>
+      <ul class="mb-0 mt-1">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if result.warnings %}
+    <div class="alert alert-warning py-2" style="font-size:12px;">
+      <strong>Warnings:</strong>
+      <ul class="mb-0 mt-1">{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if result.rows %}
+    <div class="table-responsive">
+      <table class="table table-sm" style="font-size:12px;">
+        <thead class="table-light">
+          <tr>
+            <th>Unit</th><th>Tenant</th><th>Size</th>
+            <th class="text-end">Monthly Rent</th><th>Contact</th>
+            <th class="text-end">Arrears</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in result.rows %}
+          <tr>
+            <td><strong>{{ row.unit_number }}</strong></td>
+            <td>{{ row.tenant_name or '—' }}</td>
+            <td>{{ row.apartment_size or '—' }}</td>
+            <td class="text-end">{{ "{:,.0f}".format(row.monthly_rent) }}</td>
+            <td>{{ row.contact or '—' }}</td>
+            <td class="text-end {% if row.pending_rent > 0 %}text-danger fw-bold{% endif %}">
+              {{ "{:,.0f}".format(row.pending_rent) if row.pending_rent > 0 else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-secondary">
+            <th colspan="5" class="text-end" style="font-size:12px;">Total Arrears:</th>
+            <th class="text-end">KES {{ "{:,.0f}".format(result.total_arrears) }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.getElementById('pdf-form')?.addEventListener('submit', function() {
+    document.getElementById('pdf-btn').disabled = true;
+    document.getElementById('pdf-spinner').classList.remove('d-none');
+    var secs = 0;
+    var timer = document.getElementById('pdf-timer');
+    setInterval(function() { timer.textContent = ++secs; }, 1000);
+  });
+</script>
+{% endblock %}

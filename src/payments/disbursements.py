@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 
 def _get_confirmed_payout_owner(conn, property_id):
     """
-    Return the first owner for this property whose payout account is confirmed
-    and past the 48-hour hold period, or None.
-
+    Return the single confirmed, active payout owner for this property.
+    Raises ValueError if multiple confirmed owners exist (blocks disbursement — platform must resolve).
+    Returns None if no confirmed owner exists (caller raises alert separately).
     Only the owner can set payout_mpesa via their portal — admin has no write path.
     """
     now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-    return conn.execute(
+    confirmed = conn.execute(
         """
         SELECT o.id, o.name, o.payout_mpesa
         FROM owners o
@@ -29,10 +29,30 @@ def _get_confirmed_payout_owner(conn, property_id):
           AND o.payout_mpesa IS NOT NULL
           AND o.payout_active_at <= ?
         ORDER BY po.created_at
-        LIMIT 1
         """,
         (property_id, now),
-    ).fetchone()
+    ).fetchall()
+
+    if len(confirmed) > 1:
+        from src.platform.guardian import raise_alert
+        prop = conn.execute(
+            "SELECT name, organization_id FROM properties WHERE id = ?", (property_id,)
+        ).fetchone()
+        prop_name = prop['name'] if prop else property_id
+        org_id = prop['organization_id'] if prop else None
+        owner_names = ', '.join(o['name'] for o in confirmed)
+        raise_alert(
+            conn, 'multiple_payout_owners',
+            f"Property '{prop_name}' has {len(confirmed)} confirmed payout owners: {owner_names}. "
+            f"Disbursement blocked until resolved. Platform must identify and remove the unauthorized account.",
+            org_id=org_id, property_id=property_id, severity='critical',
+        )
+        raise ValueError(
+            f"Property {property_id} has {len(confirmed)} confirmed payout owners ({owner_names}). "
+            f"Disbursement blocked. Platform must resolve the conflict before funds can be released."
+        )
+
+    return confirmed[0] if confirmed else None
 
 
 def calculate_disbursement(conn, property_id: str, period: str) -> dict:
@@ -139,8 +159,8 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
         ),
     )
     logger.info(
-        "Disbursement %s created: %s %s — KES %.2f net → %s",
-        disb_id, property_id, period, data["net_amount"], owner["payout_mpesa"],
+        "Disbursement %s created: %s %s — KES %.2f net → ****%s",
+        disb_id, property_id, period, data["net_amount"], owner["payout_mpesa"][-4:],
     )
     return disb_id
 

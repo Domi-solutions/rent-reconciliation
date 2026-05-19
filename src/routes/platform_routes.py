@@ -436,3 +436,102 @@ def impersonate(org_id):
     session.pop("property_id", None)
     flash(f"Now viewing as {org['name']}. Return to /platform to switch.", "info")
     return redirect("/")
+
+
+@platform_bp.route("/parsers", methods=["GET", "POST"])
+def parsers():
+    import tempfile
+    import os as _os
+    from decimal import Decimal
+    from werkzeug.utils import secure_filename
+
+    tab = request.form.get("tab", request.args.get("tab", "pdf"))
+    result = None
+    message = None
+
+    if request.method == "POST":
+        tab = request.form.get("tab", "pdf")
+
+        if tab == "pdf":
+            file = request.files.get("file")
+            if file and file.filename:
+                tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+                file.save(tmp.name)
+                try:
+                    from src.parsers.pdf_parser import parse_bank_statement
+                    r = parse_bank_statement(tmp.name)
+                    # Convert Transaction namedtuples to plain dicts for the template
+                    txns = []
+                    for t in r.get('transactions', []):
+                        txns.append({
+                            'transaction_date': getattr(t, 'transaction_date', None),
+                            'reference': getattr(t, 'reference', None),
+                            'amount': float(getattr(t, 'amount', 0) or 0),
+                            'txn_type': getattr(t, 'txn_type', ''),
+                            'sender': getattr(t, 'sender', None),
+                            'narration': getattr(t, 'narration', None),
+                            'unit_hint': getattr(t, 'unit_hint', None),
+                        })
+                    summary = r.get('summary') or {}
+                    result = {
+                        'success': r.get('success', False),
+                        'statement_format': r.get('statement_format', 'unknown'),
+                        'opening_balance': float(r['opening_balance']) if r.get('opening_balance') else None,
+                        'closing_balance': float(r['closing_balance']) if r.get('closing_balance') else None,
+                        'validation': r.get('validation') or {},
+                        'summary': {k: (float(v) if isinstance(v, Decimal) else v) for k, v in summary.items()},
+                        'transactions': txns,
+                        'errors': r.get('errors') or [],
+                        'warnings': r.get('warnings') or [],
+                    }
+                except Exception as e:
+                    result = {'success': False, 'errors': [f'Parser exception: {e}'], 'transactions': [], 'summary': {}, 'validation': {}}
+                finally:
+                    if _os.path.exists(tmp.name):
+                        _os.unlink(tmp.name)
+
+        elif tab == "sms":
+            message = request.form.get("message", "").strip()
+            if message:
+                from src.parsers.sms_parser import parse_mpesa_message
+                r = parse_mpesa_message(message)
+                amount = r.get('amount')
+                ts = r.get('timestamp')
+                result = {
+                    'success': r.get('success', False),
+                    'reference': r.get('reference'),
+                    'amount': float(amount) if amount is not None else None,
+                    'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else ts,
+                    'format_detected': r.get('format_detected'),
+                    'sender_hint': r.get('sender_hint'),
+                    'parse_warnings': r.get('parse_warnings', []),
+                    'error': r.get('error'),
+                }
+
+        elif tab == "excel":
+            file = request.files.get("file")
+            if file and file.filename:
+                fname = secure_filename(file.filename)
+                suffix = ".xlsx" if fname.endswith(".xlsx") else ".xls"
+                tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+                file.save(tmp.name)
+                try:
+                    from src.parsers.excel_parser import parse_tenant_excel
+                    r = parse_tenant_excel(tmp.name)
+                    result = {
+                        'success': r.get('success', False),
+                        'rows': r.get('rows', []),
+                        'total_arrears': r.get('total_arrears', 0),
+                        'errors': r.get('errors', []),
+                        'warnings': r.get('warnings', []),
+                    }
+                finally:
+                    _os.unlink(tmp.name)
+
+    return render_template(
+        "platform/parsers.html",
+        active_tab_nav="parsers",
+        tab=tab,
+        result=result,
+        message=message,
+    )
