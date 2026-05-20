@@ -190,7 +190,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
 - `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
 - `property_owners.is_primary` — auto-set to 1 on the first owner assigned to a property. Admin cannot remove a primary owner via the UI; must contact platform to transfer. `remove_property_from_owner` route blocks with 400 if `is_primary=1`. Existing rows migrated by `migrate_add_primary_owner` using `MIN(rowid)` per property.
-- `payment_claims.status` values: `pending` | `verified` | `flagged` — never `rejected`. `flagged` is permanent; resolution uses `caretaker_confirmed` + `admin_cleared` columns, not status change. `mpesa_period` (YYYY-MM) is parsed from the M-Pesa timestamp and used for period-based fraud detection — flag only when a statement covering that period is uploaded and ref not found.
+- `payment_claims.status` values: `pending` | `verified` | `flagged` — never `rejected`. `flagged` is permanent; resolution uses `caretaker_confirmed` + `admin_cleared` columns, not status change. `mpesa_period` (YYYY-MM) is parsed from the M-Pesa timestamp. **At-submission check (caretaker `log_payment`):** three outcomes — (1) ref found in bank + no existing payment → payment created + FIFO allocated + claim verified immediately; (2) ref found in bank + payment already assigned → claim linked to existing payment + verified; (3) ref absent from bank data for that period (or all periods if `mpesa_period` NULL) → flag immediately. Only stays `pending` if no bank data exists yet. **`verify_payments`:** also resolves previously flagged claims — if a flagged ref (`flag_reason='ref_not_found'`) appears in a new statement, status → `verified`, payment created, tenant unflagged (if no other open flags), caretaker + tenant notified.
 - `payment_claims` three-layer resolution: `status='flagged'` never changes; `caretaker_confirmed=1` + `caretaker_note` (caretaker POV); `admin_cleared=1` + `admin_note` (admin POV); platform always sees raw flagged state. All changes written to `audit_log` + `platform_shadow_log`.
 - `tenants.flagged=1` — set automatically when a claim is flagged; future claims from this tenant get no pending-state treatment. Admin clears manually only.
 - `payments.notes` — admin annotation on any confirmed payment. `payments.caretaker_note` — caretaker annotation, written via caretaker portal, visible to admin and platform. Both write to `audit_log`; `caretaker_note` also writes to `platform_shadow_log`. Amount mismatch (bank ≠ claimed) writes `payment_amount_mismatch` to both `audit_log` and `platform_alerts`.
@@ -243,7 +243,7 @@ with get_connection() as conn:
     conn.execute("INSERT INTO ...", (val1, val2))
 ```
 
-**Payment allocation — called automatically on verify/assign; do NOT call manually:**
+**Payment allocation — called automatically on verify/assign AND at-submission auto-verify in caretaker `log_payment`; do NOT call manually anywhere else:**
 ```python
 from src.database.db import allocate_payment
 allocations = allocate_payment(conn, payment_id, unit_id, amount)

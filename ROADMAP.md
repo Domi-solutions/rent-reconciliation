@@ -559,6 +559,14 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
 - [x] All outbound SMS and portal notifications logged regardless of delivery status
 
+### Session 17: Fraud Detection Hardening (2026-05-20) ✅
+
+- [x] **At-submission three-outcome bank check** — when caretaker logs a payment claim, the system immediately cross-references the ref against existing bank data: (1) ref found + no existing payment → create payment, FIFO allocate, verify claim immediately; (2) ref found + payment already assigned → link claim to that payment, verify; (3) ref absent from bank data → flag immediately with `ref_not_found`. Only leaves `pending` if no bank data exists yet for the relevant period.
+- [x] **No-timestamp fallback** — if `mpesa_period` is NULL (M-Pesa message has no parseable timestamp), at-submission check scans ALL org bank statements. If any exist and the ref is absent → flagged immediately. Prevents fake claims submitted as bare reference codes.
+- [x] **Flagged claim auto-resolution in verify_payments** — after matching pending claims, verify_payments now also resolves previously flagged claims (`flag_reason='ref_not_found'`). If a flagged ref appears in the new statement: payment created, FIFO allocated, `status` → `verified`, tenant unflagged (if no other open flags), caretaker + tenant SMS sent, platform shadow log updated. Flash message reports cleared count.
+- [x] **Caretaker payment_activity query** — `flag_reason` and `mpesa_period` added to SELECT so the template has them
+- [x] **Caretaker payment_activity template** — flagged claims now show specific period ("Reference not found in the 2026-02 bank statement") instead of generic text
+
 ### Session 16: Workflow UX, Bug Fixes, Ignore Feature (2026-05-20) ✅
 
 - [x] **`generate_charges` idempotent** — replaced SELECT+INSERT with `INSERT OR IGNORE`; `rowcount` used for counter; re-running for an already-charged period no longer crashes

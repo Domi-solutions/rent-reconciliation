@@ -8,7 +8,7 @@ import re
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 
-from src.database.db import get_connection, generate_id
+from src.database.db import get_connection, generate_id, allocate_payment
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
 
@@ -590,7 +590,157 @@ def log_payment(property_id):
                  f'Ref: {reference} | Unit: {unit_number} | Amount: {amt_str} | source: caretaker', 'caretaker'),
             )
 
-            flash(f'Payment logged — {reference}, Unit {unit_number}, KES {amt_str}.', 'success')
+            # At-submission bank check: cross-reference against any bank data already uploaded.
+            # Three outcomes: auto-verify (ref found), flag (ref absent), or leave pending (no data yet).
+            _claim_flagged = False
+            _claim_verified = False
+            if reference:
+                _org_id = prop['organization_id'] if prop['organization_id'] else None
+
+                if mpesa_period:
+                    # Check if a statement covering this specific period exists
+                    if _org_id:
+                        _has_bank_data = bool(conn.execute("""
+                            SELECT 1 FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            WHERE bs.org_id = ? AND strftime('%Y-%m', bt.txn_date) = ?
+                              AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                        """, (_org_id, mpesa_period)).fetchone())
+                    else:
+                        _has_bank_data = bool(conn.execute("""
+                            SELECT 1 FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            JOIN properties p ON p.id = bs.property_id
+                            WHERE p.id = ? AND strftime('%Y-%m', bt.txn_date) = ?
+                              AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                        """, (property_id, mpesa_period)).fetchone())
+                    _period_label = mpesa_period
+                else:
+                    # No parsed timestamp — check across all available bank data for the org
+                    if _org_id:
+                        _has_bank_data = bool(conn.execute("""
+                            SELECT 1 FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            WHERE bs.org_id = ? AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                        """, (_org_id,)).fetchone())
+                    else:
+                        _has_bank_data = bool(conn.execute("""
+                            SELECT 1 FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            JOIN properties p ON p.id = bs.property_id
+                            WHERE p.id = ? AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                        """, (property_id,)).fetchone())
+                    _period_label = 'any uploaded period'
+
+                if _has_bank_data:
+                    # Look up the actual bank transaction row for this ref
+                    if _org_id:
+                        _bank_txn = conn.execute("""
+                            SELECT bt.* FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            WHERE bs.org_id = ? AND bt.mpesa_ref = ? LIMIT 1
+                        """, (_org_id, reference)).fetchone()
+                    else:
+                        _bank_txn = conn.execute("""
+                            SELECT bt.* FROM bank_transactions bt
+                            JOIN bank_statements bs ON bs.id = bt.statement_id
+                            JOIN properties p ON p.id = bs.property_id
+                            WHERE p.id = ? AND bt.mpesa_ref = ? LIMIT 1
+                        """, (property_id, reference)).fetchone()
+
+                    if _bank_txn:
+                        # Ref exists in bank — auto-verify the claim now
+                        _existing_pay = conn.execute(
+                            "SELECT id, claim_id FROM payments WHERE bank_txn_id = ?",
+                            (_bank_txn['id'],)
+                        ).fetchone()
+
+                        if _existing_pay:
+                            # Payment already exists (was manually assigned) — link this claim to it
+                            if not _existing_pay['claim_id']:
+                                conn.execute(
+                                    "UPDATE payments SET claim_id = ? WHERE id = ?",
+                                    (claim_id, _existing_pay['id'])
+                                )
+                            conn.execute(
+                                "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                (claim_id,)
+                            )
+                            conn.execute(
+                                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                                ('claim_auto_verified', 'claim', claim_id,
+                                 f'Ref: {reference} | Unit: {unit_number} | KES {amt_str} | '
+                                 f'matched existing payment {_existing_pay["id"]} at submission', 'system'),
+                            )
+                        else:
+                            # Bank transaction unassigned — create payment and verify immediately
+                            payment_id = generate_id('PAY')
+                            conn.execute("""
+                                INSERT INTO payments
+                                (id, property_id, unit_id, claim_id, bank_txn_id, statement_id, amount, payment_date, assignment_type)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto')
+                            """, (
+                                payment_id, property_id, unit_id, claim_id,
+                                _bank_txn['id'], _bank_txn['statement_id'],
+                                _bank_txn['amount'], _bank_txn['txn_date'] or '',
+                            ))
+                            allocate_payment(conn, payment_id, unit_id, _bank_txn['amount'])
+                            conn.execute(
+                                "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                (claim_id,)
+                            )
+                            conn.execute(
+                                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                                ('payment_verified', 'payment', payment_id,
+                                 f'Ref: {reference} | Unit: {unit_number} | KES {amt_str} | '
+                                 f'auto-verified at caretaker submission', 'system'),
+                            )
+                        _claim_verified = True
+
+                    else:
+                        # Ref absent from all available bank data — flag as fake
+                        conn.execute("""
+                            UPDATE payment_claims
+                            SET status = 'flagged', flag_reason = 'ref_not_found', flagged_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        """, (claim_id,))
+
+                        _active_tenant = conn.execute(
+                            "SELECT id FROM tenants WHERE unit_id = ? AND status = 'active'", (unit_id,)
+                        ).fetchone()
+                        if _active_tenant:
+                            conn.execute("UPDATE tenants SET flagged = 1 WHERE id = ?", (_active_tenant['id'],))
+
+                        conn.execute(
+                            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                            ('claim_flagged', 'claim', claim_id,
+                             f'Ref: {reference} | Unit: {unit_number} | KES {amt_str} | '
+                             f'not found in bank records for {_period_label} — flagged at submission', 'system'),
+                        )
+                        try:
+                            from src.platform.guardian import raise_alert as _raise_alert
+                            _raise_alert(conn, 'fake_payment_claim',
+                                f'Ref {reference} | Unit {unit_number} | KES {amt_str} | '
+                                f'Submitted by caretaker — ref absent from bank records ({_period_label}).',
+                                org_id=_org_id, property_id=property_id, severity='critical')
+                        except Exception:
+                            pass
+                        _claim_flagged = True
+
+            if _claim_verified:
+                flash(
+                    f'Payment logged and verified — {reference}, Unit {unit_number}, KES {amt_str}. '
+                    f'Reference confirmed in bank records.',
+                    'success'
+                )
+            elif _claim_flagged:
+                flash(
+                    f'WARNING: Reference {reference} was not found in bank records for {_period_label}. '
+                    f'This claim has been flagged for review.',
+                    'error'
+                )
+            else:
+                flash(f'Payment logged — {reference}, Unit {unit_number}, KES {amt_str}.', 'success')
             return redirect(url_for('caretaker.payment_activity', property_id=property_id))
 
     return render_template('caretaker/log_payment.html', property=prop,
@@ -607,6 +757,7 @@ def payment_activity(property_id):
 
         claims = conn.execute("""
             SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
+                   pc.flag_reason, pc.mpesa_period,
                    u.unit_number, t.name AS tenant_name,
                    p.id AS payment_id, p.amount AS bank_amount,
                    p.caretaker_note, p.caretaker_note_at

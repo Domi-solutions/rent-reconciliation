@@ -111,9 +111,13 @@
 
   {% if c.status == 'flagged' %}
   <div style="font-size: 12px; color: #dc2626; margin-top: 6px;">
-    Not found in bank statement.
+    {% if c.flag_reason == 'stale_30_days' %}
+      Unmatched after 30 days — no statement covers this reference.
+    {% else %}
+      Reference not found in the {{ c.mpesa_period or 'relevant' }} bank statement.
+    {% endif %}
     <a href="{{ url_for('caretaker.flagged_claims', property_id=property.id) }}"
-       style="color: #dc2626; font-weight: 600;">Review flagged claims →</a>
+       style="color: #dc2626; font-weight: 600;">Review →</a>
   </div>
   {% endif %}
 

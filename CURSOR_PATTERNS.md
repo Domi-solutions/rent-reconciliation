@@ -278,6 +278,40 @@
 
 ---
 
+## Session 7 — 2026-05-20
+
+---
+
+### verify_payments only checked `pending` claims — flagged claims were invisible to it
+**File(s):** `app.py` — `verify_payments()`
+**Root cause:** Cursor wrote the query to fetch pending claims as `WHERE pc.status = 'pending'`. This is the natural filter for "claims awaiting verification." But it means flagged claims — previously marked `ref_not_found` because the ref was absent from an earlier statement — can never be automatically cleared when the ref appears in a subsequent statement. The flag becomes permanent even when the payment is later confirmed.
+**What Cursor did:** `WHERE p.organization_id = ? AND pc.status = 'pending'` — flagged claims never evaluated against new statements.
+**What it should do:** After the pending-claims loop, run a second loop against `WHERE pc.status = 'flagged' AND pc.flag_reason = 'ref_not_found'` against the same `bank_by_ref` dict. If a match is found: create payment, allocate, set `status = 'verified'`, unflag tenant (if no other open flags), write audit_log + platform_shadow_log, SMS caretaker + tenant.
+**Why it matters:** A real payment that initially landed in the wrong statement period (e.g. due to bank processing lag) would stay flagged forever — the tenant is permanently marked as a fraud risk even after the bank confirms the payment.
+**Spotted:** 2026-05-20 (Session 7)
+
+---
+
+### At-submission fraud check skipped when mpesa_period is NULL
+**File(s):** `src/routes/caretaker_routes.py` — `log_payment()`
+**Root cause:** Cursor anchored the fraud check on `mpesa_period` — it only ran `if mpesa_period and reference`. The M-Pesa SMS parser extracts `mpesa_period` from the message timestamp, but some messages (minimal refs, forwarded or truncated messages) have no parseable timestamp. Cursor didn't account for this — the check would silently skip, leaving the claim as pending with no cross-reference against bank data.
+**What Cursor did:** `if mpesa_period and reference: ...` — full check block skipped when timestamp is absent.
+**What it should do:** Gate on `reference` alone, not `mpesa_period`. When `mpesa_period` is set, scope the bank data lookup to that specific period. When `mpesa_period` is NULL, fall back to scanning ALL org bank statements. In both cases, if bank data exists and the ref is absent → flag immediately.
+**Why it matters:** A caretaker submitting a bare reference code (no M-Pesa message body) would bypass the check entirely, defeating the fraud detection for exactly the case where a fraudster would try to game it.
+**Spotted:** 2026-05-20 (Session 7)
+
+---
+
+### At-submission check only flagged missing refs — did not auto-verify found refs
+**File(s):** `src/routes/caretaker_routes.py` — `log_payment()`
+**Root cause:** Cursor implemented the check as a pure fraud detector: "if ref missing → flag, else do nothing." It didn't consider the symmetric case: if the ref IS found in bank data, the claim should be verified immediately — not left as pending waiting for the next admin verify run.
+**What Cursor did:** `if not _ref_in_stmt: flag the claim` — no action when ref was found.
+**What it should do:** Three-branch outcome: (1) ref found + bank transaction has no existing payment → create payment, FIFO allocate, set `status='verified'` immediately; (2) ref found + payment already assigned (admin manually assigned it) → link `claim_id` onto existing payment, set `status='verified'`; (3) ref absent from bank data → flag. Flash message reflects actual outcome: verified / flagged / logged-pending.
+**Why it matters:** Without auto-verify, a caretaker logging a real payment after the admin has already uploaded and verified the statement would see their claim stuck as "Pending" — and the bank transaction would remain as an unassigned credit in the admin review page. Two things that belong together, sitting apart, requiring manual reconciliation.
+**Spotted:** 2026-05-20 (Session 7)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

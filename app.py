@@ -2590,6 +2590,132 @@ def verify_payments(statement_id):
             except Exception:
                 pass
 
+        # Flagged claim resolution: a previously flagged ref appearing in a new statement means the
+        # payment was real — it just landed in a later period. Clear the flag automatically.
+        if verify_org_id:
+            if stmt_property_id:
+                _flagged_claims = conn.execute("""
+                    SELECT pc.*, u.unit_number, p.id as claim_property_id
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND p.id = ? AND pc.status = 'flagged'
+                      AND pc.flag_reason = 'ref_not_found'
+                """, (verify_org_id, stmt_property_id)).fetchall()
+            else:
+                _flagged_claims = conn.execute("""
+                    SELECT pc.*, u.unit_number, p.id as claim_property_id
+                    FROM payment_claims pc
+                    JOIN units u ON pc.unit_id = u.id
+                    JOIN properties p ON u.property_id = p.id
+                    WHERE p.organization_id = ? AND pc.status = 'flagged'
+                      AND pc.flag_reason = 'ref_not_found'
+                """, (verify_org_id,)).fetchall()
+        else:
+            _flagged_claims = conn.execute("""
+                SELECT pc.*, u.unit_number, pc.property_id as claim_property_id
+                FROM payment_claims pc
+                JOIN units u ON pc.unit_id = u.id
+                WHERE pc.property_id = ? AND pc.status = 'flagged'
+                  AND pc.flag_reason = 'ref_not_found'
+            """, (property_row['id'],)).fetchall()
+
+        cleared_count = 0
+        for claim in _flagged_claims:
+            ref = claim['mpesa_ref']
+            if not ref or ref not in bank_by_ref:
+                continue
+            bank_txn = bank_by_ref[ref]
+            if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (bank_txn['id'],)).fetchone():
+                continue
+
+            payment_id = generate_id('PAY')
+            pay_property_id = (claim['claim_property_id'] if claim['claim_property_id'] else None) or (claim['property_id'] if claim['property_id'] else None) or property_row['id']
+            conn.execute("""
+                INSERT INTO payments
+                (id, property_id, unit_id, claim_id, bank_txn_id, statement_id, amount, payment_date, assignment_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto')
+            """, (
+                payment_id, pay_property_id, claim['unit_id'], claim['id'],
+                bank_txn['id'], statement_id, bank_txn['amount'], bank_txn['txn_date'] or '',
+            ))
+            allocate_payment(conn, payment_id, claim['unit_id'], bank_txn['amount'])
+            conn.execute(
+                "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (claim['id'],),
+            )
+
+            # Unflag tenant only if they have no other remaining flagged claims
+            _remaining_flags = conn.execute(
+                "SELECT COUNT(*) FROM payment_claims WHERE unit_id = ? AND status = 'flagged' AND id != ?",
+                (claim['unit_id'], claim['id']),
+            ).fetchone()[0]
+            if _remaining_flags == 0:
+                conn.execute(
+                    "UPDATE tenants SET flagged = 0 WHERE unit_id = ? AND status = 'active'",
+                    (claim['unit_id'],),
+                )
+
+            _res_info = conn.execute(
+                "SELECT u.unit_number, t.name AS tenant_name, t.phone, t.access_token "
+                "FROM units u LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' WHERE u.id = ?",
+                (claim['unit_id'],),
+            ).fetchone()
+            _res_unit = (_res_info['unit_number'] if _res_info else None) or claim['unit_number'] or '-'
+            _res_tenant = (_res_info['tenant_name'] or '-') if _res_info else '-'
+            _res_amt = f"KES {float(bank_txn['amount']):,.0f}"
+
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('claim_flag_resolved', 'payment', payment_id,
+                 f'Ref: {ref} | Unit: {_res_unit} | {_res_amt} | '
+                 f'Flag cleared — ref found in statement {statement_id}', 'system'),
+            )
+
+            try:
+                from src.platform.guardian import platform_log as _platform_log
+                _platform_log(conn, 'claim_flag_resolved', 'payment', payment_id,
+                    f'Ref {ref} | Unit {_res_unit} | {_res_amt} | '
+                    f'Previously flagged as ref_not_found — confirmed in statement {statement_id}.',
+                    org_id=verify_org_id, property_id=pay_property_id)
+            except Exception:
+                pass
+
+            _res_ct_phones = conn.execute(
+                "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
+                (pay_property_id,)
+            ).fetchall()
+            from src.messaging.delivery import send_sms_async as _sms_res
+            for _ct in _res_ct_phones:
+                try:
+                    _sms_res([{'phone': _ct['phone']}],
+                        f"Domi: Payment ref {ref} (Unit {_res_unit}, {_res_amt}) "
+                        f"was previously flagged but has now been confirmed in the bank statement. "
+                        "The flag has been cleared.")
+                except Exception:
+                    pass
+
+            if _res_info and _res_info['phone']:
+                try:
+                    _token = _res_info['access_token']
+                    if not _token:
+                        _token = secrets.token_urlsafe(32)
+                        conn.execute(
+                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
+                            (_token, claim['unit_id']),
+                        )
+                    _base = request.host_url.rstrip('/')
+                    _link = f"{_base}/tenant/{_token}"
+                    from src.messaging.delivery import send_sms_async
+                    send_sms_async([{'phone': _res_info['phone']}],
+                        f"Hi {_res_info['tenant_name'] or 'Tenant'}, your KES {float(bank_txn['amount']):,.0f} "
+                        f"payment has been confirmed. View your account: {_link}")
+                except Exception:
+                    pass
+
+            cleared_count += 1
+            verified_count += 1
+
         # Statement period derived from parsed transaction dates
         _stmt_period_row = conn.execute("""
             SELECT strftime('%Y-%m', MIN(txn_date)) as min_period,
@@ -2695,6 +2821,8 @@ def verify_payments(statement_id):
                     pass
 
         _msg = f'Verification complete! {verified_count} payment(s) verified.'
+        if cleared_count:
+            _msg += f' {cleared_count} previously flagged claim(s) cleared — ref found in this statement.'
         if flagged_count:
             _msg += f' {flagged_count} unmatched claim(s) flagged — see arrears for details.'
         flash(_msg, 'success' if verified_count else ('warning' if flagged_count else 'info'))
