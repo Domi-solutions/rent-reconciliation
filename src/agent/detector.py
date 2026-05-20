@@ -365,3 +365,79 @@ def detect_followups(conn, property_id):
 
     return followups
 
+
+def detect_stale_claims(conn, property_id):
+    """Flag payment claims older than 30 days that haven't matched any bank statement.
+
+    Only fires when at least one statement was uploaded after the claim was created —
+    avoids false positives when the admin simply hasn't uploaded the statement yet.
+    """
+    stale = conn.execute("""
+        SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.created_at, pc.unit_id,
+               u.unit_number, u.property_id as unit_property_id,
+               t.id as tenant_id, t.name as tenant_name, t.phone as tenant_phone
+        FROM payment_claims pc
+        JOIN units u ON u.id = pc.unit_id
+        LEFT JOIN tenants t ON t.unit_id = pc.unit_id AND t.status = 'active'
+        WHERE pc.property_id = ?
+          AND pc.status = 'pending'
+          AND pc.created_at < datetime('now', '-30 days')
+          AND EXISTS (
+              SELECT 1 FROM bank_statements bs
+              WHERE bs.property_id = pc.property_id
+                AND bs.uploaded_at > pc.created_at
+          )
+    """, (property_id,)).fetchall()
+
+    if not stale:
+        return
+
+    from src.platform.guardian import raise_alert, platform_log
+    from src.messaging.delivery import send_sms_async
+
+    caretakers = conn.execute(
+        "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
+        (property_id,)
+    ).fetchall()
+
+    for claim in stale:
+        conn.execute("""
+            UPDATE payment_claims
+            SET status = 'flagged', flag_reason = 'stale_30_days', flagged_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (claim['id'],))
+
+        if claim['tenant_id']:
+            conn.execute("UPDATE tenants SET flagged = 1 WHERE id = ?", (claim['tenant_id'],))
+
+        claim_date = str(claim['created_at'])[:10]
+        amt_str = f"KES {float(claim['claimed_amount'] or 0):,.0f}"
+
+        raise_alert(conn, 'stale_payment_claim',
+            f"Ref {claim['mpesa_ref']} | Unit {claim['unit_number']} | "
+            f"{amt_str} | Submitted {claim_date} — unmatched after 30+ days.",
+            property_id=property_id, severity='critical')
+
+        platform_log(conn, 'claim_auto_flagged', 'claim', claim['id'],
+            f"Ref {claim['mpesa_ref']} stale 30 days, auto-flagged by detector.",
+            property_id=property_id, actor='system')
+
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('claim_flagged', 'claim', claim['id'],
+             f"Ref: {claim['mpesa_ref']} | Unit: {claim['unit_number']} | {amt_str} | reason: stale_30_days",
+             'system')
+        )
+
+        for ct in caretakers:
+            send_sms_async([{'phone': ct['phone']}],
+                f"ALERT: Payment claim {claim['mpesa_ref']} ({amt_str}, Unit {claim['unit_number']}) "
+                f"submitted {claim_date} was not found in bank records after 30 days. "
+                "Please follow up with the tenant immediately.")
+
+        if claim['tenant_phone']:
+            send_sms_async([{'phone': claim['tenant_phone']}],
+                f"Hi {claim['tenant_name'] or 'Tenant'}, your payment reference "
+                f"{claim['mpesa_ref']} ({amt_str}) has not been matched to a bank record after 30 days. "
+                "Contact your property manager urgently.")
+

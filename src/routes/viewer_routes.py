@@ -378,7 +378,7 @@ def property_arrears(property_id):
             ORDER BY balance DESC
         """, (property_id,)).fetchall()
 
-        # Query pending claims per unit
+        # Query pending claims per unit (pending only — flagged do NOT reduce projected balance)
         pending_by_unit = {}
         pending_rows = conn.execute("""
             SELECT unit_id, SUM(claimed_amount) as pending_amount, COUNT(*) as pending_count
@@ -392,6 +392,19 @@ def property_arrears(property_id):
                 'count': pr['pending_count']
             }
 
+        flagged_by_unit = {}
+        flagged_rows = conn.execute("""
+            SELECT unit_id, SUM(claimed_amount) as flagged_amount, COUNT(*) as flagged_count
+            FROM payment_claims
+            WHERE property_id = ? AND status = 'flagged'
+            GROUP BY unit_id
+        """, (property_id,)).fetchall()
+        for fr in flagged_rows:
+            flagged_by_unit[fr['unit_id']] = {
+                'amount': float(fr['flagged_amount'] or 0),
+                'count': fr['flagged_count']
+            }
+
         arrears = []
         for row in arrears_rows:
             d = dict(row)
@@ -400,6 +413,9 @@ def property_arrears(property_id):
             d['pending_amount'] = pending['amount'] if pending else 0
             d['pending_count'] = pending['count'] if pending else 0
             d['projected_balance'] = max(d['balance'] - d['pending_amount'], 0)
+            flagged = flagged_by_unit.get(d['unit_id'])
+            d['flagged_amount'] = flagged['amount'] if flagged else 0
+            d['flagged_count'] = flagged['count'] if flagged else 0
             arrears.append(d)
 
         total_arrears = sum(a['balance'] for a in arrears)

@@ -156,7 +156,7 @@ rent-reconciliation/
 │   ├── tenant/               # base_tenant.html + portal, charges, payments, messages, maintenance
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
-│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, reports.html, report_detail.html, water.html, water_new.html
+│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, payment_activity.html, flagged_claims.html, reports.html, report_detail.html, water.html, water_new.html
 │   ├── owner/                # activate.html, verify_email.html (email OTP step 2), token_login.html (password-only login via access_token link)
    ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
@@ -190,6 +190,10 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
 - `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
 - `property_owners.is_primary` — auto-set to 1 on the first owner assigned to a property. Admin cannot remove a primary owner via the UI; must contact platform to transfer. `remove_property_from_owner` route blocks with 400 if `is_primary=1`. Existing rows migrated by `migrate_add_primary_owner` using `MIN(rowid)` per property.
+- `payment_claims.status` values: `pending` | `verified` | `flagged` — never `rejected`. `flagged` is permanent; resolution uses `caretaker_confirmed` + `admin_cleared` columns, not status change. `mpesa_period` (YYYY-MM) is parsed from the M-Pesa timestamp and used for period-based fraud detection — flag only when a statement covering that period is uploaded and ref not found.
+- `payment_claims` three-layer resolution: `status='flagged'` never changes; `caretaker_confirmed=1` + `caretaker_note` (caretaker POV); `admin_cleared=1` + `admin_note` (admin POV); platform always sees raw flagged state. All changes written to `audit_log` + `platform_shadow_log`.
+- `tenants.flagged=1` — set automatically when a claim is flagged; future claims from this tenant get no pending-state treatment. Admin clears manually only.
+- `payments.notes` — admin annotation on any confirmed payment. `payments.caretaker_note` — caretaker annotation, written via caretaker portal, visible to admin and platform. Both write to `audit_log`; `caretaker_note` also writes to `platform_shadow_log`. Amount mismatch (bank ≠ claimed) writes `payment_amount_mismatch` to both `audit_log` and `platform_alerts`.
 - `platform_outbox` — every outbound message logged here regardless of channel or delivery status. Written by `log_outbox()` in `src/messaging/outbox.py`. Status values: `sent` | `failed` | `simulated` (simulated = no API configured, code visible for testing). Never used for business logic — audit/debug only. Filters: channel, status. Surfaced at `/platform/outbox`.
 - `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
 - `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
@@ -243,6 +247,13 @@ with get_connection() as conn:
 from src.database.db import allocate_payment
 allocations = allocate_payment(conn, payment_id, unit_id, amount)
 # Returns: [{charge_id, charge_type, period, allocated, charge_settled}, ...]
+```
+
+**SMS — async for confirmations, sync for security-critical alerts:**
+```python
+from src.messaging.delivery import send_sms, send_sms_async
+send_sms_async(recipients, message)   # non-blocking daemon thread; use for confirmations, notifications
+send_sms(recipients, message)         # blocking; use only for security-critical messages (payout OTP, fraud alert)
 ```
 
 **LLM wrapper — never import Anthropic SDK outside this module:**
@@ -312,7 +323,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 ```
 
 Full migration call order in `app.py` startup (append-only, never reorder):
-`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox`
+`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox` → `migrate_add_claim_flagging` → `migrate_add_claim_resolution` → `migrate_add_payment_notes`
 
 ---
 

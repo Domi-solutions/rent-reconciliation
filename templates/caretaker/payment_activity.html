@@ -1,0 +1,124 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Payment Activity — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .pa-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; margin-bottom: 10px; }
+  .pa-card.mismatch { border-left: 4px solid #d97706; background: #fffdf5; }
+  .pa-card.flagged  { border-left: 4px solid #dc2626; }
+  .pa-card.pending  { border-left: 4px solid #d97706; opacity: 0.9; }
+  .pa-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .pa-tag-green  { background: #f0fdf4; color: #15803d; }
+  .pa-tag-amber  { background: #fffbeb; color: #92400e; }
+  .pa-tag-red    { background: #fef2f2; color: #dc2626; }
+  .pa-tag-gray   { background: #f3f4f6; color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Payment Activity</div>
+    <div style="font-size: 13px; color: var(--ink-3);">All payment claims you have logged for this property.</div>
+  </div>
+  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}"
+     style="font-size: 13px; color: var(--ink-3); text-decoration: none; white-space: nowrap;">← Log Payment</a>
+</div>
+
+{% if not claims %}
+<div style="text-align: center; padding: 48px 0; color: var(--ink-3);">
+  <div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">No payments logged yet</div>
+  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" style="font-size: 13px;">Log the first payment →</a>
+</div>
+{% else %}
+
+{% for c in claims %}
+{% set has_mismatch = c.status == 'verified' and c.bank_amount and c.claimed_amount and (c.bank_amount - c.claimed_amount)|abs > 1 %}
+{% set card_class = 'mismatch' if has_mismatch else ('flagged' if c.status == 'flagged' else ('pending' if c.status == 'pending' else '')) %}
+
+<div class="pa-card {{ card_class }}">
+  <div class="d-flex justify-content-between align-items-start">
+    <div>
+      <span style="font-size: 15px; font-weight: 700; color: var(--ink);">{{ c.unit_number }}</span>
+      <span style="font-size: 13px; color: var(--ink-2); margin-left: 8px;">{{ c.tenant_name or '—' }}</span>
+    </div>
+    <div>
+      {% if has_mismatch %}
+        <span class="pa-tag pa-tag-amber">⚠ Amount differs</span>
+      {% elif c.status == 'verified' %}
+        <span class="pa-tag pa-tag-green">Verified</span>
+      {% elif c.status == 'pending' %}
+        <span class="pa-tag pa-tag-amber">Pending</span>
+      {% elif c.status == 'flagged' %}
+        <span class="pa-tag pa-tag-red">Flagged</span>
+      {% else %}
+        <span class="pa-tag pa-tag-gray">{{ c.status }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="font-size: 12px; color: var(--ink-3); margin-top: 6px;">
+    <span style="font-family: monospace; font-weight: 600; color: var(--ink-2);">{{ c.mpesa_ref }}</span>
+    · {{ c.created_at[:10] }}
+    {% if has_mismatch %}
+      · <span style="text-decoration: line-through; color: #9ca3af;">KES {{ '{:,.0f}'.format(c.claimed_amount) }}</span>
+        → <strong style="color: #92400e;">KES {{ '{:,.0f}'.format(c.bank_amount) }}</strong> confirmed
+    {% elif c.claimed_amount %}
+      · KES {{ '{:,.0f}'.format(c.claimed_amount) }}
+    {% endif %}
+  </div>
+
+  {% if has_mismatch %}
+  <div style="font-size: 12px; color: #92400e; margin-top: 8px;">
+    The bank record shows KES {{ '{:,.0f}'.format(c.bank_amount) }}, not KES {{ '{:,.0f}'.format(c.claimed_amount) }} as reported.
+    The tenant may have shared an incorrect M-Pesa message — please follow up with them directly.
+  </div>
+
+  <div class="pa-note-block" style="margin-top: 8px;">
+    {% if c.caretaker_note %}
+    <div style="font-size: 12px; background: #f0fdf4; border-radius: 6px; padding: 6px 10px; border: 1px solid #bbf7d0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+      <span style="color: #166534;">
+        <strong>Your note:</strong> {{ c.caretaker_note }}
+        {% if c.caretaker_note_at %}<span style="color: #9ca3af; font-size: 11px;"> · {{ c.caretaker_note_at[:10] }}</span>{% endif %}
+      </span>
+      <button onclick="this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none'); this.classList.add('d-none');"
+              style="font-size: 11px; color: #6b7280; background: none; border: none; cursor: pointer; flex-shrink: 0;">Edit</button>
+    </div>
+    {% else %}
+    <button onclick="this.classList.add('d-none'); this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none');"
+            style="font-size: 12px; color: #92400e; font-weight: 600; background: none; border: none; cursor: pointer; padding: 0;">
+      + Add note for admin
+    </button>
+    {% endif %}
+    <form class="pa-note-form d-none"
+          method="POST"
+          action="{{ url_for('caretaker.payment_note', property_id=property.id, payment_id=c.payment_id) }}"
+          style="display: flex; gap: 6px; align-items: flex-start; margin-top: 6px;">
+      <textarea name="note" rows="2"
+                placeholder="e.g. Tenant confirmed they sent KES 5,000 — the KES 17,000 was a typo in their forwarded message."
+                style="flex: 1; padding: 6px 8px; border: 1px solid #fbbf24; border-radius: 6px; font-size: 12px; resize: vertical; background: #fff;">{{ c.caretaker_note or '' }}</textarea>
+      <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+        <button type="submit"
+                style="padding: 5px 12px; background: #92400e; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">Save</button>
+        {% if c.caretaker_note %}
+        <button type="submit" name="note" value=""
+                style="padding: 5px 12px; background: none; border: 1px solid #fbbf24; border-radius: 6px; font-size: 12px; color: #92400e; cursor: pointer;">Clear</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if c.status == 'flagged' %}
+  <div style="font-size: 12px; color: #dc2626; margin-top: 6px;">
+    Not found in bank statement.
+    <a href="{{ url_for('caretaker.flagged_claims', property_id=property.id) }}"
+       style="color: #dc2626; font-weight: 600;">Review flagged claims →</a>
+  </div>
+  {% endif %}
+
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

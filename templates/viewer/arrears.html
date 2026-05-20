@@ -37,6 +37,13 @@
           <div class="data-row-meta">
             ~{{ a.months_behind }} month(s) behind · Rent {{ "{:,.0f}".format(a.monthly_rent or 0) }}/mo
           </div>
+          {% if a.flagged_amount > 0 %}
+          <div class="mt-1">
+            <span class="status-badge" style="background:#f8d7da;color:#842029;border:1px solid #f1aeb5;">
+              KES {{ "{:,.0f}".format(a.flagged_amount or 0) }} disputed — {{ a.flagged_count }} claim(s) not found in bank records
+            </span>
+          </div>
+          {% endif %}
           {% if a.pending_amount > 0 %}
           <div class="mt-1">
             <span class="status-pending">KES {{ "{:,.0f}".format(a.pending_amount or 0) }} pending</span>

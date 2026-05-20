@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 
 from src.database.db import generate_id, get_connection, allocate_payment
-from src.agent.detector import check_pending_tasks, detect_anomalies, detect_followups
+from src.agent.detector import check_pending_tasks, detect_anomalies, detect_followups, detect_stale_claims
 from src.agent.briefings import generate_weekly_digest
 from src.agent.router import route_message
 
@@ -53,11 +53,12 @@ def daily_snapshot_job():
 
 
 def anomaly_check_job():
-    """Run anomaly and follow-up detection across all active properties."""
+    """Run anomaly, follow-up, and stale claim detection across all active properties."""
     with get_connection() as conn:
         for property_id in _active_property_ids(conn):
             detect_anomalies(conn, property_id)
             detect_followups(conn, property_id)
+            detect_stale_claims(conn, property_id)
 
 
 def morning_briefings_job():

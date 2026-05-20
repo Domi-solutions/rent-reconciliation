@@ -46,6 +46,26 @@
 </div>
 {% endif %}
 
+{% if mismatches %}
+<div style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+  <div style="font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 6px;">
+    ⚠ {{ mismatches|length }} payment{{ 's' if mismatches|length != 1 }} — bank amount differs from what was reported
+  </div>
+  {% for m in mismatches %}
+  <div style="font-size: 13px; color: #92400e; margin-bottom: 2px;">
+    Unit {{ m.unit_number }}{% if m.tenant_name %} · {{ m.tenant_name }}{% endif %} —
+    Ref <span style="font-family: monospace;">{{ m.mpesa_ref }}</span>:
+    reported KES {{ '{:,.0f}'.format(m.claimed_amount) }}, bank confirmed KES {{ '{:,.0f}'.format(m.bank_amount) }}.
+    {% if m.caretaker_note %}<span style="color: #166534;">Note added ✓</span>{% endif %}
+  </div>
+  {% endfor %}
+  <a href="{{ url_for('caretaker.payment_activity', property_id=property.id) }}"
+     style="font-size: 12px; color: #92400e; font-weight: 600; text-decoration: underline; display: inline-block; margin-top: 6px;">
+    Review and add notes →
+  </a>
+</div>
+{% endif %}
+
 {# STAT CARDS #}
 <div class="ct-kpi-grid">
   <div class="ct-kpi">

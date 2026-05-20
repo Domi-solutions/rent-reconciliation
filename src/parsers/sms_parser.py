@@ -101,54 +101,61 @@ def extract_amount_multiformat(text: str) -> Optional[Decimal]:
     return None
 
 
+def _apply_ampm(hour: int, am_pm: str) -> int:
+    """Convert 12-hour clock to 24-hour."""
+    if am_pm.upper() == 'PM' and hour != 12:
+        return hour + 12
+    if am_pm.upper() == 'AM' and hour == 12:
+        return 0
+    return hour
+
+
 def extract_timestamp_multiformat(text: str) -> Optional[datetime]:
-    """Extract timestamp from text handling multiple formats."""
+    """Extract timestamp from text handling multiple formats.
+
+    Kenya M-Pesa messages use DD/MM/YY format (e.g. "20/5/25 at 2:06 AM").
+    That pattern is tried first; other formats follow as fallbacks.
+    """
+    # Pattern 0 (PRIMARY): Kenya M-Pesa "DD/MM/YY at H:MM AM/PM"
+    # e.g. "on 20/5/25 at 2:06 AM" → 2025-05-20 02:06
+    p0 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{2})\s+at\s+(\d{1,2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
+    m0 = p0.search(text)
+    if m0:
+        try:
+            day, month, yr, hour, minute, am_pm = m0.groups()
+            year = 2000 + int(yr)
+            return datetime(year, int(month), int(day), _apply_ampm(int(hour), am_pm), int(minute), 0)
+        except (ValueError, TypeError):
+            pass
+
     # Pattern 1: "MM/DD/YYYY HH:MM:SS AM/PM"
-    pattern1 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
-    match1 = pattern1.search(text)
-    if match1:
+    p1 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
+    m1 = p1.search(text)
+    if m1:
         try:
-            month, day, year, hour, minute, second, am_pm = match1.groups()
-            hour = int(hour)
-            if am_pm.upper() == 'PM' and hour != 12:
-                hour += 12
-            elif am_pm.upper() == 'AM' and hour == 12:
-                hour = 0
-            return datetime(int(year), int(month), int(day), hour, int(minute), int(second))
-        except:
+            month, day, year, hour, minute, second, am_pm = m1.groups()
+            return datetime(int(year), int(month), int(day), _apply_ampm(int(hour), am_pm), int(minute), int(second))
+        except (ValueError, TypeError):
             pass
-    
+
     # Pattern 2: "MM/DD/YYYY HH:MM AM/PM" (no seconds)
-    pattern2 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
-    match2 = pattern2.search(text)
-    if match2:
+    p2 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
+    m2 = p2.search(text)
+    if m2:
         try:
-            month, day, year, hour, minute, am_pm = match2.groups()
-            hour = int(hour)
-            if am_pm.upper() == 'PM' and hour != 12:
-                hour += 12
-            elif am_pm.upper() == 'AM' and hour == 12:
-                hour = 0
-            return datetime(int(year), int(month), int(day), hour, int(minute), 0)
-        except:
+            month, day, year, hour, minute, am_pm = m2.groups()
+            return datetime(int(year), int(month), int(day), _apply_ampm(int(hour), am_pm), int(minute), 0)
+        except (ValueError, TypeError):
             pass
-    
-    # Pattern 3: "MM/DD/YY at HH:MM AM/PM" (Format 3 shorter format)
-    pattern3 = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{2})\s+at\s+(\d{1,2}):(\d{2})\s+(AM|PM)', re.IGNORECASE)
-    match3 = pattern3.search(text)
-    if match3:
-        try:
-            month, day, year_short, hour, minute, am_pm = match3.groups()
-            year = 2000 + int(year_short) if int(year_short) < 100 else int(year_short)
-            hour = int(hour)
-            if am_pm.upper() == 'PM' and hour != 12:
-                hour += 12
-            elif am_pm.upper() == 'AM' and hour == 12:
-                hour = 0
-            return datetime(year, int(month), int(day), hour, int(minute), 0)
-        except:
-            pass
-    
+
+    return None
+
+
+def extract_mpesa_period(text: str) -> Optional[str]:
+    """Return YYYY-MM period string from the M-Pesa message timestamp, or None."""
+    ts = extract_timestamp_multiformat(text)
+    if ts:
+        return ts.strftime('%Y-%m')
     return None
 
 

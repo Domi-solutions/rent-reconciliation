@@ -57,6 +57,16 @@
          href="{{ url_for('caretaker.issues', property_id=property.id) }}">Issues</a>
       <a class="ct-nav-tab {% if active_tab == 'messages' %}active{% endif %}"
          href="{{ url_for('caretaker.messages', property_id=property.id) }}">Messages</a>
+      {% if ct_flagged_count > 0 or active_tab == 'flagged_claims' %}
+      <a class="ct-nav-tab {% if active_tab == 'flagged_claims' %}active{% endif %}"
+         href="{{ url_for('caretaker.flagged_claims', property_id=property.id) }}"
+         style="color: #dc2626; position: relative;">
+        Flagged
+        {% if ct_flagged_count > 0 %}
+        <span style="background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 10px; margin-left: 4px;">{{ ct_flagged_count }}</span>
+        {% endif %}
+      </a>
+      {% endif %}
     </nav>
     {% endif %}
   </div>

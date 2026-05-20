@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Flagged Claims — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .claim-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 20px; margin-bottom: 14px; }
+  .claim-card.needs-action { border-left: 4px solid #dc2626; }
+  .claim-card.ct-confirmed { border-left: 4px solid #d97706; }
+  .claim-card.admin-cleared { border-left: 4px solid #2563eb; opacity: 0.85; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .tag-red   { background: #fef2f2; color: #dc2626; }
+  .tag-amber { background: #fffbeb; color: #92400e; }
+  .tag-blue  { background: #eff6ff; color: #1d4ed8; }
+  .tag-green { background: #f0fdf4; color: #15803d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div style="font-size: 22px; font-weight: 700; color: var(--ink);">Flagged Claims</div>
+    <div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">
+      M-Pesa references not found in bank records.
+      Caretaker confirmation is recorded but does not resolve the flag — only admin clearance does.
+    </div>
+  </div>
+  <a href="{{ url_for('review') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">← Payments</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, msg in messages %}
+  <div style="padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px;
+              {% if category == 'error' %}background:#fef2f2;color:#991b1b;border:1px solid #fecaca;
+              {% else %}background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+{% endwith %}
+
+{% if not claims %}
+<div style="text-align: center; padding: 56px 0; color: var(--ink-3);">
+  <div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">No flagged claims</div>
+  <div style="font-size: 13px;">All payment claims have been verified or are pending bank statement upload.</div>
+</div>
+{% else %}
+
+{% set pending_action = claims | selectattr('admin_cleared', 'equalto', 0) | selectattr('caretaker_confirmed', 'equalto', 0) | list %}
+{% set awaiting_clear = claims | selectattr('admin_cleared', 'equalto', 0) | selectattr('caretaker_confirmed', 'ne', 0) | list %}
+{% set cleared = claims | selectattr('admin_cleared', 'ne', 0) | list %}
+
+{% if pending_action %}
+<div style="font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 10px; letter-spacing: 0.04em; text-transform: uppercase;">
+  Action needed — {{ pending_action | length }} claim{{ 's' if pending_action | length != 1 else '' }}
+</div>
+{% endif %}
+
+{% for c in claims %}
+{% set state = 'admin-cleared' if c.admin_cleared else ('ct-confirmed' if c.caretaker_confirmed else 'needs-action') %}
+<div class="claim-card {{ state }}">
+  <div class="d-flex justify-content-between align-items-start mb-2">
+    <div>
+      <span style="font-size: 16px; font-weight: 700; color: var(--ink);">{{ c.unit_number }}</span>
+      <span style="font-size: 13px; color: var(--ink-2); margin-left: 8px;">{{ c.tenant_name or '—' }}</span>
+      {% if c.tenant_phone %}
+      <a href="tel:{{ c.tenant_phone }}" style="font-size: 12px; color: var(--ink-3); margin-left: 8px;">{{ c.tenant_phone }}</a>
+      {% endif %}
+    </div>
+    <div class="text-end">
+      {% if c.admin_cleared %}
+        <span class="tag tag-blue">Cleared by admin</span>
+      {% elif c.caretaker_confirmed %}
+        <span class="tag tag-amber">Caretaker confirmed — awaiting clearance</span>
+      {% else %}
+        <span class="tag tag-red">Not confirmed</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 12px;">
+    <span style="font-family: monospace; font-weight: 700; font-size: 14px;">{{ c.mpesa_ref }}</span>
+    {% if c.claimed_amount %} · <strong>KES {{ '{:,.0f}'.format(c.claimed_amount) }}</strong>{% endif %}
+    {% if c.mpesa_date %} · M-Pesa date: <strong>{{ c.mpesa_date }}</strong>{% endif %}
+    {% if c.mpesa_period %} · Period: <strong>{{ c.mpesa_period }}</strong>{% endif %}
+    <br>
+    <span style="color: #dc2626; font-size: 12px;">
+      {% if c.flag_reason == 'stale_30_days' %}
+        Unmatched after 30 days — no bank statement covers this reference.
+      {% else %}
+        Reference not found in the {{ c.mpesa_period or 'relevant' }} bank statement.
+      {% endif %}
+    </span>
+    {% if c.flagged_at %}
+    <span style="color: var(--ink-3); font-size: 12px; margin-left: 8px;">Flagged {{ c.flagged_at[:10] }}</span>
+    {% endif %}
+  </div>
+
+  {% if c.caretaker_note %}
+  <div style="font-size: 12px; background: #fffbeb; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; border: 1px solid #fde68a;">
+    <strong style="color: #92400e;">Caretaker confirmation:</strong> {{ c.caretaker_note }}
+    {% if c.caretaker_confirmed_at %}<span style="color: #6b7280;"> · {{ c.caretaker_confirmed_at[:10] }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if c.admin_note %}
+  <div style="font-size: 12px; background: #eff6ff; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; border: 1px solid #bfdbfe;">
+    <strong style="color: #1d4ed8;">Admin clearance note:</strong> {{ c.admin_note }}
+    {% if c.admin_cleared_at %}<span style="color: #6b7280;"> · {{ c.admin_cleared_at[:10] }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if not c.admin_cleared %}
+  <details style="margin-top: 6px;" {% if c.caretaker_confirmed %}open{% endif %}>
+    <summary style="font-size: 13px; font-weight: 600; cursor: pointer; color: {% if c.caretaker_confirmed %}#1d4ed8{% else %}var(--ink-2){% endif %};">
+      {% if c.caretaker_confirmed %}Clear this flag →{% else %}Review &amp; clear →{% endif %}
+    </summary>
+    <div style="margin-top: 12px; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border);">
+      <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 10px;">
+        Clearing this flag records your explanation in the audit log and platform shadow log.
+        The claim remains visible to the platform and is not deleted.
+        {% if not c.caretaker_confirmed %}The caretaker has not yet confirmed this claim with the tenant.{% endif %}
+      </div>
+      <form method="POST" action="{{ url_for('admin_clear_flag', claim_id=c.id) }}">
+        <textarea name="note" rows="3" required minlength="10"
+                  placeholder="Explain why this flag is being cleared — e.g. 'Payment found in NCBA statement uploaded 5/6/25, same amount, different bank.' or 'Tenant confirmed duplicate M-Pesa message — actual payment was KES X.'"
+                  style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
+        <button type="submit"
+                style="margin-top: 8px; padding: 7px 18px; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+          Clear flag with explanation
+        </button>
+      </form>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if cleared %}
+<div style="font-size: 12px; color: var(--ink-3); text-align: center; margin-top: 20px;">
+  {{ cleared | length }} claim{{ 's' if cleared | length != 1 else '' }} cleared by admin — still visible to platform.
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

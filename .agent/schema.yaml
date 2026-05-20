@@ -83,9 +83,7 @@ tables:
       status: {type: TEXT, default: active}
       access_token: {type: TEXT, unique: true, added_by: migrate_add_tenant_access_token}
       language_preference: {type: TEXT, values: [en, sw, null], note: "NULL triggers language prompt on first inbound", added_by: migrate_add_language_preference}
-      flagged: {type: BOOLEAN, default: false, added_by: migrate_add_tenant_flagging, status: planned}
-      flagged_reason: {type: TEXT, nullable: true, status: planned}
-      flagged_at: {type: TIMESTAMP, nullable: true, status: planned}
+      flagged: {type: INTEGER, default: 0, added_by: migrate_add_claim_flagging, note: "set=1 when a payment claim is flagged (ref not in bank); future claims lose pending-state treatment; admin clears manually"}
       portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "werkzeug pbkdf2 hash of 4-digit portal PIN for payment tab"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
@@ -140,11 +138,22 @@ tables:
       claimed_amount: {type: DECIMAL(10,2)}
       raw_message: {type: TEXT}
       source: {type: TEXT, default: web, values: [web, caretaker, whatsapp, sms]}
-      status: {type: TEXT, default: pending, values: [pending, verified, rejected]}
+      status: {type: TEXT, default: pending, values: [pending, verified, flagged], note: "flagged is permanent — use caretaker_confirmed/admin_cleared for resolution, never change status back"}
       verified_at: {type: TIMESTAMP}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      mpesa_date: {type: DATE, nullable: true, added_by: migrate_add_claim_resolution, note: "parsed from M-Pesa message timestamp"}
+      mpesa_period: {type: TEXT, nullable: true, added_by: migrate_add_claim_resolution, note: "YYYY-MM derived from mpesa_date; used for period-based fraud detection"}
+      flag_reason: {type: TEXT, nullable: true, added_by: migrate_add_claim_flagging, values: [ref_not_found, stale_30_days]}
+      flagged_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_claim_flagging}
+      caretaker_confirmed: {type: INTEGER, default: 0, added_by: migrate_add_claim_resolution}
+      caretaker_note: {type: TEXT, nullable: true, added_by: migrate_add_claim_resolution}
+      caretaker_confirmed_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_claim_resolution}
+      admin_cleared: {type: INTEGER, default: 0, added_by: migrate_add_claim_resolution}
+      admin_note: {type: TEXT, nullable: true, added_by: migrate_add_claim_resolution, note: "mandatory min 10 chars when clearing"}
+      admin_cleared_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_claim_resolution}
     constraints:
       - UNIQUE(property_id, mpesa_ref)
+      - idx_claim_period ON (mpesa_period)
 
   payments:
     status: live
@@ -162,6 +171,10 @@ tables:
       assignment_reason: {type: TEXT}
       assigned_by: {type: TEXT}
       source: {type: TEXT, default: manual, values: [manual, daraja, pesapal], added_by: migrate_add_payment_transactions}
+      notes: {type: TEXT, nullable: true, added_by: migrate_add_payment_notes, note: "admin annotation; writes to audit_log + platform_shadow_log"}
+      notes_updated_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_payment_notes}
+      caretaker_note: {type: TEXT, nullable: true, added_by: migrate_add_payment_notes, note: "caretaker annotation on amount-mismatch payments; writes to audit_log + platform_shadow_log"}
+      caretaker_note_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_payment_notes}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   rent_charges:

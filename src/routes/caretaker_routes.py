@@ -15,6 +15,24 @@ from src.utils.metrics import get_property_occupancy, get_months_behind
 caretaker_bp = Blueprint('caretaker', __name__, url_prefix='/caretaker')
 
 
+@caretaker_bp.context_processor
+def inject_flagged_count():
+    """Inject uncleared flagged claims count into all caretaker templates."""
+    from flask import g
+    property_id = request.view_args.get('property_id') if request.view_args else None
+    if not property_id:
+        return {'ct_flagged_count': 0}
+    try:
+        with get_connection() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'flagged' AND caretaker_confirmed = 0 AND admin_cleared = 0",
+                (property_id,)
+            ).fetchone()[0]
+        return {'ct_flagged_count': count}
+    except Exception:
+        return {'ct_flagged_count': 0}
+
+
 def _has_db_caretakers():
     """Return True if any caretaker accounts exist in the database."""
     with get_connection() as conn:
@@ -124,19 +142,36 @@ def _arrears_rows(conn, property_id):
             u.monthly_rent,
             t.name as tenant_name,
             t.phone as tenant_phone,
-            COALESCE(ch.total, 0) - COALESCE(py.total, 0) as balance
+            COALESCE(ch.total, 0) - COALESCE(py.total, 0) as balance,
+            COALESCE(pc_pending.pending_amount, 0) as pending_amount,
+            COALESCE(pc_pending.pending_count, 0) as pending_count,
+            COALESCE(pc_flagged.flagged_amount, 0) as flagged_amount,
+            COALESCE(pc_flagged.flagged_count, 0) as flagged_count
         FROM units u
         LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
         LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM rent_charges GROUP BY unit_id) ch ON ch.unit_id = u.id
         LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM payments GROUP BY unit_id) py ON py.unit_id = u.id
+        LEFT JOIN (
+            SELECT unit_id, SUM(claimed_amount) as pending_amount, COUNT(*) as pending_count
+            FROM payment_claims WHERE property_id = ? AND status = 'pending' GROUP BY unit_id
+        ) pc_pending ON pc_pending.unit_id = u.id
+        LEFT JOIN (
+            SELECT unit_id, SUM(claimed_amount) as flagged_amount, COUNT(*) as flagged_count
+            FROM payment_claims WHERE property_id = ? AND status = 'flagged' GROUP BY unit_id
+        ) pc_flagged ON pc_flagged.unit_id = u.id
         WHERE u.property_id = ?
           AND COALESCE(ch.total, 0) - COALESCE(py.total, 0) > 0
-        ORDER BY balance DESC
-    """, (property_id,)).fetchall()
+        ORDER BY
+            CASE WHEN COALESCE(pc_flagged.flagged_count, 0) > 0 THEN 0 ELSE 1 END ASC,
+            (COALESCE(ch.total, 0) - COALESCE(py.total, 0) - COALESCE(pc_pending.pending_amount, 0)) DESC
+    """, (property_id, property_id, property_id)).fetchall()
     result = []
     for r in rows:
         d = dict(r)
-        d['months_behind'] = get_months_behind(d['balance'], d.get('monthly_rent'))
+        # Flagged claims do NOT reduce display balance — the full amount is still owed
+        d['display_balance'] = max(float(d['balance']) - float(d['pending_amount']), 0)
+        # months_behind reflects what the caretaker actually needs to follow up on
+        d['months_behind'] = get_months_behind(d['display_balance'], d.get('monthly_rent'))
         result.append(d)
     return result
 
@@ -176,15 +211,33 @@ def dashboard(property_id):
             ORDER BY timestamp DESC LIMIT 1
         """).fetchone()
 
+        # Payments where bank amount differs from what caretaker reported and no note yet added
+        mismatches = conn.execute("""
+            SELECT p.id, p.amount AS bank_amount, p.caretaker_note,
+                   pc.claimed_amount, pc.mpesa_ref,
+                   u.unit_number, t.name AS tenant_name
+            FROM payments p
+            JOIN payment_claims pc ON pc.id = p.claim_id
+            JOIN units u ON p.unit_id = u.id
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            WHERE p.property_id = ?
+              AND pc.source = 'caretaker'
+              AND pc.claimed_amount IS NOT NULL
+              AND ABS(p.amount - pc.claimed_amount) > 1
+              AND (p.caretaker_note IS NULL OR TRIM(p.caretaker_note) = '')
+            ORDER BY p.payment_date DESC
+        """, (property_id,)).fetchall()
+
     return render_template('caretaker/dashboard.html',
                            property=prop,
                            occ=occ,
-                           arrears=arrears[:5],        # top 5 on dashboard
+                           arrears=arrears[:5],
                            arrears_total=len(arrears),
                            vacant_units=vacant_units,
                            next_due_date=next_due_date,
                            days_to_due=days_to_due,
                            recent_reminder=recent_reminder,
+                           mismatches=mismatches,
                            active_tab='overview')
 
 
@@ -197,11 +250,17 @@ def arrears(property_id):
 
         arrears = _arrears_rows(conn, property_id)
         total_balance = sum(float(a['balance']) for a in arrears)
+        total_display_balance = sum(float(a['display_balance']) for a in arrears)
+        total_pending = sum(float(a['pending_amount']) for a in arrears)
+        total_flagged = sum(float(a['flagged_amount']) for a in arrears)
 
     return render_template('caretaker/arrears.html',
                            property=prop,
                            arrears=arrears,
                            total_balance=total_balance,
+                           total_display_balance=total_display_balance,
+                           total_pending=total_pending,
+                           total_flagged=total_flagged,
                            active_tab='arrears')
 
 
@@ -471,16 +530,6 @@ def log_payment(property_id):
             ORDER BY u.unit_number
         """, (property_id,)).fetchall()
 
-        recent_claims = conn.execute("""
-            SELECT pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
-                   u.unit_number, t.name AS tenant_name
-            FROM payment_claims pc
-            JOIN units u ON pc.unit_id = u.id
-            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-            WHERE pc.property_id = ?
-            ORDER BY pc.created_at DESC LIMIT 15
-        """, (property_id,)).fetchall()
-
         if request.method == 'POST':
             message = request.form.get('message', '').strip()
             unit_id = request.form.get('unit_id', '').strip()
@@ -488,17 +537,17 @@ def log_payment(property_id):
             if not message:
                 flash('Paste the M-Pesa message or enter the reference code.', 'error')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, recent_claims=recent_claims, active_tab='log_payment')
+                                       units=units, active_tab='log_payment')
             if not unit_id:
                 flash('Select a unit.', 'error')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, recent_claims=recent_claims, active_tab='log_payment')
+                                       units=units, active_tab='log_payment')
 
             parsed = parse_mpesa_message(message)
             if not parsed.get('success'):
                 flash(parsed.get('error', 'Could not read M-Pesa reference from message.'), 'error')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, recent_claims=recent_claims, active_tab='log_payment')
+                                       units=units, active_tab='log_payment')
 
             reference = parsed['reference']
             amount = parsed.get('amount')
@@ -515,14 +564,22 @@ def log_payment(property_id):
             if existing:
                 flash(f'Reference {reference} has already been logged.', 'warning')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, recent_claims=recent_claims, active_tab='log_payment')
+                                       units=units, active_tab='log_payment')
+
+            # Extract M-Pesa transaction date for period-based flagging
+            _mpesa_ts = parsed.get('timestamp')
+            _has_real_ts = not parsed.get('parse_warnings') or not any(
+                'Timestamp not found' in w for w in parsed.get('parse_warnings', [])
+            )
+            mpesa_date = _mpesa_ts.date().isoformat() if (_mpesa_ts and _has_real_ts) else None
+            mpesa_period = _mpesa_ts.strftime('%Y-%m') if (_mpesa_ts and _has_real_ts) else None
 
             claim_id = generate_id('CLM')
             conn.execute("""
                 INSERT INTO payment_claims
-                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (claim_id, property_id, reference, unit_id, amount, message, 'caretaker'))
+                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (claim_id, property_id, reference, unit_id, amount, message, 'caretaker', mpesa_date, mpesa_period))
 
             unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
             unit_number = unit_row['unit_number'] if unit_row else unit_id
@@ -534,10 +591,37 @@ def log_payment(property_id):
             )
 
             flash(f'Payment logged — {reference}, Unit {unit_number}, KES {amt_str}.', 'success')
-            return redirect(url_for('caretaker.log_payment', property_id=property_id))
+            return redirect(url_for('caretaker.payment_activity', property_id=property_id))
 
     return render_template('caretaker/log_payment.html', property=prop,
-                           units=units, recent_claims=recent_claims, active_tab='log_payment')
+                           units=units, active_tab='log_payment')
+
+
+@caretaker_bp.route('/<property_id>/payment-activity')
+def payment_activity(property_id):
+    """Full history of payment claims logged by this caretaker."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        claims = conn.execute("""
+            SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
+                   u.unit_number, t.name AS tenant_name,
+                   p.id AS payment_id, p.amount AS bank_amount,
+                   p.caretaker_note, p.caretaker_note_at
+            FROM payment_claims pc
+            JOIN units u ON pc.unit_id = u.id
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            LEFT JOIN payments p ON p.claim_id = pc.id
+            WHERE pc.property_id = ?
+            ORDER BY pc.created_at DESC
+        """, (property_id,)).fetchall()
+
+    return render_template('caretaker/payment_activity.html',
+                           property=prop,
+                           claims=claims,
+                           active_tab='log_payment')
 
 
 @caretaker_bp.route('/<property_id>/issues')
@@ -908,3 +992,103 @@ def resolve_issue(property_id, issue_id):
 
     flash('Issue marked as resolved.', 'success')
     return redirect(url_for('caretaker.issues', property_id=property_id))
+
+
+@caretaker_bp.route('/<property_id>/flagged-claims')
+def flagged_claims(property_id):
+    """Caretaker view of flagged payment claims — shows status and allows confirmation."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+
+        claims = conn.execute("""
+            SELECT pc.*,
+                   u.unit_number,
+                   t.name  AS tenant_name,
+                   t.phone AS tenant_phone
+            FROM payment_claims pc
+            JOIN units u ON u.id = pc.unit_id
+            LEFT JOIN tenants t ON t.unit_id = pc.unit_id AND t.status = 'active'
+            WHERE pc.property_id = ? AND pc.status = 'flagged'
+            ORDER BY pc.admin_cleared ASC, pc.caretaker_confirmed ASC, pc.flagged_at DESC
+        """, (property_id,)).fetchall()
+
+    return render_template('caretaker/flagged_claims.html',
+                           property=prop,
+                           claims=claims,
+                           active_tab='log_payment')
+
+
+@caretaker_bp.route('/<property_id>/flagged-claims/<claim_id>/confirm', methods=['POST'])
+def confirm_flagged_claim(property_id, claim_id):
+    """Caretaker confirms they have re-verified the payment with the tenant."""
+    note = request.form.get('note', '').strip()
+    if len(note) < 5:
+        flash('Please describe what the tenant confirmed (min 5 characters).', 'error')
+        return redirect(url_for('caretaker.flagged_claims', property_id=property_id))
+
+    with get_connection() as conn:
+        claim = conn.execute(
+            "SELECT * FROM payment_claims WHERE id = ? AND property_id = ? AND status = 'flagged'",
+            (claim_id, property_id)
+        ).fetchone()
+        if not claim:
+            flash('Claim not found or not flagged.', 'error')
+            return redirect(url_for('caretaker.flagged_claims', property_id=property_id))
+
+        conn.execute("""
+            UPDATE payment_claims
+            SET caretaker_confirmed = 1, caretaker_note = ?, caretaker_confirmed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (note, claim_id))
+
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('claim_caretaker_confirmed', 'claim', claim_id,
+             f"Ref: {claim['mpesa_ref']} | Caretaker note: {note}",
+             session.get('caretaker_name', 'caretaker'))
+        )
+
+    flash('Confirmation recorded. This claim is still under admin review.', 'success')
+    return redirect(url_for('caretaker.flagged_claims', property_id=property_id))
+
+
+@caretaker_bp.route('/<property_id>/payments/<payment_id>/note', methods=['POST'])
+def payment_note(property_id, payment_id):
+    """Caretaker adds a note to a verified payment with an amount mismatch."""
+    note = request.form.get('note', '').strip()
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        payment = conn.execute(
+            "SELECT p.*, pc.mpesa_ref, u.unit_number FROM payments p "
+            "LEFT JOIN payment_claims pc ON pc.id = p.claim_id "
+            "LEFT JOIN units u ON u.id = p.unit_id "
+            "WHERE p.id = ? AND p.property_id = ?",
+            (payment_id, property_id)
+        ).fetchone()
+        if not payment:
+            flash('Payment not found.', 'error')
+            return redirect(url_for('caretaker.log_payment', property_id=property_id))
+
+        conn.execute(
+            "UPDATE payments SET caretaker_note = ?, caretaker_note_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (note or None, payment_id)
+        )
+        actor = session.get('caretaker_name', 'caretaker')
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('caretaker_payment_note', 'payment', payment_id,
+             f"Ref: {payment['mpesa_ref'] or '-'} | Unit: {payment['unit_number'] or '-'} | "
+             f"Note: {note}" if note else "Note cleared",
+             actor)
+        )
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'caretaker_payment_note', 'payment', payment_id,
+                     f"Caretaker '{actor}' added note on ref {payment['mpesa_ref'] or '-'}: {note}",
+                     property_id=property_id)
+
+    flash('Note saved.', 'success')
+    return redirect(url_for('caretaker.payment_activity', property_id=property_id))

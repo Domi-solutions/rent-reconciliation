@@ -107,6 +107,9 @@ from src.database.db import (
     migrate_add_owner_otp,
     migrate_add_primary_owner,
     migrate_add_platform_outbox,
+    migrate_add_claim_flagging,
+    migrate_add_claim_resolution,
+    migrate_add_payment_notes,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -150,6 +153,9 @@ migrate_add_platform_fee_rate()
 migrate_add_owner_otp()
 migrate_add_primary_owner()
 migrate_add_platform_outbox()
+migrate_add_claim_flagging()
+migrate_add_claim_resolution()
+migrate_add_payment_notes()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -358,14 +364,22 @@ def inject_property_context():
                     "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
                 ).fetchall()
 
+            flagged_claims_count = 0
+            if prop:
+                flagged_claims_count = conn.execute(
+                    "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'flagged' AND admin_cleared = 0",
+                    (prop["id"],)
+                ).fetchone()[0]
+
             return {
                 "current_property": prop,
                 "property_count": count,
                 "unit_count": unit_count,
                 "all_properties": all_properties,
+                "flagged_claims_count": flagged_claims_count,
             }
     except Exception:
-        return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": []}
+        return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": [], "flagged_claims_count": 0}
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -2443,9 +2457,10 @@ def verify_payments(statement_id):
             return redirect(url_for('property_list'))
 
         # Resolve org — from statement (new flow) or current property (legacy)
-        stmt_meta = conn.execute("SELECT org_id, property_id FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
+        stmt_meta = conn.execute("SELECT org_id, property_id, uploaded_at FROM bank_statements WHERE id = ?", (statement_id,)).fetchone()
         verify_org_id = (stmt_meta['org_id'] if stmt_meta else None) or session.get('org_id') or (property_row['organization_id'] if property_row['organization_id'] else None)
         stmt_property_id = stmt_meta['property_id'] if stmt_meta else None
+        stmt_uploaded_at = stmt_meta['uploaded_at'] if stmt_meta else None
 
         if verify_org_id:
             if stmt_property_id:
@@ -2518,6 +2533,34 @@ def verify_payments(statement_id):
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('payment_verified', 'payment', payment_id, details, 'admin'),
             )
+            # Amount mismatch — verify at bank amount (truth) but alert platform + admin + caretaker
+            if claim['claimed_amount'] is not None and abs(float(bank_txn['amount']) - float(claim['claimed_amount'])) > 1:
+                claimed_fmt = f"KES {float(claim['claimed_amount']):,.0f}"
+                bank_fmt = f"KES {float(bank_txn['amount']):,.0f}"
+                mismatch_detail = (
+                    f"Ref {ref} | Unit {unit_number} | Tenant {tenant_name} | "
+                    f"Caretaker claimed {claimed_fmt} — bank confirms {bank_fmt}. "
+                    "Verified at bank amount."
+                )
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('payment_amount_mismatch', 'payment', payment_id, mismatch_detail, 'system')
+                )
+                try:
+                    from src.platform.guardian import raise_alert as _raise_alert
+                    _raise_alert(conn, 'payment_amount_mismatch',
+                        f"Ref {ref} | Unit {unit_number} | Tenant {tenant_name} | "
+                        f"Claimed {claimed_fmt} vs bank {bank_fmt}",
+                        org_id=verify_org_id, property_id=pay_property_id, severity='warning')
+                except Exception:
+                    pass
+                # SMS caretaker so they can follow up with the tenant
+                from src.messaging.delivery import send_sms_async as _sms_async
+                for _ct in _caretakers_for_alert:
+                    _sms_async([{'phone': _ct['phone']}],
+                        f"Domi: Payment ref {ref} (Unit {unit_number}) was logged as {claimed_fmt} "
+                        f"but the bank record shows {bank_fmt}. "
+                        "Please follow up with the tenant — they may have shared a false M-Pesa message.")
             verified_claim_ids.add(claim['id'])
             verified_count += 1
 
@@ -2540,34 +2583,181 @@ def verify_payments(statement_id):
                         f"Hi {_tenant['name']}, KES {float(bank_txn['amount']):,.0f} payment confirmed.\n"
                         f"View your account: {_link}"
                     )
-                    from src.messaging.delivery import send_sms
-                    send_sms([{'phone': _tenant['phone']}], _sms)
+                    from src.messaging.delivery import send_sms_async
+                    send_sms_async([{'phone': _tenant['phone']}], _sms)
             except Exception:
                 pass
 
-        # Notify tenants whose claims were not on this statement
+        # Statement period derived from parsed transaction dates
+        _stmt_period_row = conn.execute("""
+            SELECT strftime('%Y-%m', MIN(txn_date)) as min_period,
+                   strftime('%Y-%m', MAX(txn_date)) as max_period
+            FROM bank_transactions WHERE statement_id = ? AND txn_date IS NOT NULL
+        """, (statement_id,)).fetchone()
+        _stmt_min_period = _stmt_period_row['min_period'] if _stmt_period_row else None
+        _stmt_max_period = _stmt_period_row['max_period'] if _stmt_period_row else None
+
+        _caretakers_for_alert = conn.execute(
+            "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
+            (property_row['id'],)
+        ).fetchall()
+
+        flagged_count = 0
         for claim in pending_claims:
             if claim['id'] in verified_claim_ids:
                 continue
             if not claim['mpesa_ref']:
                 continue
+
+            claim_mpesa_period = claim['mpesa_period'] if claim['mpesa_period'] else None
+            claim_created_at = claim['created_at'] if claim['created_at'] else None
+
+            if claim_mpesa_period and _stmt_min_period and _stmt_max_period:
+                # Precise: M-Pesa timestamp tells us which period this payment belongs to.
+                # Only flag if the statement covers that same period.
+                if not (_stmt_min_period <= claim_mpesa_period <= _stmt_max_period):
+                    continue  # This statement is for a different period — leave pending
+            elif claim_created_at:
+                # Fallback for ref-only claims (no parsed M-Pesa date).
+                # Require claim to be at least 1 hour old to avoid false positives.
+                try:
+                    claim_age = datetime.utcnow() - datetime.fromisoformat(str(claim_created_at).replace('Z', ''))
+                    if claim_age.total_seconds() < 3600:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+            else:
+                continue
+
+            claim_date = str(claim_created_at)[:10] if claim_created_at else (claim_mpesa_period or '?')
+
+            # Flag the claim
+            conn.execute("""
+                UPDATE payment_claims
+                SET status = 'flagged', flag_reason = 'ref_not_found', flagged_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (claim['id'],))
+            flagged_count += 1
+
+            _info = conn.execute(
+                "SELECT u.unit_number, u.property_id, t.name, t.phone, t.id as tenant_id "
+                "FROM units u LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' "
+                "WHERE u.id = ?", (claim['unit_id'],)
+            ).fetchone()
+            _unit_number = _info['unit_number'] if _info else '?'
+            _claim_prop_id = (_info['property_id'] if _info else None) or property_row['id']
+
+            # Flag tenant so future claims are not given pending-state treatment
+            if _info and _info['tenant_id']:
+                conn.execute("UPDATE tenants SET flagged = 1 WHERE id = ?", (_info['tenant_id'],))
+
+            # Platform alert
             try:
-                _rej_tenant = conn.execute(
-                    "SELECT name, phone FROM tenants WHERE unit_id = ? AND status = 'active'",
-                    (claim['unit_id'],),
-                ).fetchone()
-                if _rej_tenant and _rej_tenant['phone']:
-                    _rej_sms = (
-                        f"Hi {_rej_tenant['name']}, reference {claim['mpesa_ref']} "
-                        "was not found on this statement. Please contact us or provide proof of payment."
-                    )
-                    from src.messaging.delivery import send_sms
-                    send_sms([{'phone': _rej_tenant['phone']}], _rej_sms)
+                from src.platform.guardian import raise_alert as _raise_alert
+                _raise_alert(conn, 'fake_payment_claim',
+                    f"Ref {claim['mpesa_ref']} | Unit {_unit_number} | "
+                    f"KES {float(claim['claimed_amount'] or 0):,.0f} | "
+                    f"Submitted {claim_date} — not found in statement.",
+                    org_id=verify_org_id, property_id=_claim_prop_id, severity='critical')
             except Exception:
                 pass
 
-        flash(f'Verification complete! {verified_count} payments verified.', 'success' if verified_count else 'info')
+            # Audit log (admin sees this on dashboard and in activity)
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('claim_flagged', 'claim', claim['id'],
+                 f"Ref: {claim['mpesa_ref']} | Unit: {_unit_number} | "
+                 f"KES {float(claim['claimed_amount'] or 0):,.0f} | not found in statement {statement_id}",
+                 'system')
+            )
+
+            # SMS caretaker + tenant (async — DB work already committed at this point)
+            from src.messaging.delivery import send_sms_async
+            _amt_str = f"KES {float(claim['claimed_amount'] or 0):,.0f}"
+            for _ct in _caretakers_for_alert:
+                try:
+                    send_sms_async([{'phone': _ct['phone']}],
+                        f"ALERT: Payment claim {claim['mpesa_ref']} ({_amt_str}, Unit {_unit_number}) "
+                        f"submitted {claim_date} was not found in the bank statement. "
+                        "Please follow up with the tenant immediately.")
+                except Exception:
+                    pass
+
+            if _info and _info['phone']:
+                try:
+                    send_sms_async([{'phone': _info['phone']}],
+                        f"Hi {_info['name'] or 'Tenant'}, your payment reference "
+                        f"{claim['mpesa_ref']} ({_amt_str}) is under review — not found in bank records. "
+                        "Contact your property manager.")
+                except Exception:
+                    pass
+
+        _msg = f'Verification complete! {verified_count} payment(s) verified.'
+        if flagged_count:
+            _msg += f' {flagged_count} unmatched claim(s) flagged — see arrears for details.'
+        flash(_msg, 'success' if verified_count else ('warning' if flagged_count else 'info'))
         return redirect(url_for('statement_detail', statement_id=statement_id))
+
+
+@app.route('/flagged-claims')
+def flagged_claims_admin():
+    """Admin view of all flagged payment claims for the current property."""
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('property_list'))
+
+        claims = conn.execute("""
+            SELECT pc.*,
+                   u.unit_number,
+                   t.name  AS tenant_name,
+                   t.phone AS tenant_phone
+            FROM payment_claims pc
+            JOIN units u ON u.id = pc.unit_id
+            LEFT JOIN tenants t ON t.unit_id = pc.unit_id AND t.status = 'active'
+            WHERE pc.property_id = ? AND pc.status = 'flagged'
+            ORDER BY pc.admin_cleared ASC, pc.flagged_at DESC
+        """, (property_row['id'],)).fetchall()
+
+    return render_template('flagged_claims.html',
+                           property=property_row,
+                           claims=claims,
+                           active_nav='payments')
+
+
+@app.route('/claims/<claim_id>/clear-flag', methods=['POST'])
+def admin_clear_flag(claim_id):
+    """Admin clears a flagged claim with a mandatory explanation. Fully audited."""
+    note = request.form.get('note', '').strip()
+    if len(note) < 10:
+        flash('Explanation required (min 10 characters).', 'error')
+        return redirect(request.referrer or url_for('flagged_claims_admin'))
+
+    with get_connection() as conn:
+        claim = conn.execute("SELECT * FROM payment_claims WHERE id = ?", (claim_id,)).fetchone()
+        if not claim or claim['status'] != 'flagged':
+            flash('Claim not found or not flagged.', 'error')
+            return redirect(url_for('flagged_claims_admin'))
+
+        conn.execute("""
+            UPDATE payment_claims
+            SET admin_cleared = 1, admin_note = ?, admin_cleared_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (note, claim_id))
+
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('claim_flag_cleared', 'claim', claim_id,
+             f"Ref: {claim['mpesa_ref']} | Admin note: {note}", 'admin')
+        )
+
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'claim_flag_cleared', 'claim', claim_id,
+                     f"Admin cleared flag on ref {claim['mpesa_ref']}. Note: {note}",
+                     property_id=claim['property_id'])
+
+    flash('Flag cleared and explanation recorded. Claim remains under platform review.', 'success')
+    return redirect(url_for('flagged_claims_admin'))
 
 
 @app.route('/statements/<statement_id>')
@@ -2726,13 +2916,22 @@ def statement_auto_assign(statement_id, txn_id):
             (unit['id'],)).fetchone()
         pay_property_id = prop_row['id'] if prop_row else None
 
+        existing = conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (txn_id,)).fetchone()
+        if existing:
+            flash('This transaction has already been assigned.', 'warning')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
+
         payment_id = generate_id('PAY')
-        conn.execute("""
-            INSERT INTO payments
-            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', 'Unit hint from narration', 'admin')
-        """, (payment_id, pay_property_id, unit['id'], txn_id, statement_id,
-              txn['amount'], txn['txn_date'] or ''))
+        try:
+            conn.execute("""
+                INSERT INTO payments
+                (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', 'Unit hint from narration', 'admin')
+            """, (payment_id, pay_property_id, unit['id'], txn_id, statement_id,
+                  txn['amount'], txn['txn_date'] or ''))
+        except sqlite3.IntegrityError:
+            flash('This transaction has already been assigned.', 'warning')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
         allocate_payment(conn, payment_id, unit['id'], txn['amount'])
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -2751,8 +2950,8 @@ def statement_auto_assign(statement_id, txn_id):
                                  (_token, unit['id']))
                 _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
                         f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
-                from src.messaging.delivery import send_sms
-                send_sms([{'phone': _tenant['phone']}], _sms)
+                from src.messaging.delivery import send_sms_async
+                send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
             pass
 
@@ -2790,13 +2989,17 @@ def statement_assign_payment(statement_id, txn_id):
         pay_property_id = prop_row['id'] if prop_row else None
 
         payment_id = generate_id('PAY')
-        conn.execute("""
-            INSERT INTO payments
-            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
-             assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
-        """, (payment_id, pay_property_id, unit_id, txn_id, statement_id,
-              txn['amount'], txn['txn_date'] or '', reason))
+        try:
+            conn.execute("""
+                INSERT INTO payments
+                (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+                 assignment_type, assignment_reason, assigned_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
+            """, (payment_id, pay_property_id, unit_id, txn_id, statement_id,
+                  txn['amount'], txn['txn_date'] or '', reason))
+        except sqlite3.IntegrityError:
+            flash('This transaction has already been assigned.', 'warning')
+            return redirect(url_for('statement_detail', statement_id=statement_id))
         allocate_payment(conn, payment_id, unit_id, txn['amount'])
 
         unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
@@ -2818,8 +3021,8 @@ def statement_assign_payment(statement_id, txn_id):
                                  (_token, unit_id))
                 _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
                         f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
-                from src.messaging.delivery import send_sms
-                send_sms([{'phone': _tenant['phone']}], _sms)
+                from src.messaging.delivery import send_sms_async
+                send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
             pass
 
@@ -2958,12 +3161,16 @@ def auto_assign_payment(txn_id):
         unit_number = unit['unit_number']
         auto_reason = f"Auto-assigned via narration hint: MOWIN {unit_hint} → Unit {unit_number}"
 
-        conn.execute("""
-            INSERT INTO payments
-            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'auto_hint', ?, 'admin')
-        """, (payment_id, property_id, unit_id, txn_id, txn['statement_id'],
-              amount, txn['txn_date'] or '', auto_reason))
+        try:
+            conn.execute("""
+                INSERT INTO payments
+                (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'auto_hint', ?, 'admin')
+            """, (payment_id, property_id, unit_id, txn_id, txn['statement_id'],
+                  amount, txn['txn_date'] or '', auto_reason))
+        except sqlite3.IntegrityError:
+            flash('This transaction has already been assigned.', 'warning')
+            return redirect(url_for('review', tab='unreported'))
         allocate_payment(conn, payment_id, unit_id, amount)
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -2990,8 +3197,8 @@ def auto_assign_payment(txn_id):
                     f"Hi {_tenant['name']}, KES {amount:,.0f} payment confirmed.\n"
                     f"View your account: {_link}"
                 )
-                from src.messaging.delivery import send_sms
-                send_sms([{'phone': _tenant['phone']}], _sms)
+                from src.messaging.delivery import send_sms_async
+                send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
             pass
 
@@ -3063,6 +3270,40 @@ def delete_payment(payment_id):
     return redirect(next_url)
 
 
+@app.route('/payments/<payment_id>/note', methods=['POST'])
+def payment_add_note(payment_id):
+    """Save or update an admin note on a confirmed payment."""
+    note = request.form.get('note', '').strip()
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('property_list'))
+        payment = conn.execute(
+            "SELECT p.*, pc.mpesa_ref FROM payments p "
+            "LEFT JOIN payment_claims pc ON pc.id = p.claim_id "
+            "WHERE p.id = ? AND p.property_id = ?",
+            (payment_id, property_row['id'])
+        ).fetchone()
+        if not payment:
+            flash('Payment not found.', 'error')
+            return redirect(url_for('review', tab='confirmed'))
+        conn.execute(
+            "UPDATE payments SET notes = ?, notes_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (note or None, payment_id)
+        )
+        detail = f"Ref: {payment['mpesa_ref'] or '-'} | Note: {note}" if note else f"Ref: {payment['mpesa_ref'] or '-'} | Note cleared"
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_note_updated', 'payment', payment_id, detail, 'admin')
+        )
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'admin_payment_note', 'payment', payment_id,
+                     f"Admin added note on ref {payment['mpesa_ref'] or '-'}: {note}" if note else f"Admin cleared note on ref {payment['mpesa_ref'] or '-'}",
+                     property_id=property_row['id'])
+    flash('Note saved.', 'success')
+    return redirect(url_for('review', tab='confirmed'))
+
+
 @app.route('/assign/<txn_id>', methods=['GET', 'POST'])
 def assign_payment(txn_id):
     """Manually assign an unassigned bank payment; require reason (min 5 chars)."""
@@ -3100,14 +3341,18 @@ def assign_payment(txn_id):
                 return redirect(url_for('assign_payment', txn_id=txn_id))
 
             payment_id = generate_id('PAY')
-            conn.execute("""
-                INSERT INTO payments
-                (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
-            """, (
-                payment_id, property_row['id'], unit_id, txn_id, txn['statement_id'],
-                txn['amount'], txn['txn_date'] or '', reason,
-            ))
+            try:
+                conn.execute("""
+                    INSERT INTO payments
+                    (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date, assignment_type, assignment_reason, assigned_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'admin')
+                """, (
+                    payment_id, property_row['id'], unit_id, txn_id, txn['statement_id'],
+                    txn['amount'], txn['txn_date'] or '', reason,
+                ))
+            except sqlite3.IntegrityError:
+                flash('This payment has already been assigned.', 'warning')
+                return redirect(url_for('assign_payment', txn_id=txn_id))
             allocate_payment(conn, payment_id, unit_id, txn['amount'])
             unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
             unit_number = unit_row['unit_number'] if unit_row else unit_id
@@ -3136,8 +3381,8 @@ def assign_payment(txn_id):
                         f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
                         f"View your account: {_link}"
                     )
-                    from src.messaging.delivery import send_sms
-                    send_sms([{'phone': _tenant['phone']}], _sms)
+                    from src.messaging.delivery import send_sms_async
+                    send_sms_async([{'phone': _tenant['phone']}], _sms)
             except Exception:
                 pass
             flash('Payment assigned successfully!', 'success')
@@ -3265,8 +3510,8 @@ def assign_group():
                         f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
                         f"View your account: {_link}"
                     )
-                    from src.messaging.delivery import send_sms
-                    send_sms([{'phone': _tenant['phone']}], _sms)
+                    from src.messaging.delivery import send_sms_async
+                    send_sms_async([{'phone': _tenant['phone']}], _sms)
             except Exception:
                 pass
 
@@ -4018,12 +4263,16 @@ def review():
         if tab == 'confirmed':
             confirmed = conn.execute("""
                 SELECT p.id, p.amount, p.payment_date, p.assignment_type, p.assignment_reason,
-                       p.source, u.unit_number, t.name AS tenant_name,
-                       COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref, bt.txn_date
+                       p.source, p.notes, p.notes_updated_at,
+                       p.caretaker_note, p.caretaker_note_at,
+                       u.unit_number, t.name AS tenant_name,
+                       COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref, bt.txn_date,
+                       pc.claimed_amount, pc.source AS claim_source
                 FROM payments p
                 JOIN units u ON p.unit_id = u.id
                 LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
                 LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
+                LEFT JOIN payment_claims pc ON pc.id = p.claim_id
                 WHERE p.property_id = ?
                 ORDER BY p.payment_date DESC, p.id
             """, (property_id,)).fetchall()

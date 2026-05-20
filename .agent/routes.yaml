@@ -31,7 +31,10 @@ blueprints:
       - "POST /statements/<statement_id>/assign/<txn_id> — manual assignment with required reason; audited as payment_manual_assigned"
       - "POST /statements/<statement_id>/correct/<payment_id> — unassign + optional reassign; audited as payment_corrected; claim reverted to pending"
       - "POST /claims/submit — submit M-Pesa claim"
-      - "POST /payments/verify — verify claims against bank statement"
+      - "POST /payments/verify — verify claims against bank statement; flags unmatched refs whose mpesa_period falls within statement date range; raises platform alert + SMS caretaker/tenant on mismatch"
+      - "GET /flagged-claims — admin view of all flagged claims; three-state display (needs action / caretaker confirmed / admin cleared)"
+      - "POST /claims/<claim_id>/clear-flag — admin clears flagged claim with mandatory note (min 10 chars); writes audit_log + platform_shadow_log"
+      - "POST /payments/<payment_id>/note — admin adds/edits annotation on confirmed payment; writes audit_log + platform_shadow_log"
       - "GET /owners — owner management"
       - "GET /caretakers — caretaker management"
       - "GET /login — unified login form for org admin, owner (person), and master ADMIN_PASSWORD"
@@ -98,6 +101,10 @@ blueprints:
       - "GET /caretaker/<property_id>/water — list of past water reading batches"
       - "GET /caretaker/<property_id>/water/new — meter reading entry form; previous reading auto-populated from last upload"
       - "POST /caretaker/<property_id>/water/new — submit meter readings; validates current >= previous; creates water_upload + water_readings + rent_charges (charge_type='water'); prevents duplicate per charge_period"
+      - "GET /caretaker/<property_id>/payment-activity — full claim history for property: status, unit, tenant, mpesa_ref, bank_amount, caretaker_note; mismatch cards (bank vs. claimed) with expandable note form"
+      - "POST /caretaker/<property_id>/payments/<payment_id>/note — caretaker adds/edits note on a verified payment with amount mismatch; writes audit_log (caretaker_payment_note) + platform_shadow_log"
+      - "GET /caretaker/<property_id>/flagged-claims — flagged claims for this property: unconfirmed (red), caretaker confirmed (amber); three-state display mirroring admin view"
+      - "POST /caretaker/<property_id>/flagged-claims/<claim_id>/confirm — caretaker confirms flagged claim with mandatory note (min 5 chars); sets caretaker_confirmed=1 + caretaker_note; writes audit_log + platform_shadow_log"
 
   messaging:
     file: src/routes/messaging_routes.py

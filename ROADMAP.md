@@ -230,7 +230,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `checkin_responses` table — tenant check-in responses; aggregated monthly into sentiment briefings
 - [ ] `property_info` table — local amenities per property: id, property_id, category (pharmacy/grocery/wifi/hospital/gas/etc.), name, details. Admin-managed at onboarding or anytime. Queried when tenant asks Domi about local services.
 - [ ] `tenants.language_preference` column — `'en'` | `'sw'` | NULL. NULL = not yet set; triggers language prompt on first inbound contact. Stored permanently on tenant record.
-- [ ] `tenants.flagged` column — boolean, default false. Set when payment claim rejected (M-Pesa reference absent from bank statement). Cleared manually by admin only.
+- [x] `tenants.flagged` column — boolean, default false. Set when payment claim rejected (M-Pesa reference absent from bank statement). Cleared manually by admin only.
 - [ ] `tenants.flagged_reason`, `tenants.flagged_at` — text + timestamp, nullable. Set alongside `flagged`.
 - [ ] `maintenance_issues.priority` column — `'urgent'` | `'routine'`, default `'routine'`. Urgent = forward to caretaker immediately (24/7). Routine = next morning briefing.
 - [ ] `caretaker_request_routing` table — per-property config: property_id, notify_admin (bool), notify_owner (bool). Governs where caretaker escalation requests are routed. Owner report always captures all requests regardless of routing config.
@@ -290,7 +290,10 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Tabs: Overview, Arrears, Tenants, Issues, Log Payment
 - [x] Printable (each tab has Print button, nav hides in `@media print`)
 - [x] Maintenance issues board: caretakers can log issues, mark them resolved, and see recent history; tenant-raised issues appear alongside caretaker issues
-- [x] Log Payment tab: caretaker submits M-Pesa SMS for a tenant; creates payment_claims record (`source='caretaker'`); shows last 15 claims with Verified/Pending status; notifies property owners
+- [x] Log Payment tab: caretaker submits M-Pesa SMS for a tenant; creates payment_claims record (`source='caretaker'`); notifies property owners
+- [x] Payment Activity page (`/caretaker/<id>/payment-activity`): dedicated claim history with mismatch highlighting, caretaker note form, flagged claim links; Log Payment redirects here after submission
+- [x] Mismatch notification: when bank amount ≠ claimed amount, caretaker SMSed async; dashboard shows amber alert card until note added
+- [x] Flagged claims tab (`/caretaker/<id>/flagged-claims`): caretaker confirms with mandatory note; count badge in nav; three-layer resolution synced with admin view
 
 ### Owners & Multi-Property
 - [x] `owners` table, token + password portal auth
@@ -329,6 +332,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Caretaker broadcast: same
 - [x] Automatic reminders: SMS sent alongside portal message
 - [x] Payment confirmation SMS: "payment confirmed" wording (no bank mechanics exposed)
+- [x] `send_sms_async()` daemon thread wrapper in `src/messaging/delivery.py` — non-blocking SMS for scheduled jobs and webhooks; used by `detect_stale_claims` and mismatch notifications
 - [x] `owner_messages` table + `notify_property_owners()` — owner inbox + SMS notifications
 - [x] `messages.template_body` — broadcasts store unsubstituted template for owner inbox display
 - [x] `sent_by` attribution in owner inbox — uses actual caretaker name (from session), 'Admin', or 'System'
@@ -360,8 +364,9 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [ ] `src/agent/responder.py` — response message generator (bilingual: EN/SW)
 - [ ] Language preference prompt on first contact; store to `tenants.language_preference`
 - [ ] Payment claim via WhatsApp/SMS → pending state (not treated same as non-payer)
-- [ ] Falsification detection: claim rejected after bank statement → `tenants.flagged = true`; flagged claims lose pending status; admin clears manually
-- [ ] `tenants.flagged`, `tenants.flagged_reason`, `tenants.flagged_at` columns + migration
+- [x] Falsification detection: claim rejected after bank statement → `tenants.flagged = true`; flagged claims lose pending status; admin clears manually via `/flagged-claims`; three-layer resolution (platform visible, caretaker confirms, admin clears)
+- [x] `tenants.flagged` column + migration (`migrate_add_claim_flagging`); `tenants.flagged_reason`/`flagged_at` deferred
+- [x] Amount mismatch detection: bank amount ≠ claimed amount → verified at bank amount (source of truth); caretaker SMS notification + admin alert; caretaker adds note via `/caretaker/<id>/payment-activity`; admin annotates via `POST /payments/<id>/note`
 - [ ] Complaint submission (maintenance, noise, domestic violence, staff) → `maintenance_issues` record + urgency routing
 - [ ] `maintenance_issues.priority` column + migration (`'urgent'` | `'routine'`)
 - [ ] Balance / payment history query → answered from live DB

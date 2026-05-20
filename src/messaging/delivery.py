@@ -15,6 +15,7 @@ Usage:
 """
 
 import os
+import threading
 
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 
@@ -87,3 +88,14 @@ def send_sms(recipients, message):
         for num in numbers:
             _log_sms(num, message, 'failed', str(e))
         return 0, len(numbers) + len(skipped), [str(e)]
+
+
+def send_sms_async(recipients, message):
+    """Fire-and-forget SMS — returns immediately, sends in a daemon thread.
+
+    Use this for confirmation messages in request handlers where the send
+    result does not affect the HTTP response. The send is still logged to
+    platform_outbox regardless of outcome.
+    """
+    t = threading.Thread(target=send_sms, args=(recipients, message), daemon=True)
+    t.start()

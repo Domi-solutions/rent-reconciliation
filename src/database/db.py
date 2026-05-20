@@ -1352,3 +1352,54 @@ def migrate_add_platform_outbox():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_outbox_created ON platform_outbox(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_outbox_channel ON platform_outbox(channel)")
         print("Migration complete: platform_outbox table ready.")
+
+
+def migrate_add_claim_flagging():
+    """Add flag_reason/flagged_at to payment_claims; add flagged column to tenants. Idempotent."""
+    with get_connection() as conn:
+        claim_cols = [r[1] for r in conn.execute("PRAGMA table_info(payment_claims)").fetchall()]
+        if 'flag_reason' not in claim_cols:
+            conn.execute("ALTER TABLE payment_claims ADD COLUMN flag_reason TEXT")
+        if 'flagged_at' not in claim_cols:
+            conn.execute("ALTER TABLE payment_claims ADD COLUMN flagged_at TIMESTAMP")
+        tenant_cols = [r[1] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'flagged' not in tenant_cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN flagged INTEGER DEFAULT 0")
+        print("Migration complete: claim flagging columns ready.")
+
+
+def migrate_add_payment_notes():
+    """Add admin and caretaker notes columns to payments table. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
+        additions = [
+            ('notes',                'TEXT'),
+            ('notes_updated_at',     'TIMESTAMP'),
+            ('caretaker_note',       'TEXT'),
+            ('caretaker_note_at',    'TIMESTAMP'),
+        ]
+        for col, defn in additions:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE payments ADD COLUMN {col} {defn}")
+        print("Migration complete: payments.notes ready.")
+
+
+def migrate_add_claim_resolution():
+    """Add mpesa_date, mpesa_period, and three-layer resolution columns to payment_claims. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(payment_claims)").fetchall()]
+        additions = [
+            ('mpesa_date',            'DATE'),
+            ('mpesa_period',          'TEXT'),
+            ('caretaker_confirmed',   'INTEGER DEFAULT 0'),
+            ('caretaker_note',        'TEXT'),
+            ('caretaker_confirmed_at','TIMESTAMP'),
+            ('admin_cleared',         'INTEGER DEFAULT 0'),
+            ('admin_note',            'TEXT'),
+            ('admin_cleared_at',      'TIMESTAMP'),
+        ]
+        for col, defn in additions:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE payment_claims ADD COLUMN {col} {defn}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_period ON payment_claims(mpesa_period)")
+        print("Migration complete: claim resolution columns ready.")

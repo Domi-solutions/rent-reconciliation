@@ -6,6 +6,10 @@
   .mo-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .mo-warn { background: #fff3cd; color: #856404; }
   .mo-danger { background: #f8d7da; color: #842029; }
+  .mo-pending { background: #cfe2ff; color: #084298; }
+  .mo-flagged { background: #f8d7da; color: #842029; border: 1px solid #f1aeb5; }
+  .row-flagged { background: #fff5f5; }
+  .row-pending-full { background: #f0f8ff; opacity: 0.75; }
 </style>
 {% endblock %}
 
@@ -15,11 +19,27 @@
     <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Rent Follow-up</div>
     <div style="font-size: 13px; color: var(--ink-3);">
       {{ arrears|length }} unit{{ 's' if arrears|length != 1 }} behind
-      {% if total_balance > 0 %} · KES {{ "{:,.0f}".format(total_balance) }} total outstanding{% endif %}
+      {% if total_display_balance > 0 %} · KES {{ "{:,.0f}".format(total_display_balance) }} needs follow-up{% endif %}
     </div>
   </div>
   <button onclick="window.print()" class="btn btn-sm btn-outline-secondary ct-no-print">Print</button>
 </div>
+
+{% if total_flagged > 0 %}
+<div class="alert alert-danger d-flex align-items-start mb-3" style="font-size: 13px;">
+  <div>
+    <strong>Disputed claims: KES {{ "{:,.0f}".format(total_flagged) }}</strong> — payment reference(s) not found in bank records.
+    Contact the tenants listed below and ask for a valid M-Pesa confirmation. Do not accept new claims from flagged tenants without admin approval.
+  </div>
+</div>
+{% endif %}
+
+{% if total_pending > 0 and total_display_balance < total_balance %}
+<div class="alert alert-info mb-3" style="font-size: 13px;">
+  KES {{ "{:,.0f}".format(total_pending) }} in claims awaiting bank confirmation.
+  These units are shaded — no follow-up needed until the next statement is verified.
+</div>
+{% endif %}
 
 {% if arrears %}
 <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden;">
@@ -31,12 +51,14 @@
           <th>Tenant</th>
           <th>Contact</th>
           <th class="text-end">Balance (KES)</th>
-          <th class="text-end" style="padding-right: 18px;">Months Behind</th>
+          <th class="text-end" style="padding-right: 18px;">Action</th>
         </tr>
       </thead>
       <tbody>
         {% for a in arrears %}
-        <tr>
+        {% set is_flagged = a.flagged_count > 0 %}
+        {% set fully_pending = a.display_balance <= 0 and a.pending_amount > 0 %}
+        <tr class="{{ 'row-flagged' if is_flagged else ('row-pending-full' if fully_pending else '') }}">
           <td style="padding: 10px 18px; font-weight: 600;">{{ a.unit_number }}</td>
           <td>{{ a.tenant_name or '—' }}</td>
           <td>
@@ -44,10 +66,29 @@
             <a href="tel:{{ a.tenant_phone }}" style="color: var(--ink-2); text-decoration: none; font-weight: 500;">{{ a.tenant_phone }}</a>
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
-          <td class="text-end" style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.balance or 0) }}</td>
+          <td class="text-end">
+            {% if is_flagged %}
+              <div style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.balance or 0) }}</div>
+              <div style="font-size: 11px; color: #dc3545;">
+                KES {{ "{:,.0f}".format(a.flagged_amount) }} disputed
+              </div>
+            {% elif fully_pending %}
+              <div style="color: #6c757d; font-weight: 600; text-decoration: line-through;">{{ "{:,.0f}".format(a.balance or 0) }}</div>
+              <div style="font-size: 11px; color: #084298;">KES {{ "{:,.0f}".format(a.pending_amount) }} pending bank confirmation</div>
+            {% elif a.pending_amount > 0 %}
+              <div style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.display_balance) }}</div>
+              <div style="font-size: 11px; color: #084298;">KES {{ "{:,.0f}".format(a.pending_amount) }} pending</div>
+            {% else %}
+              <div style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.balance or 0) }}</div>
+            {% endif %}
+          </td>
           <td class="text-end" style="padding-right: 18px;">
-            {% if a.months_behind %}
-            <span class="mo-badge {% if a.months_behind >= 2 %}mo-danger{% else %}mo-warn{% endif %}">{{ a.months_behind }}mo</span>
+            {% if is_flagged %}
+              <span class="mo-badge mo-flagged">Disputed — follow up</span>
+            {% elif fully_pending %}
+              <span class="mo-badge mo-pending">Awaiting verification</span>
+            {% elif a.months_behind %}
+              <span class="mo-badge {% if a.months_behind >= 2 %}mo-danger{% else %}mo-warn{% endif %}">{{ a.months_behind }}mo behind</span>
             {% else %}—{% endif %}
           </td>
         </tr>
@@ -55,8 +96,8 @@
       </tbody>
       <tfoot>
         <tr style="font-weight: 600; border-top: 2px solid var(--border);">
-          <td style="padding: 10px 18px;" colspan="3">Total Outstanding</td>
-          <td class="text-end" style="color: #dc3545;">KES {{ "{:,.0f}".format(total_balance) }}</td>
+          <td style="padding: 10px 18px;" colspan="3">Needs follow-up</td>
+          <td class="text-end" style="color: #dc3545;">KES {{ "{:,.0f}".format(total_display_balance) }}</td>
           <td></td>
         </tr>
       </tfoot>

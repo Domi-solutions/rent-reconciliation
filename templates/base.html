@@ -11,6 +11,7 @@
 <body>
 {% set active_nav =
     'overview'    if request.endpoint == 'dashboard'
+    else 'flagged'    if request.endpoint in ('flagged_claims_admin', 'admin_clear_flag')
     else 'payments'   if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments')
     else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
     else 'messages'   if request.endpoint.startswith('messaging.')
@@ -53,6 +54,15 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"/></svg>
         Payments
       </a>
+
+      {% if flagged_claims_count > 0 %}
+      <a class="sidebar-item {% if active_nav == 'flagged' %}active{% endif %}" href="{{ url_for('flagged_claims_admin') }}"
+         style="padding-left: 28px; font-size: 12px; color: #dc2626;">
+        <svg viewBox="0 0 20 20" fill="currentColor" style="color: #dc2626;"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+        Flagged Claims
+        <span style="margin-left: auto; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;">{{ flagged_claims_count }}</span>
+      </a>
+      {% endif %}
 
       <a class="sidebar-item {% if active_nav == 'messages' %}active{% endif %}" href="{{ url_for('messaging.dashboard') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"/><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"/></svg>
