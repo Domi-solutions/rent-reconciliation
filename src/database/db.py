@@ -1403,3 +1403,18 @@ def migrate_add_claim_resolution():
                 conn.execute(f"ALTER TABLE payment_claims ADD COLUMN {col} {defn}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_period ON payment_claims(mpesa_period)")
         print("Migration complete: claim resolution columns ready.")
+
+
+def migrate_add_bank_txn_ignored():
+    """Add ignored flag to bank_transactions for workflow-skip without deletion. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(bank_transactions)").fetchall()]
+        additions = [
+            ('ignored',        'INTEGER DEFAULT 0'),
+            ('ignored_at',     'TIMESTAMP'),
+            ('ignored_reason', 'TEXT'),
+        ]
+        for col, defn in additions:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE bank_transactions ADD COLUMN {col} {defn}")
+        print("Migration complete: bank_transactions.ignored ready.")

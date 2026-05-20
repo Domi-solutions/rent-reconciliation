@@ -28,6 +28,7 @@
   </li>
   <li class="nav-item">
     <a class="nav-link {{ 'active' if tab == 'parse_errors' }}" href="{{ url_for('review', tab='parse_errors') }}">Parse Errors</a>
+    <a class="nav-link {{ 'active' if tab == 'ignored' }}" href="{{ url_for('review', tab='ignored') }}">Ignored</a>
   </li>
 </ul>
 
@@ -302,6 +303,10 @@
               <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source='name_match', suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
               {% endif %}
               <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-outline-secondary ms-1">Assign</a>
+              <form method="post" action="{{ url_for('ignore_transaction', txn_id=t.id) }}" style="display:inline;" class="ms-1">
+                <input type="hidden" name="next" value="{{ url_for('review', tab='unreported') }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Ignore — skip in workflow, revisit later">Ignore</button>
+              </form>
             </td>
           </tr>
           {% endfor %}
@@ -424,6 +429,58 @@
     <div class="empty-state">
       <div class="empty-state-title">No parse errors</div>
       <div class="empty-state-sub">Upload a bank statement to see any rows the parser could not read.</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'ignored' %}
+    {% if ignored_txns %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Statement</th>
+            <th>Ref</th>
+            <th>Amount</th>
+            <th>Date</th>
+            <th>Sender</th>
+            <th>Ignored at</th>
+            <th>Reason</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in ignored_txns %}
+          <tr>
+            <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {% if t.statement_id %}
+              <a href="{{ url_for('statement_detail', statement_id=t.statement_id) }}" style="color:#6b7280;text-decoration:none;">
+                {{ t.statement_filename | truncate(22, true, '…') if t.statement_filename else '—' }}
+              </a>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ t.mpesa_ref or '-' }}</td>
+            <td>KES {{ "%.2f"|format(t.amount) }}</td>
+            <td>{{ t.txn_date or '-' }}</td>
+            <td>{{ t.sender_name or '-' }}</td>
+            <td style="font-size:11px;color:#6b7280;">{{ t.ignored_at[:10] if t.ignored_at else '—' }}</td>
+            <td style="font-size:11px;color:#6b7280;">{{ t.ignored_reason or '—' }}</td>
+            <td>
+              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-outline-primary">Assign</a>
+              <form method="post" action="{{ url_for('unignore_transaction', txn_id=t.id) }}" style="display:inline;" class="ms-1">
+                <input type="hidden" name="next" value="{{ url_for('review', tab='ignored') }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Restore</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-title">No ignored transactions</div>
+      <div class="empty-state-sub">Transactions you ignore from the Unreported tab will appear here for review.</div>
     </div>
     {% endif %}
     {% endif %}

@@ -40,7 +40,10 @@ blueprints:
       - "GET /login — unified login form for org admin, owner (person), and master ADMIN_PASSWORD"
       - "POST /login — authenticate; org → dashboard; owner → owner.dashboard (never follows next_url to avoid auth-loop)"
       - "GET /logout — clear session"
-      - "GET /tools — monthly workflow (tools_index); queries DB for per-step completion timestamps; returns workflow dict + current period for green/red status indicators"
+      - "GET /tools — monthly workflow (tools_index); period-aware (auto-detects earliest incomplete YYYY-MM period; accepts ?period= override; prev/next nav); each step scoped to selected period; step 5 checks landlord_reports not audit_log"
+      - "POST /payments/ignore/<txn_id> — mark bank_transaction ignored=1; excluded from workflow unassigned count; row preserved; accepts optional reason form field"
+      - "POST /payments/unignore/<txn_id> — restore ignored transaction to unmatched pool (ignored=0)"
+      - "POST /payments/auto-assign/<txn_id> — one-click assign via unit_hint; now uses org_id for statement lookup (was broken for org-scoped statements)"
 
   viewer:
     file: src/routes/viewer_routes.py
@@ -127,6 +130,7 @@ blueprints:
     key_routes:
       - "GET /reports — report history"
       - "GET/POST /reports/generate"
+      - "POST /reports/generate-for-period — one-click report generation from monthly workflow; accepts period (YYYY-MM) form field; computes first/last day; generates landlord report; redirects to preview"
       - "GET /reports/<id>"
       - "GET /reports/<id>/caretaker"
 

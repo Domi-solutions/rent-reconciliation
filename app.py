@@ -110,6 +110,7 @@ from src.database.db import (
     migrate_add_claim_flagging,
     migrate_add_claim_resolution,
     migrate_add_payment_notes,
+    migrate_add_bank_txn_ignored,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -156,6 +157,7 @@ migrate_add_platform_outbox()
 migrate_add_claim_flagging()
 migrate_add_claim_resolution()
 migrate_add_payment_notes()
+migrate_add_bank_txn_ignored()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -3119,6 +3121,67 @@ def statement_correct_payment(statement_id, payment_id):
     return redirect(url_for('statement_detail', statement_id=statement_id))
 
 
+@app.route('/payments/ignore/<txn_id>', methods=['POST'])
+def ignore_transaction(txn_id):
+    """Mark a bank transaction as ignored so it doesn't block workflow completion."""
+    reason = request.form.get('reason', '').strip() or None
+    next_url = request.form.get('next') or url_for('review', tab='unreported')
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('property_list'))
+        org_id = property_row['organization_id'] or session.get('org_id')
+        stmt_col = "bs.org_id" if org_id else "bs.property_id"
+        stmt_val = org_id if org_id else property_row['id']
+        txn = conn.execute(
+            f"SELECT bt.id FROM bank_transactions bt JOIN bank_statements bs ON bt.statement_id = bs.id"
+            f" WHERE bt.id = ? AND {stmt_col} = ?", (txn_id, stmt_val)
+        ).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(next_url)
+        conn.execute(
+            "UPDATE bank_transactions SET ignored=1, ignored_at=CURRENT_TIMESTAMP, ignored_reason=? WHERE id=?",
+            (reason, txn_id)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('txn_ignored', 'bank_transaction', txn_id, reason or 'No reason given', 'admin')
+        )
+    flash('Transaction ignored. It will not count toward unmatched credits.', 'info')
+    return redirect(next_url)
+
+
+@app.route('/payments/unignore/<txn_id>', methods=['POST'])
+def unignore_transaction(txn_id):
+    """Restore an ignored bank transaction to the unmatched pool."""
+    next_url = request.form.get('next') or url_for('review', tab='ignored')
+    with get_connection() as conn:
+        property_row = get_current_property(conn)
+        if not property_row:
+            return redirect(url_for('property_list'))
+        org_id = property_row['organization_id'] or session.get('org_id')
+        stmt_col = "bs.org_id" if org_id else "bs.property_id"
+        stmt_val = org_id if org_id else property_row['id']
+        txn = conn.execute(
+            f"SELECT bt.id FROM bank_transactions bt JOIN bank_statements bs ON bt.statement_id = bs.id"
+            f" WHERE bt.id = ? AND {stmt_col} = ?", (txn_id, stmt_val)
+        ).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(next_url)
+        conn.execute(
+            "UPDATE bank_transactions SET ignored=0, ignored_at=NULL, ignored_reason=NULL WHERE id=?",
+            (txn_id,)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('txn_unignored', 'bank_transaction', txn_id, 'Restored to unmatched pool', 'admin')
+        )
+    flash('Transaction restored to unmatched pool.', 'success')
+    return redirect(next_url)
+
+
 @app.route('/payments/auto-assign/<txn_id>', methods=['POST'])
 def auto_assign_payment(txn_id):
     """One-click auto-assign using unit_hint extracted from narration. Logs full suggestion trail."""
@@ -3129,11 +3192,14 @@ def auto_assign_payment(txn_id):
             return redirect(url_for('property_list'))
         property_id = property_row['id']
 
-        txn = conn.execute("""
+        _org_id = property_row['organization_id'] or session.get('org_id')
+        _stmt_col = "bs.org_id" if _org_id else "bs.property_id"
+        _stmt_val = _org_id if _org_id else property_id
+        txn = conn.execute(f"""
             SELECT bt.* FROM bank_transactions bt
             JOIN bank_statements bs ON bt.statement_id = bs.id
-            WHERE bt.id = ? AND bs.property_id = ?
-        """, (txn_id, property_id)).fetchone()
+            WHERE bt.id = ? AND {_stmt_col} = ?
+        """, (txn_id, _stmt_val)).fetchone()
         if not txn:
             flash('Transaction not found.', 'error')
             return redirect(url_for('review', tab='unreported'))
@@ -3441,19 +3507,22 @@ def assign_group():
             return redirect(url_for('review', tab='unreported'))
 
         unit_number = unit['unit_number']
+        _org_id = property_row['organization_id'] or session.get('org_id')
+        _stmt_col = "bs.org_id" if _org_id else "bs.property_id"
+        _stmt_val = _org_id if _org_id else property_id
 
         total_amount = 0.0
         assigned_count = 0
 
         for txn_id in txn_ids:
             txn = conn.execute(
-                """
+                f"""
                 SELECT bt.*
                 FROM bank_transactions bt
                 JOIN bank_statements bs ON bt.statement_id = bs.id
-                WHERE bt.id = ? AND bs.property_id = ?
+                WHERE bt.id = ? AND {_stmt_col} = ?
                 """,
-                (txn_id, property_id),
+                (txn_id, _stmt_val),
             ).fetchone()
             if not txn:
                 continue
@@ -3573,31 +3642,19 @@ def generate_charges():
             svc_created = 0
             for unit in units:
                 # Rent charge
-                existing_rent = conn.execute(
-                    "SELECT id FROM rent_charges WHERE unit_id = ? AND period = ? AND charge_type = 'rent'",
-                    (unit['id'], period),
-                ).fetchone()
-                if not existing_rent:
-                    charge_id = generate_id('CHG')
-                    conn.execute("""
-                        INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date)
-                        VALUES (?, ?, ?, ?, 'rent', ?, ?)
-                    """, (charge_id, property_row['id'], unit['id'], period, unit['monthly_rent'], due_date))
-                    rent_created += 1
+                cur = conn.execute("""
+                    INSERT OR IGNORE INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date)
+                    VALUES (?, ?, ?, ?, 'rent', ?, ?)
+                """, (generate_id('CHG'), property_row['id'], unit['id'], period, unit['monthly_rent'], due_date))
+                rent_created += cur.rowcount
 
                 # Service charge (only if > 0)
                 if unit['service_charge'] and float(unit['service_charge']) > 0:
-                    existing_svc = conn.execute(
-                        "SELECT id FROM rent_charges WHERE unit_id = ? AND period = ? AND charge_type = 'service'",
-                        (unit['id'], period),
-                    ).fetchone()
-                    if not existing_svc:
-                        charge_id = generate_id('CHG')
-                        conn.execute("""
-                            INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date)
-                            VALUES (?, ?, ?, ?, 'service', ?, ?)
-                        """, (charge_id, property_row['id'], unit['id'], period, unit['service_charge'], due_date))
-                        svc_created += 1
+                    cur = conn.execute("""
+                        INSERT OR IGNORE INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date)
+                        VALUES (?, ?, ?, ?, 'service', ?, ?)
+                    """, (generate_id('CHG'), property_row['id'], unit['id'], period, unit['service_charge'], due_date))
+                    svc_created += cur.rowcount
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -3616,7 +3673,7 @@ def generate_charges():
             except Exception:
                 pass
             flash(f'Generated {rent_created} rent and {svc_created} service charges for {period}. Water charges should be uploaded separately.', 'success')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('tools_index', period=period))
 
         return render_template('generate_charges.html', property=property_row)
 
@@ -4242,7 +4299,7 @@ def export_page():
 def review():
     """Phase 4 Human Review: tabs for Confirmed, Unreported, Unconfirmed, Reversals, Parse errors."""
     tab = request.args.get('tab', 'confirmed').strip().lower()
-    if tab not in ('confirmed', 'unconfirmed', 'unreported', 'reversals', 'parse_errors'):
+    if tab not in ('confirmed', 'unconfirmed', 'unreported', 'reversals', 'parse_errors', 'ignored'):
         tab = 'confirmed'
 
     with get_connection() as conn:
@@ -4277,6 +4334,31 @@ def review():
                 ORDER BY p.payment_date DESC, p.id
             """, (property_id,)).fetchall()
 
+        ignored_txns = []
+        if tab == 'ignored':
+            if review_org_id:
+                ignored_txns = [dict(r) for r in conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+                           bt.ignored_at, bt.ignored_reason,
+                           bs.id AS statement_id, bs.filename AS statement_filename
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.org_id = ? AND bt.ignored = 1
+                    AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                    ORDER BY bt.ignored_at DESC
+                """, (review_org_id,)).fetchall()]
+            else:
+                ignored_txns = [dict(r) for r in conn.execute("""
+                    SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+                           bt.ignored_at, bt.ignored_reason,
+                           bs.id AS statement_id, bs.filename AS statement_filename
+                    FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE bs.property_id = ? AND bt.ignored = 1
+                    AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                    ORDER BY bt.ignored_at DESC
+                """, (property_id,)).fetchall()]
+
         if tab == 'unreported':
             org_filter = review_org_id or property_id
             if review_org_id:
@@ -4288,6 +4370,7 @@ def review():
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE bs.org_id = ?
                     AND bt.txn_type = 'PAYBILL_CREDIT'
+                    AND (bt.ignored IS NULL OR bt.ignored = 0)
                     AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
                     ORDER BY bt.txn_date DESC
                 """, (review_org_id,)).fetchall()
@@ -4300,6 +4383,7 @@ def review():
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE bs.property_id = ?
                     AND bt.txn_type = 'PAYBILL_CREDIT'
+                    AND (bt.ignored IS NULL OR bt.ignored = 0)
                     AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
                     ORDER BY bt.txn_date DESC
                 """, (property_id,)).fetchall()
@@ -4418,6 +4502,7 @@ def review():
         unconfirmed=unconfirmed,
         reversals=reversals,
         parse_errors_list=parse_errors_list,
+        ignored_txns=ignored_txns,
     )
 
 
@@ -4565,46 +4650,86 @@ def onboard_preview():
 @app.route('/tools')
 def tools_index():
     """Monthly workflow status + parser testing utilities."""
-    period = datetime.now().strftime('%Y-%m')
+    import re as _re
+    _valid_period = lambda p: bool(p and _re.match(r'^\d{4}-\d{2}$', p))
+
+    requested_period = request.args.get('period', '').strip()
+    if not _valid_period(requested_period):
+        requested_period = ''
     workflow = {}
+    prop = None
+    period = requested_period or datetime.now().strftime('%Y-%m')
+
     with get_connection() as conn:
         prop = get_current_property(conn)
         if prop:
             pid = prop['id']
             org_id = prop['organization_id'] or session.get('org_id')
-            stmt_filter = "org_id = ?" if org_id else "property_id = ?"
+            stmt_filter = "bs.org_id = ?" if org_id else "bs.property_id = ?"
             stmt_param  = org_id if org_id else pid
 
-            workflow['water'] = (conn.execute(
+            # Auto-detect: earliest valid YYYY-MM period with charges but no verified payments
+            if not requested_period:
+                earliest_incomplete = conn.execute(
+                    """SELECT MIN(period) FROM rent_charges
+                       WHERE property_id=?
+                         AND period LIKE '20__-__'
+                         AND period NOT IN (
+                             SELECT DISTINCT strftime('%Y-%m', payment_date)
+                             FROM payments WHERE property_id=?)""",
+                    (pid, pid)
+                ).fetchone()[0]
+                if earliest_incomplete and _valid_period(earliest_incomplete):
+                    period = earliest_incomplete
+
+            workflow['water'] = conn.execute(
                 "SELECT MAX(created_at) FROM rent_charges WHERE property_id=? AND charge_type='water' AND period=?",
-                (pid, period)).fetchone()[0])
+                (pid, period)).fetchone()[0]
 
-            workflow['charges'] = (conn.execute(
+            workflow['charges'] = conn.execute(
                 "SELECT MAX(created_at) FROM rent_charges WHERE property_id=? AND charge_type='rent' AND period=?",
-                (pid, period)).fetchone()[0])
+                (pid, period)).fetchone()[0]
 
-            workflow['statement'] = (conn.execute(
-                f"SELECT MAX(uploaded_at) FROM bank_statements WHERE {stmt_filter}",
-                (stmt_param,)).fetchone()[0])
+            # Statement: check for transactions whose txn_date falls in the selected period
+            workflow['statement'] = conn.execute(
+                f"""SELECT MAX(bt.txn_date) FROM bank_transactions bt
+                    JOIN bank_statements bs ON bt.statement_id = bs.id
+                    WHERE {stmt_filter} AND strftime('%Y-%m', bt.txn_date) = ?""",
+                (stmt_param, period)).fetchone()[0]
 
-            workflow['verify'] = (conn.execute(
+            workflow['verify'] = conn.execute(
                 "SELECT MAX(payment_date) FROM payments WHERE property_id=? AND strftime('%Y-%m', payment_date)=?",
-                (pid, period)).fetchone()[0])
+                (pid, period)).fetchone()[0]
 
             workflow['unassigned'] = conn.execute(
                 f"""SELECT COUNT(*) FROM bank_transactions bt
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE {stmt_filter}
                       AND bt.txn_type = 'PAYBILL_CREDIT'
+                      AND strftime('%Y-%m', bt.txn_date) = ?
+                      AND (bt.ignored IS NULL OR bt.ignored = 0)
                       AND bt.id NOT IN (
                           SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)""",
-                (stmt_param,)).fetchone()[0] or 0
+                (stmt_param, period)).fetchone()[0] or 0
 
-            workflow['export'] = (conn.execute(
-                "SELECT MAX(timestamp) FROM audit_log WHERE action LIKE 'export_%'",
-                ).fetchone()[0])
+            # Report: check landlord_reports for a report covering this period
+            workflow['export'] = conn.execute(
+                """SELECT MAX(created_at) FROM landlord_reports
+                   WHERE property_id=? AND strftime('%Y-%m', period_start)=?""",
+                (pid, period)).fetchone()[0]
 
-    return render_template('tools_index.html', workflow=workflow, period=period, prop=prop)
+    # Period navigation
+    try:
+        y, m = int(period[:4]), int(period[5:7])
+        prev_period = f"{y if m > 1 else y-1:04d}-{m-1 if m > 1 else 12:02d}"
+        next_period = f"{y if m < 12 else y+1:04d}-{m+1 if m < 12 else 1:02d}"
+        at_current = period >= datetime.now().strftime('%Y-%m')
+    except (ValueError, TypeError):
+        prev_period = next_period = period
+        at_current = True
+
+    return render_template('tools_index.html', workflow=workflow, period=period, prop=prop,
+                           prev_period=prev_period, next_period=next_period, at_current=at_current)
 
 
 @app.route('/tools/test-pdf', methods=['GET', 'POST'])

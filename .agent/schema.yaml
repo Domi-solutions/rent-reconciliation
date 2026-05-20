@@ -123,6 +123,9 @@ tables:
       raw_text: {type: TEXT}
       unit_hint: {type: TEXT, added_by: migrate_add_unit_hint}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      ignored: {type: INTEGER, default: 0, note: "1 = ignored from workflow unassigned count; row not deleted; still assignable", added_by: migrate_add_bank_txn_ignored}
+      ignored_at: {type: TIMESTAMP, added_by: migrate_add_bank_txn_ignored}
+      ignored_reason: {type: TEXT, added_by: migrate_add_bank_txn_ignored}
     indexes:
       - idx_bank_txn_ref ON (mpesa_ref)
       - idx_bank_txn_stmt ON (statement_id)

@@ -559,6 +559,15 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
 - [x] All outbound SMS and portal notifications logged regardless of delivery status
 
+### Session 16: Workflow UX, Bug Fixes, Ignore Feature (2026-05-20) ✅
+
+- [x] **`generate_charges` idempotent** — replaced SELECT+INSERT with `INSERT OR IGNORE`; `rowcount` used for counter; re-running for an already-charged period no longer crashes
+- [x] **Monthly Workflow period-aware** — `tools_index()` auto-detects earliest YYYY-MM period with charges but no verified payments (not hardcoded to today's month); accepts `?period=` override; prev/next navigation arrows; invalid periods (e.g. "ARREARS") filtered out with `LIKE '20__-__'` guard
+- [x] **Workflow step correctness** — Step 3 (bank statement) checks `MAX(bt.txn_date)` scoped to the selected period (not upload date); Step 4 excludes `ignored` transactions; Step 5 checks `landlord_reports` table (not `audit_log export_%`)
+- [x] **One-click report generation** — Step 5 "Generate Report" button POSTs to `/reports/generate-for-period`; computes first/last day from YYYY-MM; generates landlord report; redirects to preview; "View Reports" link appears once done
+- [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
+- [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
+
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
 - [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"

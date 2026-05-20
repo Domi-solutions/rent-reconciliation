@@ -1,6 +1,7 @@
 """
 Admin routes for generating and viewing landlord reports.
 """
+import calendar
 import json
 from datetime import datetime, timedelta
 
@@ -29,6 +30,60 @@ def get_current_property(conn):
             return prop
     session.pop('property_id', None)
     return None
+
+
+@report_bp.route('/generate-for-period', methods=['POST'])
+def generate_for_period():
+    """One-click report generation for a YYYY-MM period (called from monthly workflow)."""
+    period = request.form.get('period', '').strip()
+    import re
+    if not period or not re.match(r'^\d{4}-\d{2}$', period):
+        flash('Invalid period.', 'error')
+        return redirect(url_for('tools_index'))
+
+    try:
+        y, m = int(period[:4]), int(period[5:7])
+        period_start = f"{y:04d}-{m:02d}-01"
+        period_end = f"{y:04d}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
+    except (ValueError, TypeError):
+        flash('Invalid period.', 'error')
+        return redirect(url_for('tools_index'))
+
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        property_id = prop['id']
+
+        try:
+            report_data = generate_landlord_report(conn, property_id, period_start, period_end)
+            report_id = generate_id('RPT')
+            conn.execute("""
+                INSERT INTO landlord_reports
+                (id, property_id, period_start, period_end, report_type, report_data)
+                VALUES (?, ?, ?, ?, 'manual', ?)
+            """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
+            conn.execute("""
+                INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, ('report_generated', 'report', report_id,
+                  f"Generated report for {prop['name']}: {period_start} to {period_end}", 'admin'))
+            try:
+                from src.messaging.owner_notify import notify_property_owners
+                _base = request.host_url.rstrip('/')
+                notify_property_owners(conn, property_id,
+                    f"Report generated: {prop['name']} ({period_start} to {period_end}).\n"
+                    f"View: {_base}/view/{property_id}/reports/{report_id}",
+                    sent_by='Admin')
+            except Exception:
+                pass
+        except Exception as e:
+            flash(f'Error generating report: {str(e)}', 'error')
+            return redirect(url_for('tools_index', period=period))
+
+    flash(f'Report generated for {period}.', 'success')
+    return redirect(url_for('reports.preview_report', report_id=report_id))
 
 
 @report_bp.route('/generate', methods=['GET', 'POST'])

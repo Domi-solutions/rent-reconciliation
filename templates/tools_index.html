@@ -11,10 +11,17 @@
   <div class="col-12">
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
       <div class="d-flex justify-content-between align-items-center">
-        <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow — {{ period }}</h6>
+        <div class="d-flex align-items-center gap-3">
+          <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow</h6>
+          <div class="d-flex align-items-center gap-1" style="font-size: 12px;">
+            <a href="{{ url_for('tools_index', period=prev_period) }}" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 11px; line-height: 1.6;">&#8592;</a>
+            <span style="font-weight: 600; color: var(--ink-1); min-width: 64px; text-align: center;">{{ period }}</span>
+            <a href="{{ url_for('tools_index', period=next_period) }}" class="btn btn-outline-secondary btn-sm py-0 px-2 {{ 'disabled' if at_current }}" style="font-size: 11px; line-height: 1.6;">&#8594;</a>
+          </div>
+        </div>
         <div style="font-size: 11px; color: var(--ink-3); display: flex; gap: 12px; align-items: center;">
-          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Done this month</span>
-          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>Needs attention</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Completed</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>Pending</span>
         </div>
       </div>
     </div>
@@ -23,12 +30,12 @@
 
         {# Step 1 — Water Charges #}
         {% set s = workflow.get('water') %}
-        {% set done = s and s[:7] == period %}
+        {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 1</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
-              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+              {% if done %}✓ {{ period }}{% else %}Not done{% endif %}
             </span>
           </div>
           <div class="data-row-unit mb-1">Water Charges</div>
@@ -38,12 +45,12 @@
 
         {# Step 2 — Generate Charges #}
         {% set s = workflow.get('charges') %}
-        {% set done = s and s[:7] == period %}
+        {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 2</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
-              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+              {% if done %}✓ {{ period }}{% else %}Not done{% endif %}
             </span>
           </div>
           <div class="data-row-unit mb-1">Generate Charges</div>
@@ -53,12 +60,12 @@
 
         {# Step 3 — Upload Bank Statement #}
         {% set s = workflow.get('statement') %}
-        {% set done = s and s[:7] == period %}
+        {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 3</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
-              {% if done %}✓ {{ s[:10] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+              {% if done %}✓ {{ s[:10] }}{% else %}Not done{% endif %}
             </span>
           </div>
           <div class="data-row-unit mb-1">Upload Bank Statement</div>
@@ -68,16 +75,15 @@
 
         {# Step 4 — Verify Payments #}
         {% set s = workflow.get('verify') %}
-        {% set done = s and s[:7] == period %}
+        {% set done = s is not none and s != '' %}
         {% set unassigned = workflow.get('unassigned', 0) %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if (done and unassigned == 0) else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 4</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if (done and unassigned == 0) else '#dc2626' }};">
-              {% if done and unassigned == 0 %}✓ {{ s[:7] }}
+              {% if done and unassigned == 0 %}✓ {{ s[:10] }}
               {% elif done %}{{ unassigned }} unassigned
-              {% elif s %}Last: {{ s[:7] }}
-              {% else %}Never done{% endif %}
+              {% else %}Not done{% endif %}
             </span>
           </div>
           <div class="data-row-unit mb-1">Verify Payments</div>
@@ -92,17 +98,23 @@
 
         {# Step 5 — Export & Report #}
         {% set s = workflow.get('export') %}
-        {% set done = s and s[:7] == period %}
+        {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
             <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 5</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
-              {% if done %}✓ {{ s[:7] }}{% elif s %}Last: {{ s[:7] }}{% else %}Never done{% endif %}
+              {% if done %}✓ {{ s[:10] }}{% else %}Not done{% endif %}
             </span>
           </div>
-          <div class="data-row-unit mb-1">Export &amp; Report</div>
-          <div class="data-row-meta mb-3">Download unit balances, payment history, and charge records.</div>
-          <a href="{{ url_for('export_page') }}" class="btn btn-outline-primary btn-sm">Export</a>
+          <div class="data-row-unit mb-1">Generate Report</div>
+          <div class="data-row-meta mb-3">Generate the owner report for {{ period }}. Downloads are available from the report preview.</div>
+          <form method="POST" action="{{ url_for('reports.generate_for_period') }}" style="display:inline;">
+            <input type="hidden" name="period" value="{{ period }}">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Generate Report</button>
+          </form>
+          {% if done %}
+          <a href="{{ url_for('reports.report_history') }}" class="btn btn-outline-secondary btn-sm ms-1">View Reports</a>
+          {% endif %}
         </div>
 
       </div>
