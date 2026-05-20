@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Move Out — {{ unit.unit_number }}{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px;">
+
+  <div class="d-flex justify-content-between align-items-baseline mb-3">
+    <div>
+      <h2 style="font-size: 20px; font-weight: 700; margin: 0;">Move Out — Unit {{ unit.unit_number }}</h2>
+      <div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">{{ unit.tenant_name }}</div>
+    </div>
+    <a href="{{ url_for('manage_units') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">← Back to units</a>
+  </div>
+
+  {# Balance summary card #}
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <div style="font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">Current account balance</div>
+    <div class="d-flex gap-4" style="flex-wrap: wrap;">
+      <div>
+        <div style="font-size: 11px; color: var(--ink-3);">Total charged</div>
+        <div style="font-size: 16px; font-weight: 600;">KES {{ "{:,.0f}".format(total_charged) }}</div>
+      </div>
+      <div>
+        <div style="font-size: 11px; color: var(--ink-3);">Total paid</div>
+        <div style="font-size: 16px; font-weight: 600;">KES {{ "{:,.0f}".format(total_paid) }}</div>
+      </div>
+      <div>
+        <div style="font-size: 11px; color: var(--ink-3);">{% if current_balance > 0 %}Arrears{% elif current_balance < 0 %}Overpayment / Credit{% else %}Balance{% endif %}</div>
+        <div style="font-size: 18px; font-weight: 700;
+          {% if current_balance > 0 %}color: var(--red);{% elif current_balance < 0 %}color: #16a34a;{% endif %}">
+          KES {{ "{:,.0f}".format(current_balance|abs) }}
+          {% if current_balance < 0 %}<span style="font-size: 12px; font-weight: 400;">(credit)</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <form method="POST" id="move-out-form">
+
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Departure date</label>
+      <input type="date" name="departure_date" id="departure_date" required
+             value="{{ today }}"
+             style="padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Deposit held (KES)</label>
+      <input type="number" name="deposit_held" id="deposit_held" min="0" step="1" value="{{ (unit.deposit_paid or 0)|int }}"
+             style="padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; width: 200px; background: var(--surface);"
+             oninput="calcDeposit()">
+      <div style="font-size: 12px; color: var(--ink-3); margin-top: 4px;">
+        {% if unit.deposit_paid and unit.deposit_paid > 0 %}
+          Pre-filled from move-in record (KES {{ "{:,.0f}".format(unit.deposit_paid) }} collected). Adjust if needed.
+        {% else %}
+          Enter 0 if no deposit was collected.
+        {% endif %}
+      </div>
+    </div>
+
+    {# Live deposit calculation #}
+    <div id="deposit-summary" style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+      <div style="font-size: 12px; font-weight: 600; color: var(--ink-3); margin-bottom: 10px;">Settlement summary</div>
+      <div class="d-flex flex-column gap-2" style="font-size: 13px;">
+        <div class="d-flex justify-content-between">
+          <span style="color: var(--ink-3);">Arrears</span>
+          <span id="calc-arrears" style="font-weight: 600;">KES {{ "{:,.0f}".format([current_balance, 0]|max) }}</span>
+        </div>
+        <div class="d-flex justify-content-between">
+          <span style="color: var(--ink-3);">Deposit applied toward arrears</span>
+          <span id="calc-applied" style="font-weight: 600;">KES 0</span>
+        </div>
+        <div class="d-flex justify-content-between" id="refund-row" style="display:none!important;">
+          <span style="color: #16a34a;">Deposit refund due</span>
+          <span id="calc-refund" style="font-weight: 600; color: #16a34a;">KES 0</span>
+        </div>
+        <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
+        <div class="d-flex justify-content-between">
+          <span style="font-weight: 600;">Remaining balance after deposit</span>
+          <span id="calc-remaining" style="font-weight: 700; font-size: 15px;">KES {{ "{:,.0f}".format([current_balance, 0]|max) }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Resolution — only shown when there's remaining debt #}
+    <div id="resolution-section" style="margin-bottom: 20px; {% if current_balance <= 0 %}display:none;{% endif %}">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px;">How should the remaining balance be handled?</label>
+      <div class="d-flex flex-column gap-2">
+        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+          <input type="radio" name="resolution" value="active" checked style="margin-top: 2px;">
+          <div>
+            <div style="font-weight: 600; font-size: 13px;">Pursuing — tenant still owes</div>
+            <div style="font-size: 12px; color: var(--ink-3);">Debt remains on record. Tenant can still pay via M-Pesa; caretaker can log payments against this tenant.</div>
+          </div>
+        </label>
+        <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+          <input type="radio" name="resolution" value="written_off" id="radio-writeoff">
+          <div>
+            <div style="font-weight: 600; font-size: 13px;">Write off</div>
+            <div style="font-size: 12px; color: var(--ink-3);">Debt is irrecoverable. Portal access revoked. Requires a note.</div>
+          </div>
+        </label>
+      </div>
+      <div id="writeoff-note-section" style="margin-top: 10px; display: none;">
+        <textarea name="write_off_note" rows="2" placeholder="Reason for write-off (e.g. tenant unreachable, legal action not viable)"
+                  style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); resize: vertical;"></textarea>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Admin notes <span style="font-weight: 400; color: var(--ink-3);">(optional)</span></label>
+      <textarea name="admin_notes" rows="2" placeholder="Any additional context about this departure..."
+                style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); resize: vertical;"></textarea>
+    </div>
+
+    <div style="background: #fff8ed; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; font-size: 13px;">
+      <strong>This will:</strong>
+      <ul style="margin: 6px 0 0 0; padding-left: 18px; color: var(--ink-2);">
+        <li>Mark Unit {{ unit.unit_number }} as vacant</li>
+        <li>Move {{ unit.tenant_name }} to departed status</li>
+        <li>Notify property owners</li>
+        <li id="portal-note">Revoke tenant portal access (no remaining debt)</li>
+      </ul>
+    </div>
+
+    <button type="submit" id="submit-btn"
+            style="padding: 10px 24px; background: var(--red, #ef4444); color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">
+      Confirm Move Out
+    </button>
+    <a href="{{ url_for('manage_units') }}"
+       style="margin-left: 12px; font-size: 14px; color: var(--ink-3); text-decoration: none;">Cancel</a>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const arrears = {{ [current_balance, 0]|max }};
+
+  function fmt(n) {
+    return 'KES ' + Math.round(n).toLocaleString();
+  }
+
+  function calcDeposit() {
+    const deposit = Math.max(parseFloat(document.getElementById('deposit_held').value) || 0, 0);
+    const applied = Math.min(deposit, arrears);
+    const refund = Math.max(deposit - arrears, 0);
+    const remaining = Math.max(arrears - deposit, 0);
+
+    document.getElementById('calc-applied').textContent = fmt(applied);
+    document.getElementById('calc-remaining').textContent = fmt(remaining);
+    document.getElementById('calc-remaining').style.color = remaining > 0 ? 'var(--red)' : 'var(--ink)';
+
+    const refundRow = document.getElementById('refund-row');
+    if (refund > 0) {
+      refundRow.style.setProperty('display', 'flex', 'important');
+      document.getElementById('calc-refund').textContent = fmt(refund);
+    } else {
+      refundRow.style.setProperty('display', 'none', 'important');
+    }
+
+    const resSection = document.getElementById('resolution-section');
+    resSection.style.display = (remaining > 0) ? '' : 'none';
+
+    const portalNote = document.getElementById('portal-note');
+    if (remaining > 0 && document.querySelector('input[name=resolution]:checked')?.value !== 'written_off') {
+      portalNote.textContent = 'Keep tenant portal access active so they can view their balance';
+    } else {
+      portalNote.textContent = 'Revoke tenant portal access';
+    }
+  }
+
+  document.getElementById('radio-writeoff').addEventListener('change', function() {
+    document.getElementById('writeoff-note-section').style.display = this.checked ? '' : 'none';
+    calcDeposit();
+  });
+  document.querySelector('input[name=resolution][value=active]').addEventListener('change', function() {
+    document.getElementById('writeoff-note-section').style.display = 'none';
+    calcDeposit();
+  });
+
+  document.getElementById('move-out-form').addEventListener('submit', function() {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+  });
+
+  calcDeposit();
+</script>
+{% endblock %}

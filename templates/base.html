@@ -15,7 +15,7 @@
     else 'payments'   if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments')
     else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
     else 'messages'   if request.endpoint.startswith('messaging.')
-    else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field')
+    else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field', 'move_out_tenant')
     else 'reports'    if request.endpoint.startswith('reports.')
     else 'activity'   if request.endpoint == 'activity'
     else 'water'      if request.endpoint in ('upload_water_charges', 'water_uploads_list', 'water_upload_detail')

@@ -12,11 +12,12 @@ Auth model:
 import json
 import random
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as _date
 
 from flask import Blueprint, render_template, abort, request, redirect, session, url_for, flash
 from src.database.db import get_connection
 from src.reports.landlord_report import enrich_report_data, generate_landlord_report
+from src.parsers.banks.registry import bank_display_name
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 
@@ -137,7 +138,7 @@ def property_dashboard(property_id):
         occ = get_property_occupancy(conn, property_id)
         occupied_units  = occ['occupied']
         vacant_units    = occ['vacant']
-        office_units    = occ['office']
+        office_units    = occ['owner_use'] + occ['short_term']
         rentable_units  = occ['rentable']
         occupancy_rate  = occ['occupancy_rate']
         total_expected  = get_expected_monthly_income(conn, property_id)
@@ -296,14 +297,17 @@ def property_payments(property_id):
         # Verified payments (bank statement + Daraja/Pesapal)
         verified = conn.execute("""
             SELECT p.amount, p.payment_date as date, u.unit_number,
-                   t.name as tenant_name,
+                   COALESCE(dt.name, t.name) as tenant_name,
                    COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref,
                    p.source,
+                   pc.departed_tenant_id,
                    'verified' as status
             FROM payments p
             JOIN units u ON u.id = p.unit_id
             LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
             LEFT JOIN bank_transactions bt ON bt.id = p.bank_txn_id
+            LEFT JOIN payment_claims pc ON pc.id = p.claim_id
+            LEFT JOIN tenants dt ON dt.id = pc.departed_tenant_id
             WHERE p.property_id = ?
             ORDER BY p.payment_date DESC
             LIMIT 50
@@ -898,20 +902,62 @@ def viewer_report_detail(property_id, report_id):
         if not report_row:
             abort(404)
 
-        report_data = json.loads(report_row['report_data'])
-        enrich_report_data(
-            report_data, conn,
-            property_id,
-            report_row['period_start'],
-            report_row['period_end'],
-        )
+        pe_date = datetime.strptime(report_row['period_end'], '%Y-%m-%d').date()
+        today = _date.today()
+        months_since = (today.year * 12 + today.month) - (pe_date.year * 12 + pe_date.month)
+        is_live = months_since < 3
+
+        if is_live:
+            report_data = generate_landlord_report(
+                conn, property_id,
+                report_row['period_start'], report_row['period_end']
+            )
+            conn.execute(
+                "UPDATE landlord_reports SET report_data=? WHERE id=?",
+                (json.dumps(report_data), report_id)
+            )
+        else:
+            report_data = json.loads(report_row['report_data'])
+            enrich_report_data(report_data, conn, property_id,
+                               report_row['period_start'], report_row['period_end'])
+
+        org_id = prop['organization_id'] if prop else None
+        unassigned_credits = []
+        if org_id:
+            _rows = conn.execute("""
+                SELECT bs.id AS statement_id, bs.filename, bs.bank_format, bs.uploaded_at,
+                       bs.period_start AS stmt_period_start, bs.period_end AS stmt_period_end,
+                       COUNT(bt.id) AS txn_count, SUM(bt.amount) AS total_amount
+                FROM bank_transactions bt
+                JOIN bank_statements bs ON bs.id = bt.statement_id
+                WHERE bs.org_id = ?
+                  AND bt.txn_type = 'PAYBILL_CREDIT'
+                  AND bt.txn_date >= ? AND bt.txn_date <= ?
+                  AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                GROUP BY bs.id
+                HAVING COUNT(bt.id) > 0
+                ORDER BY bs.uploaded_at DESC
+            """, (org_id, report_row['period_start'], report_row['period_end'])).fetchall()
+            unassigned_credits = [
+                {**dict(r), 'bank_label': bank_display_name(r['bank_format'])}
+                for r in _rows
+            ]
+        _period_start = report_row['period_start']
+        _period_end = report_row['period_end']
+        _created_at = report_row['created_at']
+        _needs_refresh = bool(report_row['needs_refresh'])
+        _refresh_reason = report_row['refresh_reason']
 
     return render_template('viewer/report_detail.html',
                           property=prop,
                           report=report_data,
-                          period_start=report_row['period_start'],
-                          period_end=report_row['period_end'],
-                          created_at=report_row['created_at'],
+                          period_start=_period_start,
+                          period_end=_period_end,
+                          created_at=_created_at,
+                          is_live=is_live,
+                          report_needs_refresh=_needs_refresh,
+                          refresh_reason=_refresh_reason,
+                          unassigned_credits=unassigned_credits,
                           active_tab='reports')
 
 

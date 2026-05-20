@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
 
 CREATE INDEX IF NOT EXISTS idx_bank_txn_ref ON bank_transactions(mpesa_ref);
 CREATE INDEX IF NOT EXISTS idx_bank_txn_stmt ON bank_transactions(statement_id);
+CREATE INDEX IF NOT EXISTS idx_bank_txn_date ON bank_transactions(txn_date);
 
 -- ============================================================
 -- 6. PAYMENT CLAIMS

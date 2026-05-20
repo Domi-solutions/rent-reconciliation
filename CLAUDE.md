@@ -160,6 +160,7 @@ rent-reconciliation/
 │   ├── owner/                # activate.html, verify_email.html (email OTP step 2), token_login.html (password-only login via access_token link)
    ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
+│   ├── move_out.html         # Move-out form: deposit offset calculator, resolution options, settlement summary
 │   ├── owners.html
 │   └── caretakers.html
 ├── scripts/
@@ -201,6 +202,15 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
 - `platform_alerts` — anomaly alerts raised on sensitive actions (owner removed = critical; rent changed >10% = warning/critical). Platform dismisses; agency cannot see.
 - `owners.payout_mpesa` — **admin has zero write path to this field**. It is set exclusively by the owner via portal OTP flow (`POST /view/<property_id>/payout/request-otp` → `confirm-otp`). Disbursements are hard-blocked until `payout_confirmed=1` AND `payout_active_at <= now()` (48-hour hold after OTP confirmation). See `_get_confirmed_payout_owner()` in `disbursements.py`.
+- `units.status` values: `occupied` | `vacant` | `owner_use` | `short_term`. `office` was renamed to `owner_use` via `migrate_rename_office_to_owner_use`. `occupied` is **only** set by the move-in flow (`add_tenant` route) — never via direct field edit or `set_unit_status`. `owner_use` and `short_term` are excluded from rentable count and charge generation. Status cannot be changed via UI when an active tenant exists.
+- `tenants.status` values: `active` | `departed` | `inactive`. `departed` = moved out with remaining debt, portal access preserved so tenant can view balance and pay. `inactive` = settled or written-off, access_token cleared. `departed` tenants appear in caretaker log-payment "Departed tenant" mode for post-departure bank matching.
+- `tenants.deposit_paid` — recorded at move-in (via `add_tenant` route). Pre-fills `deposit_held` field on the move-out form. Added by `migrate_add_deposit_paid`.
+- `tenants.move_in_notes` — optional admin notes recorded at move-in. Added by `migrate_add_deposit_paid` (same migration).
+- `tenant_departures` — one row per move-out. Columns: id, tenant_id, unit_id, property_id, departure_date, balance_at_departure, deposit_held, deposit_applied, deposit_refunded, remaining_debt, debt_status ('none'/'active'/'written_off'), write_off_note, admin_notes, created_at. Added by `migrate_add_tenant_departures`.
+- `payment_claims.departed_tenant_id` — FK to `tenants.id`; set when caretaker submits a claim in "Departed tenant" mode. Used to link post-departure payments to the correct former tenant. Added by `migrate_add_tenant_departures`.
+- `landlord_reports.needs_refresh` / `refresh_reason` / `refreshed_at` — staleness tracking for live/frozen report architecture. Reports < 3 months old regenerate on every view. ≥3 months served from stored JSON. `_flag_stale_reports()` in `app.py` sets `needs_refresh=1` after statement upload and verify_payments. Added by `migrate_add_report_refresh_fields`.
+- `unit_balances` VIEW — charges and payments scoped to current active tenant's `move_in_date` so a new tenant starts with a clean balance (no inherited history from previous tenant).
+- `bank_transactions` — has index `idx_bank_txn_date` on `(txn_date)` added by `migrate_add_bank_txn_date_index` to avoid strftime full-table scans on period queries.
 
 ---
 
@@ -216,7 +226,8 @@ phone = _normalize_phone('0712345678')  # → '+254712345678'; returns None for 
 ```python
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 occ = get_property_occupancy(conn, property_id)
-# → {'total', 'occupied', 'vacant', 'office', 'rentable', 'occupancy_rate'}
+# → {'total', 'occupied', 'vacant', 'owner_use', 'short_term', 'rentable', 'occupancy_rate', 'office'}
+# 'office' is a backward-compat alias for owner_use; rentable = total - owner_use - short_term
 income = get_expected_monthly_income(conn, property_id)  # → float KES
 months = get_months_behind(balance, monthly_rent)         # → int, 0 if monthly_rent == 0
 ```
@@ -324,7 +335,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 ```
 
 Full migration call order in `app.py` startup (append-only, never reorder):
-`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox` → `migrate_add_claim_flagging` → `migrate_add_claim_resolution` → `migrate_add_payment_notes` → `migrate_add_bank_txn_ignored`
+`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox` → `migrate_add_claim_flagging` → `migrate_add_claim_resolution` → `migrate_add_payment_notes` → `migrate_add_bank_txn_ignored` → `migrate_add_bank_txn_date_index` → `migrate_add_report_refresh_fields` → `migrate_add_tenant_departures` → `migrate_add_deposit_paid` → `migrate_rename_office_to_owner_use`
 
 ---
 

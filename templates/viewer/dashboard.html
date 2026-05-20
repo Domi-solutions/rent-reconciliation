@@ -187,14 +187,16 @@
         <td><strong>{{ unit.unit_number }}</strong></td>
         <td>
           {% if unit.status == 'vacant' %}<span class="data-row-meta">Vacant</span>
-          {% elif unit.status == 'office' %}<span class="data-row-meta">Office</span>
+          {% elif unit.status == 'short_term' %}<span class="data-row-meta">Short-term</span>
+          {% elif unit.status in ('owner_use', 'office') %}<span class="data-row-meta">Owner Use</span>
           {% else %}{{ unit.tenant_name or '—' }}{% endif %}
         </td>
         <td class="currency">KES {{ "{:,.0f}".format(unit.monthly_rent or 0) }}</td>
         <td>
           {% if balance > 0 %}<span class="status-arrears">KES {{ "{:,.0f}".format(balance) }}</span>
           {% elif unit.status == 'vacant' %}<span class="status-vacant">Vacant</span>
-          {% elif unit.status == 'office' %}<span class="status-vacant">Office</span>
+          {% elif unit.status == 'short_term' %}<span class="status-vacant">Short-term</span>
+          {% elif unit.status in ('owner_use', 'office') %}<span class="status-vacant">Owner Use</span>
           {% else %}<span class="status-paid">Clear</span>{% endif %}
         </td>
       </tr>
@@ -210,7 +212,8 @@
           <div class="data-row-unit">{{ unit.unit_number }}</div>
           <div class="data-row-meta">
             {% if unit.status == 'vacant' %}Vacant
-            {% elif unit.status == 'office' %}Office
+            {% elif unit.status == 'short_term' %}Short-term
+            {% elif unit.status in ('owner_use', 'office') %}Owner Use
             {% else %}{{ unit.tenant_name or '—' }}{% endif %}
           </div>
           <div class="data-row-meta">KES {{ "{:,.0f}".format(unit.monthly_rent or 0) }}/mo</div>
@@ -218,7 +221,8 @@
         <div class="text-end">
           {% if balance > 0 %}<div class="status-arrears">KES {{ "{:,.0f}".format(balance) }}</div>
           {% elif unit.status == 'vacant' %}<div class="status-vacant">Vacant</div>
-          {% elif unit.status == 'office' %}<div class="status-vacant">Office</div>
+          {% elif unit.status == 'short_term' %}<div class="status-vacant">Short-term</div>
+          {% elif unit.status in ('owner_use', 'office') %}<div class="status-vacant">Owner Use</div>
           {% else %}<div class="status-paid">Clear</div>{% endif %}
         </div>
       </div>

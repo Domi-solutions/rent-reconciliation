@@ -51,7 +51,13 @@
             {% endif %}
           </div>
           <div style="font-size: 13px; color: var(--ink-muted, #6b7280); margin-top: 2px;">
-            {{ r.tenant_name or 'Unknown' }} &middot; Unit {{ r.unit_number }}
+            {% if r.departed_tenant_id %}
+              {{ r.departed_tenant_name or 'Departed tenant' }}
+              <span style="font-size: 10px; background: #6b7280; color: #fff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; font-weight: 600;">Departed</span>
+            {% else %}
+              {{ r.tenant_name or 'Unknown' }}
+            {% endif %}
+            &middot; Unit {{ r.unit_number }}
           </div>
           {% if r.mpesa_ref %}
           <div style="font-size: 11px; color: #9ca3af; margin-top: 2px; font-family: monospace;">{{ r.mpesa_ref }}</div>

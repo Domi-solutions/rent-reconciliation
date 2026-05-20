@@ -9,25 +9,30 @@ from math import ceil
 def get_property_occupancy(conn, property_id):
     """
     Returns occupancy counts for a property in a single query.
-    Keys: total, occupied, vacant, office, rentable, occupancy_rate
+    Keys: total, occupied, vacant, owner_use, short_term, rentable, occupancy_rate
+    'owner_use' counts both 'owner_use' and legacy 'office' rows.
     """
     row = conn.execute("""
         SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN status = 'occupied' THEN 1 ELSE 0 END) AS occupied,
-            SUM(CASE WHEN status = 'vacant'   THEN 1 ELSE 0 END) AS vacant,
-            SUM(CASE WHEN status = 'office'   THEN 1 ELSE 0 END) AS office
+            SUM(CASE WHEN status = 'occupied'  THEN 1 ELSE 0 END) AS occupied,
+            SUM(CASE WHEN status = 'vacant'    THEN 1 ELSE 0 END) AS vacant,
+            SUM(CASE WHEN status IN ('owner_use', 'office') THEN 1 ELSE 0 END) AS owner_use,
+            SUM(CASE WHEN status = 'short_term' THEN 1 ELSE 0 END) AS short_term
         FROM units WHERE property_id = ?
     """, (property_id,)).fetchone()
-    total    = row['total']    or 0
-    occupied = row['occupied'] or 0
-    vacant   = row['vacant']   or 0
-    office   = row['office']   or 0
-    rentable = total - office
+    total      = row['total']      or 0
+    occupied   = row['occupied']   or 0
+    vacant     = row['vacant']     or 0
+    owner_use  = row['owner_use']  or 0
+    short_term = row['short_term'] or 0
+    rentable   = total - owner_use - short_term
     occupancy_rate = round(occupied / rentable * 100, 1) if rentable > 0 else 0.0
     return {
         'total': total, 'occupied': occupied, 'vacant': vacant,
-        'office': office, 'rentable': rentable, 'occupancy_rate': occupancy_rate,
+        'owner_use': owner_use, 'short_term': short_term,
+        'rentable': rentable, 'occupancy_rate': occupancy_rate,
+        'office': owner_use,  # backward-compat alias
     }
 
 

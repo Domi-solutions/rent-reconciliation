@@ -73,11 +73,30 @@
     <div class="page-title">{{ property.name }}</div>
     <div class="page-meta">{{ period_start }} → {{ period_end }} · Generated {{ (created_at or '')[:10] }}</div>
   </div>
-  <div class="d-flex gap-2 rpt-no-print">
+  <div class="d-flex gap-2 align-items-center flex-wrap rpt-no-print">
+    {% if is_live %}
+    <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:#d1fae5;color:#065f46;font-weight:600;">
+      ● Live · updates as payments are assigned
+    </span>
+    {% else %}
+    <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:#f3f4f6;color:#6b7280;font-weight:600;">
+      ● Snapshot · frozen after 3 months
+    </span>
+    {% endif %}
     <a href="{{ url_for('viewer.property_reports', property_id=property.id) }}" class="btn btn-sm btn-outline-secondary">← Reports</a>
     <button onclick="window.print()" class="btn btn-sm btn-primary">Export PDF</button>
   </div>
 </div>
+
+{% if report_needs_refresh and not is_live %}
+<div class="alert mb-4 rpt-no-print" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px 18px;">
+  <div style="font-weight:600;color:#92400e;margin-bottom:3px;">Updated bank data recorded for this period</div>
+  <div style="font-size:13px;color:#78350f;">
+    New bank activity was detected for this period after this report was last generated.
+    Contact your property manager to get a refreshed view.
+  </div>
+</div>
+{% endif %}
 
 {# HERO KPIs #}
 <div class="rpt-hero">
@@ -127,6 +146,60 @@
     </small>
   </div>
 </div>
+
+{# UNASSIGNED BANK CREDITS #}
+{% if unassigned_credits %}
+{% set ns = namespace(grand_total=0) %}
+{% for s in unassigned_credits %}{% set ns.grand_total = ns.grand_total + (s.total_amount or 0) %}{% endfor %}
+<div class="rpt-section">
+  <div class="rpt-section-header">
+    Unassigned Bank Credits — {{ period_start }} to {{ period_end }}
+    <span style="font-weight:400;margin-left:8px;">KES {{ "{:,.0f}".format(ns.grand_total) }} in bank, not yet matched to a tenant</span>
+  </div>
+  <div class="rpt-section-body" style="padding:0;">
+    <table class="table table-sm mb-0" style="font-size:13px;">
+      <thead>
+        <tr style="background:var(--bg);">
+          <th style="padding:8px 20px;font-weight:600;color:var(--ink-2);">Bank Statement</th>
+          <th class="text-center" style="padding:8px 20px;font-weight:600;color:var(--ink-2);">Credits</th>
+          <th class="text-end" style="padding:8px 20px;font-weight:600;color:var(--ink-2);">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in unassigned_credits %}
+        <tr>
+          <td style="padding:8px 20px;">
+            <div style="font-weight:500;">{{ s.bank_label }}</div>
+            {% if s.stmt_period_start and s.stmt_period_end %}
+            <div style="color:var(--ink-3);font-size:11px;margin-top:2px;">
+              Statement covers {{ s.stmt_period_start[:10] }} → {{ s.stmt_period_end[:10] }}
+              {% if s.stmt_period_start[:7] != s.stmt_period_end[:7] %}
+              <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:4px;">spans multiple months</span>
+              {% endif %}
+            </div>
+            {% endif %}
+          </td>
+          <td class="text-center" style="padding:8px 20px;">{{ s.txn_count }}</td>
+          <td class="text-end" style="padding:8px 20px;font-weight:600;">KES {{ "{:,.0f}".format(s.total_amount or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if unassigned_credits | length > 1 %}
+      <tfoot>
+        <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg);">
+          <td style="padding:8px 20px;">Total</td>
+          <td></td>
+          <td class="text-end" style="padding:8px 20px;">KES {{ "{:,.0f}".format(ns.grand_total) }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+    <div style="padding:10px 20px 14px;font-size:12px;color:var(--ink-3);">
+      Credits in bank records for this period not matched to any tenant payment.
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# PAYMENT STATUS #}
 <div class="rpt-section">

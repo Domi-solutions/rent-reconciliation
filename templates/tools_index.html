@@ -108,10 +108,17 @@
           </div>
           <div class="data-row-unit mb-1">Generate Report</div>
           <div class="data-row-meta mb-3">Generate the owner report for {{ period }}. Downloads are available from the report preview.</div>
-          <form method="POST" action="{{ url_for('reports.generate_for_period') }}" style="display:inline;">
+          <form method="POST" action="{{ url_for('reports.generate_for_period') }}" style="display:inline;" id="tools-generate-form">
             <input type="hidden" name="period" value="{{ period }}">
-            <button type="submit" class="btn btn-outline-primary btn-sm">Generate Report</button>
+            <button type="submit" class="btn btn-outline-primary btn-sm" id="tools-generate-btn">Generate Report</button>
           </form>
+          <script>
+            document.getElementById('tools-generate-form').addEventListener('submit', function() {
+              var btn = document.getElementById('tools-generate-btn');
+              btn.disabled = true;
+              btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
+            });
+          </script>
           {% if done %}
           <a href="{{ url_for('reports.report_history') }}" class="btn btn-outline-secondary btn-sm ms-1">View Reports</a>
           {% endif %}

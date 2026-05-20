@@ -1418,3 +1418,107 @@ def migrate_add_bank_txn_ignored():
             if col not in cols:
                 conn.execute(f"ALTER TABLE bank_transactions ADD COLUMN {col} {defn}")
         print("Migration complete: bank_transactions.ignored ready.")
+
+
+def migrate_add_bank_txn_date_index():
+    """Add index on bank_transactions(txn_date) to support range queries without strftime(). Idempotent."""
+    with get_connection() as conn:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bank_txn_date ON bank_transactions(txn_date)")
+        print("Migration complete: idx_bank_txn_date ready.")
+
+
+def migrate_add_tenant_departures():
+    """Add tenant_departures table, departed_tenant_id to payment_claims, update unit_balances view."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tenant_departures (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                property_id TEXT NOT NULL,
+                departure_date DATE NOT NULL,
+                balance_at_departure DECIMAL(12,2) NOT NULL DEFAULT 0,
+                deposit_held DECIMAL(12,2) NOT NULL DEFAULT 0,
+                deposit_applied DECIMAL(12,2) NOT NULL DEFAULT 0,
+                deposit_refunded DECIMAL(12,2) NOT NULL DEFAULT 0,
+                remaining_debt DECIMAL(12,2) NOT NULL DEFAULT 0,
+                debt_status TEXT NOT NULL DEFAULT 'none',
+                write_off_note TEXT,
+                admin_notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dep_tenant ON tenant_departures(tenant_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dep_property ON tenant_departures(property_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dep_debt ON tenant_departures(debt_status)")
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(payment_claims)").fetchall()]
+        if 'departed_tenant_id' not in cols:
+            conn.execute("ALTER TABLE payment_claims ADD COLUMN departed_tenant_id TEXT")
+
+        # Recreate unit_balances view to scope charges/payments to current tenant's move_in_date
+        conn.execute("DROP VIEW IF EXISTS unit_balances")
+        conn.execute("""
+            CREATE VIEW unit_balances AS
+            SELECT
+                u.id AS unit_id,
+                u.property_id,
+                u.unit_number,
+                u.monthly_rent,
+                t.id AS tenant_id,
+                t.name AS tenant_name,
+                t.phone AS tenant_phone,
+                COALESCE(charges.total, 0) AS total_charged,
+                COALESCE(payments_sum.total, 0) AS total_paid,
+                COALESCE(charges.total, 0) - COALESCE(payments_sum.total, 0) AS balance
+            FROM units u
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            LEFT JOIN (
+                SELECT rc.unit_id, SUM(rc.amount) AS total
+                FROM rent_charges rc
+                JOIN tenants at2 ON at2.unit_id = rc.unit_id AND at2.status = 'active'
+                WHERE rc.period >= COALESCE(substr(at2.move_in_date, 1, 7), '0000-00')
+                GROUP BY rc.unit_id
+            ) charges ON u.id = charges.unit_id
+            LEFT JOIN (
+                SELECT p.unit_id, SUM(p.amount) AS total
+                FROM payments p
+                JOIN tenants at3 ON at3.unit_id = p.unit_id AND at3.status = 'active'
+                WHERE p.payment_date >= COALESCE(at3.move_in_date, '0000-00-00')
+                GROUP BY p.unit_id
+            ) payments_sum ON u.id = payments_sum.unit_id
+        """)
+        print("Migration complete: tenant_departures + unit_balances view updated.")
+
+
+def migrate_add_report_refresh_fields():
+    """Add needs_refresh, refresh_reason, refreshed_at to landlord_reports. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(landlord_reports)").fetchall()]
+        additions = [
+            ('needs_refresh',  'INTEGER DEFAULT 0'),
+            ('refresh_reason', 'TEXT'),
+            ('refreshed_at',   'TIMESTAMP'),
+        ]
+        for col, defn in additions:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE landlord_reports ADD COLUMN {col} {defn}")
+        print("Migration complete: landlord_reports refresh fields ready.")
+
+
+def migrate_add_deposit_paid():
+    """Add deposit_paid to tenants table and move_in_notes."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'deposit_paid' not in cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN deposit_paid DECIMAL(12,2) DEFAULT 0")
+        if 'move_in_notes' not in cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN move_in_notes TEXT")
+        print("Migration complete: tenants.deposit_paid + move_in_notes ready.")
+
+
+def migrate_rename_office_to_owner_use():
+    """Rename unit status 'office' to 'owner_use'; add 'short_term' as valid status (no column constraint). Idempotent."""
+    with get_connection() as conn:
+        conn.execute("UPDATE units SET status = 'owner_use' WHERE status = 'office'")
+        print("Migration complete: unit status 'office' renamed to 'owner_use'.")

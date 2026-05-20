@@ -13,17 +13,55 @@
     Paste the tenant's M-Pesa message to record their payment.
   </p>
 
-  <form method="POST">
-    <div style="margin-bottom: 16px;">
-      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Unit</label>
-      <select name="unit_id" required
-              style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
-        <option value="">— Select unit —</option>
-        {% for u in units %}
-        <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} — {{ u.tenant_name }}{% endif %}</option>
-        {% endfor %}
-      </select>
+  {# Mode toggle #}
+  {% if departed_tenants %}
+  <div style="display: flex; gap: 0; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+    <button type="button" id="mode-active" onclick="setMode('active')"
+            style="flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: var(--ink); color: #fff;">
+      Active tenant
+    </button>
+    <button type="button" id="mode-departed" onclick="setMode('departed')"
+            style="flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: var(--surface); color: var(--ink-3);">
+      Departed tenant ({{ departed_tenants|length }} with debt)
+    </button>
+  </div>
+  {% endif %}
+
+  <form method="POST" id="log-form">
+    <input type="hidden" name="payment_mode" id="payment_mode" value="active">
+
+    {# Active tenant section #}
+    <div id="section-active">
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Unit</label>
+        <select name="unit_id" id="unit_id"
+                style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
+          <option value="">— Select unit —</option>
+          {% for u in units %}
+          <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} — {{ u.tenant_name }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
+
+    {# Departed tenant section #}
+    {% if departed_tenants %}
+    <div id="section-departed" style="display: none;">
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Departed tenant</label>
+        <select name="departed_tenant_id" id="departed_tenant_id"
+                style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
+          <option value="">— Select departed tenant —</option>
+          {% for d in departed_tenants %}
+          <option value="{{ d.tenant_id }}">{{ d.tenant_name }} — Unit {{ d.unit_number }} (KES {{ "{:,.0f}".format(d.remaining_debt) }} owed)</option>
+          {% endfor %}
+        </select>
+        <div style="font-size: 12px; color: var(--ink-3); margin-top: 4px;">
+          Payment will be matched to bank records using the M-Pesa reference.
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <div style="margin-bottom: 20px;">
       <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">M-Pesa Message</label>
@@ -34,11 +72,53 @@
       </div>
     </div>
 
-    <button type="submit"
+    <button type="submit" id="log-btn"
             style="padding: 9px 22px; background: var(--ink); color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">
       Log Payment
     </button>
   </form>
 
 </div>
+
+{% if departed_tenants %}
+<script>
+  function setMode(mode) {
+    document.getElementById('payment_mode').value = mode;
+    const btnActive = document.getElementById('mode-active');
+    const btnDepart = document.getElementById('mode-departed');
+    const secActive = document.getElementById('section-active');
+    const secDepart = document.getElementById('section-departed');
+    const unitSel = document.getElementById('unit_id');
+    const depSel = document.getElementById('departed_tenant_id');
+
+    if (mode === 'active') {
+      btnActive.style.background = 'var(--ink)';
+      btnActive.style.color = '#fff';
+      btnDepart.style.background = 'var(--surface)';
+      btnDepart.style.color = 'var(--ink-3)';
+      secActive.style.display = '';
+      secDepart.style.display = 'none';
+      unitSel.required = true;
+      depSel.required = false;
+    } else {
+      btnDepart.style.background = 'var(--ink)';
+      btnDepart.style.color = '#fff';
+      btnActive.style.background = 'var(--surface)';
+      btnActive.style.color = 'var(--ink-3)';
+      secActive.style.display = 'none';
+      secDepart.style.display = '';
+      unitSel.required = false;
+      depSel.required = true;
+    }
+  }
+</script>
+{% endif %}
+
+<script>
+  document.getElementById('log-form').addEventListener('submit', function() {
+    const btn = document.getElementById('log-btn');
+    btn.disabled = true;
+    btn.textContent = 'Logging…';
+  });
+</script>
 {% endblock %}

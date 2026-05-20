@@ -530,18 +530,59 @@ def log_payment(property_id):
             ORDER BY u.unit_number
         """, (property_id,)).fetchall()
 
+        departed_tenants = conn.execute("""
+            SELECT td.id AS departure_id, td.tenant_id, td.unit_id, td.remaining_debt,
+                   t.name AS tenant_name, u.unit_number
+            FROM tenant_departures td
+            JOIN tenants t ON t.id = td.tenant_id
+            JOIN units u ON u.id = td.unit_id
+            WHERE td.property_id = ? AND td.debt_status = 'active'
+            ORDER BY t.name
+        """, (property_id,)).fetchall()
+
         if request.method == 'POST':
+            payment_mode = request.form.get('payment_mode', 'active')
             message = request.form.get('message', '').strip()
-            unit_id = request.form.get('unit_id', '').strip()
+
+            # Departed tenant payment — resolve unit_id from departure record
+            if payment_mode == 'departed':
+                departed_tenant_id = request.form.get('departed_tenant_id', '').strip()
+                if not departed_tenant_id:
+                    flash('Select a departed tenant.', 'error')
+                    return render_template('caretaker/log_payment.html', property=prop,
+                                           units=units, departed_tenants=departed_tenants,
+                                           active_tab='log_payment')
+                dep_row = conn.execute(
+                    "SELECT td.unit_id, t.id AS tenant_id, t.name AS tenant_name, u.unit_number "
+                    "FROM tenant_departures td "
+                    "JOIN tenants t ON t.id = td.tenant_id "
+                    "JOIN units u ON u.id = td.unit_id "
+                    "WHERE td.tenant_id = ? AND td.property_id = ? AND td.debt_status = 'active'",
+                    (departed_tenant_id, property_id)
+                ).fetchone()
+                if not dep_row:
+                    flash('Departed tenant not found or debt already settled.', 'error')
+                    return render_template('caretaker/log_payment.html', property=prop,
+                                           units=units, departed_tenants=departed_tenants,
+                                           active_tab='log_payment')
+                unit_id = dep_row['unit_id']
+                unit_number = dep_row['unit_number']
+                _departed_tenant_id = dep_row['tenant_id']
+            else:
+                departed_tenant_id = None
+                _departed_tenant_id = None
+                unit_id = request.form.get('unit_id', '').strip()
 
             if not message:
                 flash('Paste the M-Pesa message or enter the reference code.', 'error')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, active_tab='log_payment')
+                                       units=units, departed_tenants=departed_tenants,
+                                       active_tab='log_payment')
             if not unit_id:
                 flash('Select a unit.', 'error')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, active_tab='log_payment')
+                                       units=units, departed_tenants=departed_tenants,
+                                       active_tab='log_payment')
 
             parsed = parse_mpesa_message(message)
             if not parsed.get('success'):
@@ -564,7 +605,13 @@ def log_payment(property_id):
             if existing:
                 flash(f'Reference {reference} has already been logged.', 'warning')
                 return render_template('caretaker/log_payment.html', property=prop,
-                                       units=units, active_tab='log_payment')
+                                       units=units, departed_tenants=departed_tenants,
+                                       active_tab='log_payment')
+
+            # For active-tenant path, resolve unit_number here
+            if payment_mode != 'departed':
+                unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
+                unit_number = unit_row['unit_number'] if unit_row else unit_id
 
             # Extract M-Pesa transaction date for period-based flagging
             _mpesa_ts = parsed.get('timestamp')
@@ -577,12 +624,10 @@ def log_payment(property_id):
             claim_id = generate_id('CLM')
             conn.execute("""
                 INSERT INTO payment_claims
-                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (claim_id, property_id, reference, unit_id, amount, message, 'caretaker', mpesa_date, mpesa_period))
+                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period, departed_tenant_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (claim_id, property_id, reference, unit_id, amount, message, 'caretaker', mpesa_date, mpesa_period, _departed_tenant_id))
 
-            unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
-            unit_number = unit_row['unit_number'] if unit_row else unit_id
             amt_str = f'{amount:,.0f}' if amount is not None else '-'
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -598,22 +643,27 @@ def log_payment(property_id):
                 _org_id = prop['organization_id'] if prop['organization_id'] else None
 
                 if mpesa_period:
+                    # Compute date range (avoids strftime on indexed txn_date column)
+                    _mp_y, _mp_m = int(mpesa_period[:4]), int(mpesa_period[5:7])
+                    _mp_start = f"{mpesa_period}-01"
+                    _mp_end = f"{_mp_y + 1}-01-01" if _mp_m == 12 else f"{_mp_y}-{_mp_m + 1:02d}-01"
+
                     # Check if a statement covering this specific period exists
                     if _org_id:
                         _has_bank_data = bool(conn.execute("""
                             SELECT 1 FROM bank_transactions bt
                             JOIN bank_statements bs ON bs.id = bt.statement_id
-                            WHERE bs.org_id = ? AND strftime('%Y-%m', bt.txn_date) = ?
+                            WHERE bs.org_id = ? AND bt.txn_date >= ? AND bt.txn_date < ?
                               AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
-                        """, (_org_id, mpesa_period)).fetchone())
+                        """, (_org_id, _mp_start, _mp_end)).fetchone())
                     else:
                         _has_bank_data = bool(conn.execute("""
                             SELECT 1 FROM bank_transactions bt
                             JOIN bank_statements bs ON bs.id = bt.statement_id
                             JOIN properties p ON p.id = bs.property_id
-                            WHERE p.id = ? AND strftime('%Y-%m', bt.txn_date) = ?
+                            WHERE p.id = ? AND bt.txn_date >= ? AND bt.txn_date < ?
                               AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
-                        """, (property_id, mpesa_period)).fetchone())
+                        """, (property_id, _mp_start, _mp_end)).fetchone())
                     _period_label = mpesa_period
                 else:
                     # No parsed timestamp — check across all available bank data for the org
@@ -695,6 +745,18 @@ def log_payment(property_id):
                                  f'Ref: {reference} | Unit: {unit_number} | KES {amt_str} | '
                                  f'auto-verified at caretaker submission', 'system'),
                             )
+                        # If this transaction was previously ignored, restore it
+                        if _bank_txn['ignored']:
+                            conn.execute(
+                                "UPDATE bank_transactions SET ignored=0, ignored_at=NULL, ignored_reason=NULL WHERE id=?",
+                                (_bank_txn['id'],)
+                            )
+                            conn.execute(
+                                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+                                ('txn_unignored', 'bank_transaction', _bank_txn['id'],
+                                 f'Auto-restored — matched by payment claim {claim_id} (ref {reference})', 'system'),
+                            )
+
                         _claim_verified = True
 
                     else:
@@ -744,7 +806,8 @@ def log_payment(property_id):
             return redirect(url_for('caretaker.payment_activity', property_id=property_id))
 
     return render_template('caretaker/log_payment.html', property=prop,
-                           units=units, active_tab='log_payment')
+                           units=units, departed_tenants=departed_tenants,
+                           active_tab='log_payment')
 
 
 @caretaker_bp.route('/<property_id>/payment-activity')

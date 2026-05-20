@@ -63,9 +63,9 @@ def generate_landlord_report(conn, property_id, period_start, period_end):
         "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'vacant'", (property_id,)
     ).fetchone()[0]
     office_units = conn.execute(
-        "SELECT COUNT(*) FROM units WHERE property_id = ? AND status = 'office'", (property_id,)
+        "SELECT COUNT(*) FROM units WHERE property_id = ? AND status IN ('owner_use', 'office', 'short_term')", (property_id,)
     ).fetchone()[0]
-    
+
     rentable_units = total_units - office_units
     occupancy_rate = round(occupied_units / rentable_units * 100, 1) if rentable_units > 0 else 0
 

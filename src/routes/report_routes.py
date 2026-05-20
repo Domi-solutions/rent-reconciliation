@@ -3,11 +3,12 @@ Admin routes for generating and viewing landlord reports.
 """
 import calendar
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as _date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from src.database.db import get_connection, generate_id
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
+from src.parsers.banks.registry import bank_display_name
 
 report_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
@@ -176,13 +177,47 @@ def preview_report(report_id):
             "SELECT * FROM properties WHERE id = ?", (report_row['property_id'],)
         ).fetchone()
 
-        report_data = json.loads(report_row['report_data'])
-        enrich_report_data(
-            report_data, conn,
-            report_row['property_id'],
-            report_row['period_start'],
-            report_row['period_end'],
-        )
+        # Determine if report is in the live window (< 3 months since period_end)
+        pe_date = datetime.strptime(report_row['period_end'], '%Y-%m-%d').date()
+        today = _date.today()
+        months_since = (today.year * 12 + today.month) - (pe_date.year * 12 + pe_date.month)
+        is_live = months_since < 3
+
+        if is_live:
+            report_data = generate_landlord_report(
+                conn, report_row['property_id'],
+                report_row['period_start'], report_row['period_end']
+            )
+            conn.execute(
+                "UPDATE landlord_reports SET report_data=? WHERE id=?",
+                (json.dumps(report_data), report_id)
+            )
+        else:
+            report_data = json.loads(report_row['report_data'])
+            enrich_report_data(report_data, conn, report_row['property_id'],
+                               report_row['period_start'], report_row['period_end'])
+
+        org_id = prop['organization_id'] if prop else None
+        unassigned_credits = []
+        if org_id:
+            _rows = conn.execute("""
+                SELECT bs.id AS statement_id, bs.filename, bs.bank_format, bs.uploaded_at,
+                       bs.period_start AS stmt_period_start, bs.period_end AS stmt_period_end,
+                       COUNT(bt.id) AS txn_count, SUM(bt.amount) AS total_amount
+                FROM bank_transactions bt
+                JOIN bank_statements bs ON bs.id = bt.statement_id
+                WHERE bs.org_id = ?
+                  AND bt.txn_type = 'PAYBILL_CREDIT'
+                  AND bt.txn_date >= ? AND bt.txn_date <= ?
+                  AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+                GROUP BY bs.id
+                HAVING COUNT(bt.id) > 0
+                ORDER BY bs.uploaded_at DESC
+            """, (org_id, report_row['period_start'], report_row['period_end'])).fetchall()
+            unassigned_credits = [
+                {**dict(r), 'bank_label': bank_display_name(r['bank_format'])}
+                for r in _rows
+            ]
 
         return render_template('reports/preview.html',
                              property=prop,
@@ -190,7 +225,41 @@ def preview_report(report_id):
                              report_id=report_id,
                              period_start=report_row['period_start'],
                              period_end=report_row['period_end'],
-                             created_at=report_row['created_at'])
+                             created_at=report_row['created_at'],
+                             is_live=is_live,
+                             report_needs_refresh=bool(report_row['needs_refresh']),
+                             refresh_reason=report_row['refresh_reason'],
+                             unassigned_credits=unassigned_credits)
+
+
+@report_bp.route('/<report_id>/refresh', methods=['POST'])
+def refresh_report(report_id):
+    """Force-refresh a frozen report with current data. Admin only."""
+    with get_connection() as conn:
+        report_row = conn.execute(
+            "SELECT * FROM landlord_reports WHERE id = ?", (report_id,)
+        ).fetchone()
+        if not report_row:
+            flash('Report not found.', 'error')
+            return redirect(url_for('reports.report_history'))
+
+        report_data = generate_landlord_report(
+            conn, report_row['property_id'],
+            report_row['period_start'], report_row['period_end']
+        )
+        conn.execute("""
+            UPDATE landlord_reports
+            SET report_data=?, needs_refresh=0, refresh_reason=NULL, refreshed_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (json.dumps(report_data), report_id))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('report_force_refreshed', 'report', report_id,
+             f'Period {report_row["period_start"]} to {report_row["period_end"]} | Manually refreshed by admin',
+             'admin')
+        )
+        flash('Report updated with latest data.', 'success')
+    return redirect(url_for('reports.preview_report', report_id=report_id))
 
 
 @report_bp.route('/<report_id>/caretaker')

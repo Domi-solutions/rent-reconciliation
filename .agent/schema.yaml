@@ -62,7 +62,7 @@ tables:
       monthly_rent: {type: DECIMAL(10,2), required: true}
       service_charge: {type: DECIMAL(10,2), default: 0}
       apartment_size: {type: TEXT, default: '', added_by: migrate_add_apartment_size}
-      status: {type: TEXT, default: occupied, values: [occupied, vacant, office]}
+      status: {type: TEXT, default: occupied, values: [occupied, vacant, owner_use, short_term], note: "'office' renamed to 'owner_use' via migrate_rename_office_to_owner_use. 'occupied' only set by move-in flow — never via direct edit. 'owner_use' and 'short_term' excluded from rentable count and charge generation."}
       status_changed_at: {type: TIMESTAMP, added_by: migrate_add_status_changed_at}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
     constraints:
@@ -80,11 +80,13 @@ tables:
       email: {type: TEXT}
       move_in_date: {type: DATE}
       move_out_date: {type: DATE}
-      status: {type: TEXT, default: active}
+      status: {type: TEXT, default: active, values: [active, departed, inactive], note: "departed = moved out with remaining debt (portal preserved); inactive = settled/written-off (access_token cleared)"}
       access_token: {type: TEXT, unique: true, added_by: migrate_add_tenant_access_token}
       language_preference: {type: TEXT, values: [en, sw, null], note: "NULL triggers language prompt on first inbound", added_by: migrate_add_language_preference}
       flagged: {type: INTEGER, default: 0, added_by: migrate_add_claim_flagging, note: "set=1 when a payment claim is flagged (ref not in bank); future claims lose pending-state treatment; admin clears manually"}
       portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "werkzeug pbkdf2 hash of 4-digit portal PIN for payment tab"}
+      deposit_paid: {type: DECIMAL(12,2), default: 0, added_by: migrate_add_deposit_paid, note: "Deposit collected at move-in; pre-fills move-out deposit_held field"}
+      move_in_notes: {type: TEXT, nullable: true, added_by: migrate_add_deposit_paid, note: "Optional admin notes recorded at move-in"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   bank_statements:
@@ -129,6 +131,7 @@ tables:
     indexes:
       - idx_bank_txn_ref ON (mpesa_ref)
       - idx_bank_txn_stmt ON (statement_id)
+      - idx_bank_txn_date ON (txn_date) — added by migrate_add_bank_txn_date_index; avoids strftime full-table scans on period queries
 
   payment_claims:
     status: live
@@ -154,6 +157,7 @@ tables:
       admin_cleared: {type: INTEGER, default: 0, added_by: migrate_add_claim_resolution}
       admin_note: {type: TEXT, nullable: true, added_by: migrate_add_claim_resolution, note: "mandatory min 10 chars when clearing"}
       admin_cleared_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_claim_resolution}
+      departed_tenant_id: {type: TEXT, fk: tenants.id, nullable: true, added_by: migrate_add_tenant_departures, note: "Set when caretaker submits claim in 'Departed tenant' mode; links post-departure payment to former tenant"}
     constraints:
       - UNIQUE(property_id, mpesa_ref)
       - idx_claim_period ON (mpesa_period)
@@ -372,7 +376,8 @@ tables:
 
   landlord_reports:
     status: live
-    migration: migrate_add_landlord_reports
+    migration: migrate_add_landlord_reports + migrate_add_report_refresh_fields
+    note: "Live/frozen architecture: reports < 3 months old regenerate on every view; ≥3 months served from stored report_data JSON. _flag_stale_reports() in app.py sets needs_refresh=1 after statement upload and verify_payments."
     columns:
       id: {type: TEXT, pk: true}
       property_id: {type: TEXT, fk: properties.id, required: true}
@@ -383,6 +388,9 @@ tables:
       sent_via: {type: TEXT}
       sent_to: {type: TEXT}
       sent_at: {type: TIMESTAMP}
+      needs_refresh: {type: INTEGER, default: 0, added_by: migrate_add_report_refresh_fields, note: "1 = new bank data arrived for this period; admin can force-refresh"}
+      refresh_reason: {type: TEXT, nullable: true, added_by: migrate_add_report_refresh_fields}
+      refreshed_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_report_refresh_fields}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   balance_snapshots:
@@ -613,8 +621,28 @@ tables:
       - idx_outbox_created ON (created_at)
       - idx_outbox_channel ON (channel)
 
+  tenant_departures:
+    status: live
+    migration: migrate_add_tenant_departures
+    note: "One row per move-out. Snapshot of financial state at departure. debt_status drives post-departure workflow."
+    columns:
+      id: {type: TEXT, pk: true}
+      tenant_id: {type: TEXT, fk: tenants.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      departure_date: {type: DATE, required: true}
+      balance_at_departure: {type: DECIMAL(12,2), required: true, note: "Positive = arrears; negative = credit/overpayment"}
+      deposit_held: {type: DECIMAL(12,2), default: 0}
+      deposit_applied: {type: DECIMAL(12,2), default: 0, note: "min(deposit_held, arrears)"}
+      deposit_refunded: {type: DECIMAL(12,2), default: 0, note: "max(deposit_held - arrears, 0)"}
+      remaining_debt: {type: DECIMAL(12,2), default: 0, note: "max(arrears - deposit_held, 0)"}
+      debt_status: {type: TEXT, default: none, values: [none, active, written_off], note: "none = settled; active = pursuing; written_off = irrecoverable"}
+      write_off_note: {type: TEXT, nullable: true, note: "Required when debt_status = written_off"}
+      admin_notes: {type: TEXT, nullable: true}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
 views:
   unit_balances:
     status: live
-    note: "Calculated view — never stored. Always use this for balance queries."
+    note: "Calculated view — never stored. Always use this for balance queries. Charges and payments are scoped to the current active tenant's move_in_date so a new tenant starts with a clean balance (no inherited history from previous tenant)."
     columns: [unit_id, property_id, unit_number, monthly_rent, tenant_id, tenant_name, tenant_phone, total_charged, total_paid, balance]

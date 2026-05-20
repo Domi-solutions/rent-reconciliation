@@ -143,9 +143,9 @@ def parse_tenant_excel(file_path: str) -> dict:
                 'service_charge': 0.0,
                 'contact': '',
                 'pending_rent': 0.0,
-                'status': 'office',
+                'status': 'owner_use',
             })
-            warnings.append(f'Row {row_num}: Unit {unit_number} marked as OFFICE (rent=0)')
+            warnings.append(f'Row {row_num}: Unit {unit_number} marked as Owner Use (rent=0)')
             continue
 
         # Handle Vacant units

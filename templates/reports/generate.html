@@ -6,22 +6,29 @@
     <h4 class="mb-4">Generate Landlord Report</h4>
     <div class="card">
       <div class="card-body">
-        <form method="POST">
+        <form method="POST" id="generate-report-form">
           <div class="mb-3">
             <label for="period_start" class="form-label">Period Start</label>
-            <input type="date" class="form-control" id="period_start" name="period_start" 
+            <input type="date" class="form-control" id="period_start" name="period_start"
                    value="{{ default_start }}" required>
           </div>
           <div class="mb-3">
             <label for="period_end" class="form-label">Period End</label>
-            <input type="date" class="form-control" id="period_end" name="period_end" 
+            <input type="date" class="form-control" id="period_end" name="period_end"
                    value="{{ default_end }}" required>
           </div>
           <div class="d-grid gap-2 d-md-flex justify-content-md-end">
             <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">Generate Report</button>
+            <button type="submit" class="btn btn-primary" id="generate-btn">Generate Report</button>
           </div>
         </form>
+        <script>
+          document.getElementById('generate-report-form').addEventListener('submit', function() {
+            var btn = document.getElementById('generate-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generating…';
+          });
+        </script>
       </div>
     </div>
     <div class="mt-3">

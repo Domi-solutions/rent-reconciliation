@@ -44,6 +44,10 @@ blueprints:
       - "POST /payments/ignore/<txn_id> — mark bank_transaction ignored=1; excluded from workflow unassigned count; row preserved; accepts optional reason form field"
       - "POST /payments/unignore/<txn_id> — restore ignored transaction to unmatched pool (ignored=0)"
       - "POST /payments/auto-assign/<txn_id> — one-click assign via unit_hint; now uses org_id for statement lookup (was broken for org-scoped statements)"
+      - "GET /units/<unit_id>/move-out — move-out form: balance summary card, deposit offset calculator, resolution options (settled/pursuing/written-off)"
+      - "POST /units/<unit_id>/move-out — process move-out: creates tenant_departures row, updates tenant status, clears unit, writes audit_log, notifies owners"
+      - "GET /add-tenant — move-in form: unit selector (vacant only), name, phone, move_in_date, deposit_paid, move_in_notes"
+      - "POST /add-tenant — move-in: creates tenant, auto-generates access_token, sends welcome SMS, notifies owners, writes two audit_log entries"
 
   viewer:
     file: src/routes/viewer_routes.py
@@ -97,8 +101,8 @@ blueprints:
       - "GET /caretaker/<property_id>/issues"
       - "POST /caretaker/<property_id>/issues/new"
       - "POST /caretaker/<property_id>/issues/<id>/resolve"
-      - "GET /caretaker/<property_id>/log-payment"
-      - "POST /caretaker/<property_id>/log-payment — submit M-Pesa SMS; at-submission bank check has three outcomes: (1) ref found + no payment → create payment + allocate + verify immediately; (2) ref found + payment already assigned → link + verify; (3) ref absent from bank data → flag immediately. Leaves pending only if no bank data exists yet. Period-specific if mpesa_period parsed; org-wide scan if mpesa_period NULL."
+      - "GET /caretaker/<property_id>/log-payment — includes departed_tenants list for 'Departed tenant' mode toggle"
+      - "POST /caretaker/<property_id>/log-payment — submit M-Pesa SMS; payment_mode='active' (default) or 'departed' (with departed_tenant_id). At-submission bank check has three outcomes: (1) ref found + no payment → create payment + allocate + verify immediately; (2) ref found + payment already assigned → link + verify; (3) ref absent from bank data → flag immediately. Leaves pending only if no bank data exists yet. Period-specific if mpesa_period parsed; org-wide scan if mpesa_period NULL. Departed mode tags claim with departed_tenant_id."
       - "GET /caretaker/<property_id>/reports — list of landlord_reports for this property (operational view only, no financials)"
       - "GET /caretaker/<property_id>/reports/<report_id> — report detail (occupancy, arrears follow-up, tenant movement, vacant units — no KES amounts)"
       - "GET /caretaker/<property_id>/water — list of past water reading batches"
@@ -131,7 +135,8 @@ blueprints:
       - "GET /reports — report history"
       - "GET/POST /reports/generate"
       - "POST /reports/generate-for-period — one-click report generation from monthly workflow; accepts period (YYYY-MM) form field; computes first/last day; generates landlord report; redirects to preview"
-      - "GET /reports/<id>"
+      - "GET /reports/<id> — live/frozen: reports < 3 months old regenerate on view; ≥3 months serve stored JSON; staleness banner + refresh button shown when needs_refresh=1"
+      - "POST /reports/<id>/refresh — admin force-refresh a frozen report; regenerates report_data, clears needs_refresh"
       - "GET /reports/<id>/caretaker"
 
   agent:

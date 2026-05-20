@@ -111,6 +111,11 @@ from src.database.db import (
     migrate_add_claim_resolution,
     migrate_add_payment_notes,
     migrate_add_bank_txn_ignored,
+    migrate_add_bank_txn_date_index,
+    migrate_add_report_refresh_fields,
+    migrate_add_tenant_departures,
+    migrate_add_deposit_paid,
+    migrate_rename_office_to_owner_use,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -158,6 +163,11 @@ migrate_add_claim_flagging()
 migrate_add_claim_resolution()
 migrate_add_payment_notes()
 migrate_add_bank_txn_ignored()
+migrate_add_bank_txn_date_index()
+migrate_add_report_refresh_fields()
+migrate_add_tenant_departures()
+migrate_add_deposit_paid()
+migrate_rename_office_to_owner_use()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -311,6 +321,56 @@ def _audit_display_details(conn, row):
     except Exception:
         pass
     return details
+
+
+def _flag_stale_reports(conn, org_id, min_date, max_date):
+    """After new bank data arrives, detect frozen reports whose period overlaps and flag them.
+
+    A report is frozen once its period_end is >= 3 months in the past. Live reports
+    auto-regenerate on view so they don't need flagging.
+    """
+    from datetime import date as _date
+    today = _date.today()
+    today_months = today.year * 12 + today.month
+
+    affected = conn.execute("""
+        SELECT lr.id, lr.property_id, lr.period_start, lr.period_end
+        FROM landlord_reports lr
+        JOIN properties p ON p.id = lr.property_id
+        WHERE p.organization_id = ?
+          AND lr.period_start <= ?
+          AND lr.period_end >= ?
+          AND (lr.needs_refresh IS NULL OR lr.needs_refresh = 0)
+    """, (org_id, max_date, min_date)).fetchall()
+
+    for report in affected:
+        pe = report['period_end'][:7]
+        pe_months = int(pe[:4]) * 12 + int(pe[5:7])
+        if today_months - pe_months < 3:
+            continue  # still in live window — auto-regenerates on view, no flag needed
+
+        reason = (
+            f"New bank data covering {min_date[:10]} to {max_date[:10]} was added on {today.isoformat()}. "
+            "This report covers a frozen period and may no longer reflect current figures."
+        )
+        conn.execute(
+            "UPDATE landlord_reports SET needs_refresh=1, refresh_reason=? WHERE id=?",
+            (reason, report['id'])
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('report_stale_flagged', 'report', report['id'],
+             f'Period {report["period_start"]} to {report["period_end"]} | '
+             f'New bank data: {min_date[:10]} to {max_date[:10]}', 'system')
+        )
+        try:
+            from src.platform.guardian import raise_alert as _raise_alert
+            _raise_alert(conn, 'report_needs_refresh',
+                f'Frozen report for {report["period_start"]}→{report["period_end"]} '
+                f'may be stale — new bank data added ({min_date[:10]} to {max_date[:10]}).',
+                org_id=org_id, property_id=report['property_id'], severity='warning')
+        except Exception:
+            pass
 
 
 def get_current_property(conn):
@@ -750,7 +810,7 @@ def dashboard():
         occ = get_property_occupancy(conn, property_id)
         expected_monthly = get_expected_monthly_income(conn, property_id)
 
-        stats['office_units'] = occ['office']
+        stats['office_units'] = occ['owner_use'] + occ['short_term']
         stats['vacant_units'] = occ['vacant']
         stats['occupied_units'] = occ['occupied']
         stats['occupancy_rate'] = occ['occupancy_rate']
@@ -1040,11 +1100,17 @@ def manage_units():
         )
 
 
+_UNIT_STATUS_LABELS = {
+    'occupied': 'Occupied', 'vacant': 'Vacant',
+    'owner_use': 'Owner Use', 'short_term': 'Short-term Rental',
+}
+_NON_OCCUPIED_STATUSES = ('vacant', 'owner_use', 'short_term')
+
 @app.route('/units/<unit_id>/set-status', methods=['POST'])
 def set_unit_status(unit_id):
-    """Change a unit's status between occupied, vacant, and office."""
+    """Change unit status. Occupied units must go through the move-out flow first."""
     new_status = request.form.get('status', '').strip()
-    if new_status not in ('occupied', 'vacant', 'office'):
+    if new_status not in _NON_OCCUPIED_STATUSES:
         flash('Invalid status value.', 'error')
         return redirect(url_for('manage_units'))
     with get_connection() as conn:
@@ -1058,6 +1124,12 @@ def set_unit_status(unit_id):
         if not unit:
             flash('Unit not found.', 'error')
             return redirect(url_for('manage_units'))
+        has_active_tenant = conn.execute(
+            "SELECT 1 FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1", (unit_id,)
+        ).fetchone()
+        if has_active_tenant:
+            flash(f"Unit {unit['unit_number']} has an active tenant — use the Move Out flow to change its status.", 'error')
+            return redirect(url_for('manage_units'))
         old_status = unit['status']
         conn.execute(
             "UPDATE units SET status = ?, status_changed_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1068,7 +1140,7 @@ def set_unit_status(unit_id):
             ('unit_status_changed', 'unit', unit_id,
              f"Unit: {unit['unit_number']} | {old_status} → {new_status}", 'admin'),
         )
-    flash(f"Unit {unit['unit_number']} is now {new_status}.", 'success')
+    flash(f"Unit {unit['unit_number']} is now {_UNIT_STATUS_LABELS.get(new_status, new_status)}.", 'success')
     return redirect(url_for('manage_units'))
 
 
@@ -1100,8 +1172,13 @@ def edit_unit_field(unit_id):
             except ValueError:
                 return jsonify(ok=False, error='Must be a number.')
         elif field == 'status':
-            if value not in ('occupied', 'vacant', 'office'):
-                return jsonify(ok=False, error='Invalid status.')
+            if value not in _NON_OCCUPIED_STATUSES:
+                return jsonify(ok=False, error='Invalid status. Use the move-in flow to mark a unit as occupied.')
+            has_active_tenant = conn.execute(
+                "SELECT 1 FROM tenants WHERE unit_id = ? AND status = 'active' LIMIT 1", (unit_id,)
+            ).fetchone()
+            if has_active_tenant:
+                return jsonify(ok=False, error='Unit has an active tenant — use the Move Out flow first.')
         elif field == 'unit_number':
             if not value:
                 return jsonify(ok=False, error='Unit number cannot be empty.')
@@ -1210,15 +1287,19 @@ def manage_tenants():
 
 @app.route('/tenants/add', methods=['GET', 'POST'])
 def add_tenant():
-    """Add tenant; only show units without an active tenant."""
+    """Move-in flow: create tenant with deposit, auto-generate portal link, notify owners."""
+    from src.messaging.owner_notify import notify_property_owners
+    from src.messaging.delivery import send_sms_async
+
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
             return redirect(url_for('property_list'))
 
+        # Only vacant units are available for move-in
         units = conn.execute("""
             SELECT * FROM units
-            WHERE property_id = ? AND status IN ('occupied', 'vacant')
+            WHERE property_id = ? AND status = 'vacant'
             AND id NOT IN (SELECT unit_id FROM tenants WHERE status = 'active' AND unit_id IS NOT NULL)
             ORDER BY unit_number
         """, (property_row['id'],)).fetchall()
@@ -1227,15 +1308,27 @@ def add_tenant():
             name = request.form.get('name', '').strip()
             phone = request.form.get('phone', '').strip()
             unit_id = request.form.get('unit_id', '').strip()
+            move_in_date = request.form.get('move_in_date', '').strip()
+            move_in_notes = request.form.get('move_in_notes', '').strip()
+            try:
+                deposit_paid = float(request.form.get('deposit_paid', '0') or '0')
+            except ValueError:
+                deposit_paid = 0.0
+
             if not name:
                 flash('Tenant name is required.', 'error')
-                return redirect(url_for('add_tenant'))
+                return render_template('add_tenant.html', property=property_row, units=units,
+                                       today=datetime.now().date().isoformat())
             if not unit_id:
                 flash('Please select a unit.', 'error')
-                return redirect(url_for('add_tenant'))
+                return render_template('add_tenant.html', property=property_row, units=units,
+                                       today=datetime.now().date().isoformat())
+            if not move_in_date:
+                move_in_date = datetime.now().date().isoformat()
 
-            # Auto-link to persons if phone matches an existing record
+            # Auto-link to persons if phone matches existing record
             person_id = None
+            phone_norm = None
             if phone:
                 phone_norm = _normalize_phone(phone)
                 if phone_norm:
@@ -1245,10 +1338,15 @@ def add_tenant():
                     if existing_person:
                         person_id = existing_person['id']
 
+            access_token = secrets.token_urlsafe(32)
             tenant_id = generate_id('TENANT')
             conn.execute(
-                "INSERT INTO tenants (id, property_id, unit_id, name, phone, move_in_date, person_id) VALUES (?, ?, ?, ?, ?, date('now'), ?)",
-                (tenant_id, property_row['id'], unit_id, name, phone, person_id),
+                "INSERT INTO tenants (id, property_id, unit_id, name, phone, move_in_date, "
+                "deposit_paid, move_in_notes, access_token, person_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (tenant_id, property_row['id'], unit_id, name,
+                 phone_norm or phone or None,
+                 move_in_date, deposit_paid, move_in_notes or None, access_token, person_id),
             )
             conn.execute(
                 "UPDATE units SET status = 'occupied', status_changed_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1256,14 +1354,53 @@ def add_tenant():
             )
             unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
             unit_number = unit_row['unit_number'] if unit_row else unit_id
+
+            deposit_str = f' | Deposit: KES {deposit_paid:,.0f}' if deposit_paid > 0 else ''
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('tenant_created', 'tenant', tenant_id, f'Tenant: {name} | Unit: {unit_number}', 'admin'),
+                ('tenant_moved_in', 'tenant', tenant_id,
+                 f'Tenant: {name} | Unit: {unit_number} | Move-in: {move_in_date}{deposit_str}',
+                 'admin'),
             )
-            flash(f'Tenant {name} added successfully!', 'success')
-            return redirect(url_for('manage_tenants'))
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('tenant_token_generated', 'tenant', tenant_id,
+                 f'Tenant: {name} | Unit: {unit_number} | Portal link auto-generated at move-in',
+                 'admin'),
+            )
 
-        return render_template('add_tenant.html', property=property_row, units=units)
+            # Welcome SMS if phone provided
+            portal_url = f"{request.host_url.rstrip('/')}/tenant/{access_token}"
+            if phone_norm:
+                welcome_msg = (
+                    f"Welcome to {property_row['name']}! "
+                    f"Your rent portal (view balance, charges, payments): {portal_url}"
+                )
+                try:
+                    send_sms_async([phone_norm], welcome_msg)
+                except Exception:
+                    pass
+
+            # Notify owners
+            try:
+                owner_msg = (
+                    f"New move-in: {name}, Unit {unit_number} ({move_in_date})."
+                )
+                if deposit_paid > 0:
+                    owner_msg += f" Deposit collected: KES {deposit_paid:,.0f}."
+                notify_property_owners(conn, property_row['id'], owner_msg, sent_by='Admin')
+            except Exception:
+                pass
+
+            flash(
+                f'{name} moved in to Unit {unit_number}. '
+                f'Portal link generated{" and welcome SMS sent" if phone_norm else ""}.',
+                'success'
+            )
+            return redirect(url_for('manage_units'))
+
+        return render_template('add_tenant.html', property=property_row, units=units,
+                               today=datetime.now().date().isoformat())
 
 
 @app.route('/tenants/<tenant_id>/generate-token', methods=['POST'])
@@ -1367,46 +1504,169 @@ def link_tenant_person(tenant_id):
     return redirect(url_for('manage_tenants'))
 
 
-@app.route('/tenants/<tenant_id>/move-out', methods=['POST'])
-def move_out_tenant(tenant_id):
-    """Mark tenant as moved out; set their unit to vacant."""
+@app.route('/units/<unit_id>/move-out', methods=['GET', 'POST'])
+def move_out_tenant(unit_id):
+    """Move-out flow with deposit offset, debt tracking, and departure record."""
+    from src.platform.guardian import platform_log, raise_alert
+    from src.messaging.owner_notify import notify_property_owners
+
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
             flash('Please select a property first.', 'error')
             return redirect(url_for('property_list'))
-        tenant = conn.execute(
-            "SELECT t.id, t.name, t.unit_id, u.unit_number FROM tenants t "
-            "LEFT JOIN units u ON t.unit_id = u.id WHERE t.id = ? AND t.property_id = ?",
-            (tenant_id, property_row['id']),
+
+        unit = conn.execute(
+            "SELECT u.*, t.id AS tenant_id, t.name AS tenant_name, t.phone AS tenant_phone, "
+            "       t.move_in_date, t.access_token AS tenant_token "
+            "FROM units u "
+            "LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' "
+            "WHERE u.id = ? AND u.property_id = ?",
+            (unit_id, property_row['id']),
         ).fetchone()
-        if not tenant:
-            flash('Tenant not found.', 'error')
-            return redirect(url_for('manage_tenants'))
-        conn.execute(
-            "UPDATE tenants SET status = 'inactive', move_out_date = date('now'), access_token = NULL WHERE id = ?",
-            (tenant_id,),
-        )
-        if tenant['unit_id']:
+
+        if not unit:
+            flash('Unit not found.', 'error')
+            return redirect(url_for('manage_units'))
+
+        if not unit['tenant_id']:
+            flash('This unit has no active tenant to move out.', 'error')
+            return redirect(url_for('manage_units'))
+
+        balance_row = conn.execute(
+            "SELECT balance, total_charged, total_paid FROM unit_balances WHERE unit_id = ?",
+            (unit_id,)
+        ).fetchone()
+        current_balance = float(balance_row['balance']) if balance_row else 0.0
+        total_charged = float(balance_row['total_charged']) if balance_row else 0.0
+        total_paid = float(balance_row['total_paid']) if balance_row else 0.0
+
+        prop = conn.execute(
+            "SELECT organization_id FROM properties WHERE id = ?", (property_row['id'],)
+        ).fetchone()
+        org_id = prop['organization_id'] if prop else None
+
+        if request.method == 'POST':
+            departure_date = request.form.get('departure_date', '').strip()
+            deposit_held_str = request.form.get('deposit_held', '0').strip()
+            resolution = request.form.get('resolution', 'active')
+            admin_notes = request.form.get('admin_notes', '').strip()
+            write_off_note = request.form.get('write_off_note', '').strip()
+
+            if not departure_date:
+                flash('Departure date is required.', 'error')
+                return render_template('move_out.html', unit=unit,
+                                       current_balance=current_balance,
+                                       total_charged=total_charged, total_paid=total_paid,
+                                       property=property_row)
+
+            try:
+                deposit_held = float(deposit_held_str) if deposit_held_str else 0.0
+            except ValueError:
+                deposit_held = 0.0
+
+            # Deposit offset calculation
+            arrears = max(current_balance, 0.0)
+            deposit_applied = min(deposit_held, arrears)
+            deposit_refunded = max(deposit_held - arrears, 0.0)
+            remaining_debt = max(arrears - deposit_held, 0.0)
+            remaining_credit = max(-current_balance - deposit_held, 0.0)  # if tenant overpaid
+
+            if remaining_debt == 0:
+                debt_status = 'none'
+            elif resolution == 'written_off':
+                debt_status = 'written_off'
+            else:
+                debt_status = 'active'
+
+            dep_id = generate_id('DEP')
+            conn.execute("""
+                INSERT INTO tenant_departures
+                (id, tenant_id, unit_id, property_id, departure_date,
+                 balance_at_departure, deposit_held, deposit_applied, deposit_refunded,
+                 remaining_debt, debt_status, write_off_note, admin_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (dep_id, unit['tenant_id'], unit_id, property_row['id'], departure_date,
+                  current_balance, deposit_held, deposit_applied, deposit_refunded,
+                  remaining_debt, debt_status, write_off_note or None, admin_notes or None))
+
+            # Preserve access_token for active-debt tenants so portal still works
+            if debt_status == 'active':
+                conn.execute(
+                    "UPDATE tenants SET status = 'departed', move_out_date = ? WHERE id = ?",
+                    (departure_date, unit['tenant_id']),
+                )
+            else:
+                conn.execute(
+                    "UPDATE tenants SET status = 'inactive', move_out_date = ?, access_token = NULL WHERE id = ?",
+                    (departure_date, unit['tenant_id']),
+                )
+
             conn.execute(
                 "UPDATE units SET status = 'vacant', status_changed_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (tenant['unit_id'],),
+                (unit_id,)
             )
-        unit_number = tenant['unit_number'] or '-'
-        conn.execute(
-            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('tenant_moved_out', 'tenant', tenant_id,
-             f"Tenant: {tenant['name']} | Unit: {unit_number} | Moved out", 'admin'),
-        )
-        from src.platform.guardian import platform_log
-        prop = conn.execute("SELECT organization_id FROM properties WHERE id = ?",
-                            (property_row['id'],)).fetchone()
-        platform_log(conn, 'tenant_moved_out', 'tenant', tenant_id,
-                     f"Tenant {tenant['name']} | Unit {unit_number} | Moved out",
-                     org_id=prop['organization_id'] if prop else None,
-                     property_id=property_row['id'])
-    flash(f"{tenant['name']} moved out. Unit {unit_number} is now vacant.", 'success')
-    return redirect(url_for('manage_units'))
+
+            debt_note = ''
+            if debt_status == 'active':
+                debt_note = f' | Remaining debt: KES {remaining_debt:,.0f} — pursuing'
+            elif debt_status == 'written_off':
+                debt_note = f' | Remaining debt KES {remaining_debt:,.0f} written off'
+            elif deposit_refunded > 0:
+                debt_note = f' | Deposit refund due: KES {deposit_refunded:,.0f}'
+
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('tenant_moved_out', 'tenant', unit['tenant_id'],
+                 f"Tenant: {unit['tenant_name']} | Unit: {unit['unit_number']} | "
+                 f"Moved out {departure_date} | Arrears: KES {arrears:,.0f} | "
+                 f"Deposit: KES {deposit_held:,.0f}{debt_note}", 'admin'),
+            )
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('departure_record_created', 'tenant_departure', dep_id,
+                 f"Tenant: {unit['tenant_name']} | Unit: {unit['unit_number']} | "
+                 f"Balance: KES {current_balance:,.0f} | Deposit: KES {deposit_held:,.0f} | "
+                 f"Debt status: {debt_status}", 'admin'),
+            )
+
+            platform_log(conn, 'tenant_moved_out', 'tenant', unit['tenant_id'],
+                         f"Tenant {unit['tenant_name']} | Unit {unit['unit_number']} | "
+                         f"Moved out {departure_date} | Balance KES {current_balance:,.0f} | "
+                         f"Deposit KES {deposit_held:,.0f} | Debt status: {debt_status}",
+                         org_id=org_id, property_id=property_row['id'])
+
+            try:
+                owner_msg = (
+                    f"Move-out recorded: {unit['tenant_name']}, Unit {unit['unit_number']} "
+                    f"({departure_date}). "
+                )
+                if debt_status == 'active':
+                    owner_msg += f"Outstanding balance: KES {remaining_debt:,.0f} — being pursued."
+                elif debt_status == 'written_off':
+                    owner_msg += f"Debt of KES {remaining_debt:,.0f} written off."
+                elif deposit_refunded > 0:
+                    owner_msg += f"Deposit refund due: KES {deposit_refunded:,.0f}."
+                else:
+                    owner_msg += "Account settled."
+                notify_property_owners(conn, property_row['id'], owner_msg, sent_by='Admin')
+            except Exception:
+                pass
+
+            flash(
+                f"{unit['tenant_name']} moved out from Unit {unit['unit_number']}. "
+                f"{'Outstanding debt of KES {:,.0f} being tracked.'.format(remaining_debt) if debt_status == 'active' else 'Account closed.'}",
+                'success'
+            )
+            return redirect(url_for('manage_units'))
+
+        return render_template('move_out.html',
+                               unit=unit,
+                               current_balance=current_balance,
+                               total_charged=total_charged,
+                               total_paid=total_paid,
+                               property=property_row,
+                               today=datetime.now().date().isoformat())
 
 
 # ============================================================
@@ -2249,6 +2509,10 @@ def upload_statement():
                      f'File: {filename} | Format: {_bank_label(bank_format)} | {len(transactions)} txns | {paybill_count} rent | {len(parse_error_txns)} parse errors', 'admin'),
                 )
 
+                # Detect frozen reports whose period overlaps with this statement's transactions
+                if org_id and period_start and period_end:
+                    _flag_stale_reports(conn, org_id, period_start, period_end)
+
             if not validation.get('valid'):
                 flash(
                     f'Statement saved but could not be fully parsed ({_bank_label(bank_format)}): '
@@ -2522,6 +2786,16 @@ def verify_payments(statement_id):
                 "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (claim['id'],),
             )
+            if bank_txn['ignored']:
+                conn.execute(
+                    "UPDATE bank_transactions SET ignored=0, ignored_at=NULL, ignored_reason=NULL WHERE id=?",
+                    (bank_txn['id'],)
+                )
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+                    ('txn_unignored', 'bank_transaction', bank_txn['id'],
+                     f'Auto-restored — matched by verified claim {claim["id"]} (ref {ref})', 'system'),
+                )
             info = conn.execute(
                 "SELECT u.unit_number, t.name AS tenant_name FROM units u "
                 "LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' WHERE u.id = ?",
@@ -2644,6 +2918,16 @@ def verify_payments(statement_id):
                 "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (claim['id'],),
             )
+            if bank_txn['ignored']:
+                conn.execute(
+                    "UPDATE bank_transactions SET ignored=0, ignored_at=NULL, ignored_reason=NULL WHERE id=?",
+                    (bank_txn['id'],)
+                )
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+                    ('txn_unignored', 'bank_transaction', bank_txn['id'],
+                     f'Auto-restored — matched by resolved flagged claim {claim["id"]} (ref {ref})', 'system'),
+                )
 
             # Unflag tenant only if they have no other remaining flagged claims
             _remaining_flags = conn.execute(
@@ -2825,6 +3109,17 @@ def verify_payments(statement_id):
             _msg += f' {cleared_count} previously flagged claim(s) cleared — ref found in this statement.'
         if flagged_count:
             _msg += f' {flagged_count} unmatched claim(s) flagged — see arrears for details.'
+
+        # Detect frozen reports whose period overlaps with this statement's transactions
+        if verify_org_id:
+            _vp_dates = conn.execute(
+                "SELECT MIN(txn_date) as min_d, MAX(txn_date) as max_d "
+                "FROM bank_transactions WHERE statement_id=? AND txn_date IS NOT NULL",
+                (statement_id,)
+            ).fetchone()
+            if _vp_dates and _vp_dates['min_d']:
+                _flag_stale_reports(conn, verify_org_id, _vp_dates['min_d'], _vp_dates['max_d'])
+
         flash(_msg, 'success' if verified_count else ('warning' if flagged_count else 'info'))
         return redirect(url_for('statement_detail', statement_id=statement_id))
 
@@ -2965,11 +3260,13 @@ def statement_detail(statement_id):
                 ORDER BY u.unit_number
             """, (property_row['id'],)).fetchall()
 
-        matched, unmatched = [], []
+        matched, unmatched, ignored_by_stmt = [], [], []
         for row in credits:
             r = dict(row)
             if r['payment_id']:
                 matched.append(r)
+            elif r.get('ignored'):
+                ignored_by_stmt.append(r)
             else:
                 unmatched.append(r)
 
@@ -2990,6 +3287,7 @@ def statement_detail(statement_id):
         stmt=stmt,
         matched=matched,
         unmatched=unmatched,
+        ignored_by_stmt=ignored_by_stmt,
         other_txns=other_txns,
         parse_errors=parse_errors,
         units=units,
@@ -4452,12 +4750,15 @@ def review():
                        p.caretaker_note, p.caretaker_note_at,
                        u.unit_number, t.name AS tenant_name,
                        COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref, bt.txn_date,
-                       pc.claimed_amount, pc.source AS claim_source
+                       pc.claimed_amount, pc.source AS claim_source,
+                       pc.departed_tenant_id,
+                       dt.name AS departed_tenant_name
                 FROM payments p
                 JOIN units u ON p.unit_id = u.id
                 LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
                 LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
                 LEFT JOIN payment_claims pc ON pc.id = p.claim_id
+                LEFT JOIN tenants dt ON dt.id = pc.departed_tenant_id
                 WHERE p.property_id = ?
                 ORDER BY p.payment_date DESC, p.id
             """, (property_id,)).fetchall()
@@ -4727,8 +5028,8 @@ def onboard_preview():
                 for row in data['rows']:
                     # Create unit
                     unit_id = f"{property_id}-{row['unit_number']}"
-                    if row.get('status') == 'office':
-                        unit_status = 'office'
+                    if row.get('status') in ('office', 'owner_use'):
+                        unit_status = 'owner_use'
                     elif row['tenant_name']:
                         unit_status = 'occupied'
                     else:
@@ -4818,12 +5119,17 @@ def tools_index():
                 "SELECT MAX(created_at) FROM rent_charges WHERE property_id=? AND charge_type='rent' AND period=?",
                 (pid, period)).fetchone()[0]
 
+            # Compute date range for the selected YYYY-MM period (avoids strftime on indexed column)
+            _p_y, _p_m = int(period[:4]), int(period[5:7])
+            _p_start = f"{period}-01"
+            _p_end = f"{_p_y + 1}-01-01" if _p_m == 12 else f"{_p_y}-{_p_m + 1:02d}-01"
+
             # Statement: check for transactions whose txn_date falls in the selected period
             workflow['statement'] = conn.execute(
                 f"""SELECT MAX(bt.txn_date) FROM bank_transactions bt
                     JOIN bank_statements bs ON bt.statement_id = bs.id
-                    WHERE {stmt_filter} AND strftime('%Y-%m', bt.txn_date) = ?""",
-                (stmt_param, period)).fetchone()[0]
+                    WHERE {stmt_filter} AND bt.txn_date >= ? AND bt.txn_date < ?""",
+                (stmt_param, _p_start, _p_end)).fetchone()[0]
 
             workflow['verify'] = conn.execute(
                 "SELECT MAX(payment_date) FROM payments WHERE property_id=? AND strftime('%Y-%m', payment_date)=?",
@@ -4834,11 +5140,11 @@ def tools_index():
                     JOIN bank_statements bs ON bt.statement_id = bs.id
                     WHERE {stmt_filter}
                       AND bt.txn_type = 'PAYBILL_CREDIT'
-                      AND strftime('%Y-%m', bt.txn_date) = ?
+                      AND bt.txn_date >= ? AND bt.txn_date < ?
                       AND (bt.ignored IS NULL OR bt.ignored = 0)
                       AND bt.id NOT IN (
                           SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)""",
-                (stmt_param, period)).fetchone()[0] or 0
+                (stmt_param, _p_start, _p_end)).fetchone()[0] or 0
 
             # Report: check landlord_reports for a report covering this period
             workflow['export'] = conn.execute(

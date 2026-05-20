@@ -120,7 +120,7 @@ def dashboard():
             total    = occ['total']
             occupied = occ['occupied']
             vacant   = occ['vacant']
-            office   = occ['office']
+            office   = occ['owner_use'] + occ['short_term']
             expected = get_expected_monthly_income(conn, pid)
 
             collected = float(conn.execute(

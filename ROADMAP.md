@@ -559,6 +559,20 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
 - [x] All outbound SMS and portal notifications logged regardless of delivery status
 
+### Session 18: Move-in/Move-out Flows, Unit Types, Report Architecture (2026-05-20) ✅
+
+- [x] **Move-out flow** — proper form (`templates/move_out.html`) with deposit offset (deposit_applied, deposit_refunded, remaining_debt), live JS settlement calculator, three resolution states (settled/pursuing/written-off); `tenant_departures` table records snapshot; `tenants.status='departed'` preserves portal access for active-debt tenants; `tenants.status='inactive'` + access_token cleared for settled/written-off
+- [x] **Departed tenant payments** — caretaker log-payment gains "Departed tenant" mode toggle; dropdown of departed tenants with active debt; claims tagged with `departed_tenant_id`; same bank-matching + auto-verify / flag logic applies; "Departed" badge in admin review and owner payments views
+- [x] **Move-in flow** — `add_tenant` route rewritten as move-in flow: form captures unit, name, phone, move_in_date, deposit_paid, move_in_notes; auto-generates portal access token; sends welcome SMS to tenant; notifies property owners; writes two audit_log entries (`tenant_moved_in`, `tenant_token_generated`); `templates/add_tenant.html` rewritten as "Move In Tenant" form
+- [x] **Unit type expansion** — `office` status renamed to `owner_use` via `migrate_rename_office_to_owner_use` (data migration, not schema change); `short_term` added as new status value; both excluded from rentable count, charge generation, and occupancy metric; `_NON_OCCUPIED_STATUSES` / `_UNIT_STATUS_LABELS` constants centralise the taxonomy; all templates updated
+- [x] **Status change clash fix** — `set_unit_status` and `edit_unit_field` block raw status change when unit has active tenant; 'occupied' status rejected via direct edit; units page shows read-only "Occupied" text (non-editable) instead of dropdown for occupied units; move-in is the only path to 'occupied'
+- [x] **`unit_balances` VIEW updated** — charges and payments scoped to current active tenant's `move_in_date` so a new tenant starts with a clean slate (no inherited history)
+- [x] **Live/frozen report architecture** — reports < 3 months old regenerate on every view; ≥3 months served from stored JSON; `needs_refresh` flag set after statement upload and verify_payments for affected frozen periods; admin force-refresh button; owner viewer shows read-only staleness notice
+- [x] **Unassigned credits in reports** — admin preview and owner report detail show unassigned bank inflows grouped by statement (includes ignored transactions — financial reality, not workflow state); statement period range shown to prevent illusion credits belong to one month
+- [x] **`tenants.deposit_paid`** — recorded at move-in; pre-fills move-out form's deposit_held field with descriptive hint (`migrate_add_deposit_paid`)
+- [x] **`idx_bank_txn_date`** — index on bank_transactions(txn_date) via `migrate_add_bank_txn_date_index` to avoid strftime full scans on period queries
+- [x] **Spinner on all report generate buttons** — admin preview, owner viewer generate, monthly workflow step-5 button all disabled + "Generating…" text on click to prevent double-submission
+
 ### Session 17: Fraud Detection Hardening (2026-05-20) ✅
 
 - [x] **At-submission three-outcome bank check** — when caretaker logs a payment claim, the system immediately cross-references the ref against existing bank data: (1) ref found + no existing payment → create payment, FIFO allocate, verify claim immediately; (2) ref found + payment already assigned → link claim to that payment, verify; (3) ref absent from bank data → flag immediately with `ref_not_found`. Only leaves `pending` if no bank data exists yet for the relevant period.

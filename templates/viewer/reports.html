@@ -9,11 +9,19 @@
     <div class="page-meta">Period summaries verified against bank records.</div>
   </div>
   <form method="POST" action="{{ url_for('viewer.owner_generate_report', property_id=property.id) }}"
+        id="owner-generate-form"
         style="display:flex; align-items:center; gap:8px;">
     <input type="month" name="period" value="{{ default_period }}" max="{{ default_period }}"
            style="padding:5px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
-    <button type="submit" class="btn btn-primary btn-sm">Generate Report</button>
+    <button type="submit" class="btn btn-primary btn-sm" id="owner-generate-btn">Generate Report</button>
   </form>
+  <script>
+    document.getElementById('owner-generate-form').addEventListener('submit', function() {
+      var btn = document.getElementById('owner-generate-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Generating…';
+    });
+  </script>
 </div>
 
 {% if reports %}

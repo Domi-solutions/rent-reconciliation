@@ -228,6 +228,11 @@
           {% endif %}
           <button class="btn btn-outline-primary btn-sm" style="font-size:11px;padding:3px 10px;"
                   data-bs-toggle="collapse" data-bs-target="#assign-{{ r.id }}">Assign</button>
+          <form method="post" action="{{ url_for('ignore_transaction', txn_id=r.id) }}" style="display:inline;">
+            <input type="hidden" name="next" value="{{ url_for('statement_detail', statement_id=stmt.id) }}">
+            <button type="submit" class="btn btn-outline-secondary btn-sm" style="font-size:11px;padding:3px 10px;"
+                    title="Ignore — skip in workflow count, still visible below">Ignore</button>
+          </form>
         </td>
       </tr>
       {# Manual assignment form #}
@@ -277,6 +282,90 @@
                 <button type="submit" class="btn btn-primary btn-sm">Assign</button>
                 <button type="button" class="btn btn-outline-secondary btn-sm"
                         data-bs-toggle="collapse" data-bs-target="#assign-{{ r.id }}">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── Ignored credits ──────────────────────────────────────────────────────── #}
+{% if ignored_by_stmt %}
+<div class="surface-card mb-4">
+  <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:#6b7280;">Ignored <span>({{ ignored_by_stmt|length }})</span></div>
+      <div style="font-size:12px;color:#9ca3af;margin-top:2px;">Excluded from the workflow unassigned count. Still assignable — restore to bring back into the workflow.</div>
+    </div>
+  </div>
+  <table class="table mb-0" style="font-size:12px;">
+    <thead>
+      <tr>
+        <th style="width:90px;">Date</th>
+        <th style="width:110px;">Ref</th>
+        <th>Sender</th>
+        <th class="text-end" style="width:100px;">Amount</th>
+        <th style="width:130px;">Ignored at</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in ignored_by_stmt %}
+      <tr style="opacity:0.7;">
+        <td style="color:#6b7280;">{{ r.txn_date or '—' }}</td>
+        <td><code style="font-size:11px;">{{ r.mpesa_ref or '—' }}</code></td>
+        <td style="color:#6b7280;">{{ r.sender_name or '—' }}</td>
+        <td class="text-end" style="color:#6b7280;">KES {{ "{:,.0f}".format(r.amount) }}</td>
+        <td style="color:#9ca3af;font-size:11px;">{{ r.ignored_at[:10] if r.ignored_at else '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('unignore_transaction', txn_id=r.id) }}" style="display:inline;">
+            <input type="hidden" name="next" value="{{ url_for('statement_detail', statement_id=stmt.id) }}">
+            <button type="submit" class="btn btn-outline-secondary btn-sm" style="font-size:11px;padding:3px 10px;">Restore</button>
+          </form>
+          <button class="btn btn-outline-primary btn-sm ms-1" style="font-size:11px;padding:3px 10px;"
+                  data-bs-toggle="collapse" data-bs-target="#assign-ignored-{{ r.id }}">Assign</button>
+        </td>
+      </tr>
+      <tr class="collapse" id="assign-ignored-{{ r.id }}">
+        <td colspan="6" style="background:#f0f9ff;padding:12px 16px;">
+          <form method="post" action="{{ url_for('statement_assign_payment', statement_id=stmt.id, txn_id=r.id) }}">
+            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#0369a1;">
+              Assign {{ r.mpesa_ref or r.id }} · KES {{ "{:,.0f}".format(r.amount) }}
+            </div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-3">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Unit <span style="color:#dc2626;">*</span></label>
+                <select name="unit_id" class="form-select form-select-sm" required>
+                  <option value="">Select unit…</option>
+                  {% if prop_count > 1 %}
+                    {% set ns = namespace(cur_prop='') %}
+                    {% for u in units %}
+                      {% if u.property_name != ns.cur_prop %}
+                        {% if ns.cur_prop %}</optgroup>{% endif %}
+                        <optgroup label="{{ u.property_name }}">
+                        {% set ns.cur_prop = u.property_name %}
+                      {% endif %}
+                      <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}</option>
+                    {% endfor %}
+                    {% if ns.cur_prop %}</optgroup>{% endif %}
+                  {% else %}
+                    {% for u in units %}
+                    <option value="{{ u.id }}">{{ u.unit_number }}{% if u.tenant_name %} · {{ u.tenant_name }}{% endif %}</option>
+                    {% endfor %}
+                  {% endif %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label style="font-size:11px;font-weight:600;color:#374151;">Reason <span style="color:#dc2626;">*</span></label>
+                <input type="text" name="reason" class="form-control form-control-sm" required minlength="5"
+                  placeholder="e.g. Confirmed with tenant">
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm" style="font-size:11px;">Assign</button>
               </div>
             </div>
           </form>

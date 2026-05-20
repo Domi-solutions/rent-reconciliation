@@ -341,3 +341,32 @@ Good entry: "Cursor writes queries against the schema it last read, not accounti
 **Git log usage:** Cursor commits after every build. Claude can reference the commit hash in entries to pinpoint exactly what Cursor changed. When diagnosing issues, run `git log` and `git diff` to see what Cursor actually built.
 
 The goal: after 3-4 build cycles, this file becomes precise enough that Cursor makes zero repeated mistakes.
+
+---
+
+## Performance Backlog
+
+Known bottlenecks that are acceptable at current scale (1 property, ~50 units) but should be addressed as the platform grows. Reviewed 2026-05-20.
+
+### DONE — strftime() on bank_transactions.txn_date (fixed 2026-05-20)
+Range queries (`bt.txn_date >= ? AND bt.txn_date < ?`) now replace all `strftime('%Y-%m', bt.txn_date) = ?` calls. Index `idx_bank_txn_date` added. Affects: `caretaker_routes.py log_payment()`, `app.py tools_index()`.
+
+### PENDING — verify_payments() loads all pending/flagged claims into memory
+**Threshold:** ~200+ units across multiple properties.
+**Fix:** Process in batches of 500 using `LIMIT/OFFSET`, or add `AND pc.id > ? ORDER BY pc.id` cursor pagination. Both loops in `verify_payments()` need the same treatment.
+
+### PENDING — enrich_with_suggestions() Tier 1 does one query per row with a unit hint
+**File:** `src/reconciliation/matcher.py`
+**Fix:** At function entry, load all units for the org into a dict keyed by normalised unit number (`UPPER(TRIM(unit_number))`). Replace `_lookup_hint(hint)` with a dict lookup. One query instead of N.
+
+### PENDING — PDF parsing blocks the request thread
+**File:** `app.py` `/statements/upload` route.
+**Threshold:** Scanned PDFs via Claude vision take 5–15s. Digital PDFs via pdfplumber take ~1–3s.
+**Fix:** Write the file, set statement status to `parsing`, return immediately with a "Processing…" flash. Parse in a background thread (same pattern as `send_sms_async`). Poll for completion or refresh on the statement list.
+
+### PENDING — payments(payment_date) has no index; strftime filter on it is a full scan
+**File:** `app.py tools_index()` — `strftime('%Y-%m', payment_date)=?`
+**Fix:** Add `CREATE INDEX IF NOT EXISTS idx_payment_date ON payments(payment_date)` and rewrite to range query. Low priority — payments table stays small relative to bank_transactions.
+
+### FUTURE — APScheduler + SQLite write contention at 2+ gunicorn workers
+WAL mode is already set (`PRAGMA journal_mode = WAL` in `get_connection()`). As long as there is a single gunicorn worker this is safe. Adding a second worker risks write contention from scheduled jobs overlapping with web requests. Fix at that point: extract scheduler to a dedicated Fly process or use Redis/RQ.
