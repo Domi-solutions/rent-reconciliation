@@ -34,8 +34,8 @@ blueprints:
       - "POST /payments/verify — verify claims against bank statement"
       - "GET /owners — owner management"
       - "GET /caretakers — caretaker management"
-      - "GET /login — login form"
-      - "POST /login — authenticate admin"
+      - "GET /login — unified login form for org admin, owner (person), and master ADMIN_PASSWORD"
+      - "POST /login — authenticate; org → dashboard; owner → owner.dashboard (never follows next_url to avoid auth-loop)"
       - "GET /logout — clear session"
       - "GET /tools — monthly workflow (tools_index); queries DB for per-step completion timestamps; returns workflow dict + current period for green/red status indicators"
 
@@ -173,6 +173,7 @@ blueprints:
       - "GET /platform/statements/<statement_id>/pdf — serve stored PDF file via send_file()"
       - "GET /platform/parsers — parser test tools (PDF/SMS/Excel tabs); no DB writes; calls parsers directly"
       - "POST /platform/parsers — submit file or SMS text for parse preview; returns result inline"
+      - "GET /platform/outbox — all outbound messages logged to platform_outbox; filter by channel + status; up to 300 entries"
 
   inbound:
     file: src/routes/inbound_routes.py
@@ -198,13 +199,18 @@ blueprints:
     prefix: /owner
     auth: session['person_id'] + session['person_role'] == 'owner' (persons-based login)
     status: live
-    note: "Distinct from /view/* token-based flow. person_id from persons table; bridges into existing viewer by setting session['owner_id']."
+    note: "Persons-based owner login. Login is at unified /login (not /owner/login). person_id from persons table; bridges into existing viewer by setting session['owner_id']."
+    exempt_from_admin_auth: true
     key_routes:
-      - "GET /owner/login"
-      - "POST /owner/login — authenticate via persons.phone + password_hash"
       - "GET /owner/logout"
       - "GET /owner/dashboard — portfolio view across all owned properties (occupancy, arrears, collection rate)"
       - "GET /owner/<property_id>/ — verify ownership then redirect into /view/<property_id>"
+      - "GET /owner/activate/<token> — activation landing; shows set-password form using activation_token"
+      - "POST /owner/activate/<token> — set password, generate email OTP, redirect to verify_email"
+      - "GET /owner/verify-email — OTP entry form (step 2 of activation)"
+      - "POST /owner/verify-email — verify OTP (verify_otp action) or resend (resend_otp action); on success logs in and redirects to owner.dashboard"
+      - "GET /owner/l/<token> — token login page; looks up owner by owners.access_token; states: invalid|not_activated|ready"
+      - "POST /owner/l/<token> — password-only login (no email required); verifies against persons.password_hash; sets person session"
 
   viewer_wallet:
     note: "Owner wallet tab in viewer blueprint. Full payout account management with OTP + 48h hold security model. Admin cannot set payout_mpesa — owner-only via portal."

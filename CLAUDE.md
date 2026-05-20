@@ -24,11 +24,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `README.md` — how to run and deploy
 
 **Next steps (in order):**
-1. Full end-to-end test + demo run: fresh property → bank statement workflow → SMS sandbox → M-Pesa STK Push sandbox → disbursement sandbox
+1. **Mowin data recreation** — fresh dev DB, onboard Mowin via `/onboard`, run Jan→May workflow with real bank statements. Validates the product end-to-end with real data.
 2. Phase 4 (The Conversation): LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md` Phase 4 checklist
 3. Phase 5 (The Coordinator): admin task feed, anomaly detection, caretaker morning briefing — see `ROADMAP.md` Phase 5 checklist
-4. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
-5. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
+4. Sprint 2 security: D2 (lock owner password after first login), D5 (management fee rate guard), D6 (owner activity tab in viewer)
+5. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
+6. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
+5. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
+6. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
 
 **Phases 0–3 and Phase G are COMPLETE. Do not re-implement anything in those phases.**
 
@@ -127,7 +130,9 @@ rent-reconciliation/
 │   ├── reports/
 │   │   └── landlord_report.py   # generate_report() + enrich_report_data()
 │   ├── messaging/
-│   │   ├── delivery.py       # send_sms(), phone normalizer (07xx → +2547xx)
+│   │   ├── delivery.py       # send_sms(); every call logs to platform_outbox via _log_sms()
+│   │   ├── email.py          # send_email() via SMTP (Mailtrap-compatible); returns (False, 'SMTP not configured') if env vars absent
+│   │   ├── outbox.py         # log_outbox() — writes every outbound message to platform_outbox regardless of channel or delivery status
 │   │   ├── owner_notify.py   # notify_property_owners()
 │   │   └── reminders.py      # Due-date reminder generation
 │   ├── payments/             # Phase G — COMPLETE
@@ -152,7 +157,8 @@ rent-reconciliation/
 │   ├── messaging/            # broadcast, templates, reminders, schedules
 │   ├── reports/              # history, preview, caretaker_preview
 │   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, reports.html, report_detail.html, water.html, water_new.html
-│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html
+│   ├── owner/                # activate.html, verify_email.html (email OTP step 2), token_login.html (password-only login via access_token link)
+   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
 │   ├── owners.html
 │   └── caretakers.html
@@ -183,6 +189,8 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `bank_statements` is **org-scoped**: statements belong to the org (bank account), not a property. `property_id` is nullable — NULL means org-wide. Always query by `WHERE org_id = ?`. Upload never forces a property tag. Verify/assign always runs org-wide. The statements list shows all org statements with a per-statement coverage badge (which properties have verified payments). `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = image PDF parsed via Claude Haiku vision; balance validation is skipped for scanned statements (vision can't read running totals reliably).
 - `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
 - `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
+- `property_owners.is_primary` — auto-set to 1 on the first owner assigned to a property. Admin cannot remove a primary owner via the UI; must contact platform to transfer. `remove_property_from_owner` route blocks with 400 if `is_primary=1`. Existing rows migrated by `migrate_add_primary_owner` using `MIN(rowid)` per property.
+- `platform_outbox` — every outbound message logged here regardless of channel or delivery status. Written by `log_outbox()` in `src/messaging/outbox.py`. Status values: `sent` | `failed` | `simulated` (simulated = no API configured, code visible for testing). Never used for business logic — audit/debug only. Filters: channel, status. Surfaced at `/platform/outbox`.
 - `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
 - `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
@@ -304,14 +312,14 @@ from src.database.db import migrate_add_charge_type  # etc.
 ```
 
 Full migration call order in `app.py` startup (append-only, never reorder):
-`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings`
+`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox`
 
 ---
 
 ## User Roles
 
 - **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`)
-- **Property Owner**: View-only `/view/*`; shared password (`VIEWER_PASSWORD`); Reports + owner inbox
+- **Property Owner**: Primary login at `/login` (email + password) or direct token link `/owner/l/<token>` (password only). Person account via `persons` table. Also has legacy view-only `/view/*` access bridged from person session.
 - **Caretaker**: `/caretaker/<property_id>`; named account (name+password) or `CARETAKER_PASSWORD` fallback
 - **Tenant**: Read-only `/tenant/<token>`; token in URL, no session
 
@@ -319,8 +327,16 @@ Full migration call order in `app.py` startup (append-only, never reorder):
 
 ## Portal-Specific Rules
 
+### Owner Login (/login + /owner/*)
+- Unified `/login` page handles: org admin (email/password in `organizations`), owner person (email/password in `persons`), and master `ADMIN_PASSWORD`
+- Owner persons login sets `session['person_id']` + `session['person_role']='owner'`; owner routes bridge into existing viewer session by also setting `session['owner_id']`
+- Token link `/owner/l/<token>` uses `owners.access_token` — shows password-only form (no email needed); three states: invalid token, not_activated (links to activation), ready
+- Activation flow: admin sets initial password → email OTP sent via `send_email()` → `verify_email` clears OTP + logs in owner
+- OTP is always logged to `platform_outbox`; if SMTP unconfigured, status='simulated' and code visible in `/platform/outbox`
+- `persons.email` is **immutable** once `password_hash` is set (account activated). Admin can edit name/phone but not email. Enforced in `edit_owner()`.
+
 ### Owner Viewer (/view/*)
-- Auth: `VIEWER_PASSWORD` → `session['owner_id']`; property list filtered via `property_owners` M:M
+- Auth: bridged from person session (preferred) or legacy `VIEWER_PASSWORD` → `session['owner_id']`; property list filtered via `property_owners` M:M
 - Ownership check on every `/view/<property_id>/...` route — returns 403 if not in `property_owners`
 - Templates extend `viewer/base_viewer.html`; pass `active_tab`
 - Notifications page: SELECT all columns from `owner_messages` — omitting any silently hides data
@@ -510,9 +526,16 @@ Key gotcha: Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by 
 
 ## Business Context
 
-- Kenya property management agency (2-3 person team). One property: "Mowin Apartments" (44 units, `PROP-45ED445A`)
-- Target: 3-5 properties near-term. Management fee: ~8% (embedded in disbursement spread, not a visible line item)
-- Tenants pay M-Pesa; bank statements confirm. Custom tech is a genuine differentiator in the Kenya market
+- **We are the platform.** Domi is operated by its founders. `/platform/*` is Domi's control room.
+- **First customer:** Mowin Apartments (44 units, Athi River). Used to build and validate the product.
+- **Target market:** 1,000+ properties at Mowin scale (40–120 units) across Kenya. Market is large, fragmented, undigitized.
+- **Revenue:** `platform_fee_rate` (default 1%) deducted from each landlord disbursement. Not a subscription. PMO never sees it — it's silent in the float. Bridge period: informal monthly payment per PMO while payment rail credentials are pending.
+- **Go-to-market:** PMOs are the buyers. Owners are the advocates. Recruit agents who bring PMOs and earn a share of transaction fee revenue.
+- **Bank statements are transitional.** They exist to acquire customers while Daraja/Pesapal credentials are pending. Once the payment rail is live, tenants pay via Domi Paybill and the statement upload workflow becomes legacy-only.
+- Two fees — never confuse them:
+  - `properties.management_fee_rate` — agency's fee, set by PMO, visible to PMO
+  - `properties.platform_fee_rate` — Domi's fee, set by platform only, never appears in org admin routes or templates
+- Tenants pay M-Pesa; bank statements confirm (transitional). Custom tech is a genuine differentiator in the Kenya market.
 
 ---
 
@@ -528,17 +551,19 @@ Agency admin and property owner are different parties with potentially conflicti
 ### Separation of control (never violate)
 - `owners.phone` — admin-writable; any change SMSes the old number (D1)
 - `owners.payout_mpesa` — owner-write-only ONLY; no admin write path; never appears in admin SELECT queries (D7)
-- `owners.password_hash` — admin-settable at creation; Sprint 2 will lock after first owner login (D2)
+- `persons.email` — immutable once `password_hash` is set; admin cannot change email of an activated owner account (D2 partial)
+- `property_owners.is_primary` — first owner assigned is auto-marked primary; admin cannot remove primary owner; requires platform intervention to transfer
 
-### Implemented defenses (Sprint 1 — 2026-05-19)
+### Implemented defenses (Sprint 1 — 2026-05-19 / Sprint 1.5 — 2026-05-20)
 - **D1**: `POST /owners/<id>/edit` — phone change SMSes old number + platform_log
-- **D3**: All property_owners writes (assign/remove/delete) SMS affected owners + raise critical alert
+- **D2 (partial)**: `persons.email` immutable after activation; enforced in `edit_owner()`; full password-lock planned Sprint 2
+- **D3**: All property_owners writes (assign/remove/delete) SMS affected owners + raise critical alert; primary owner removal blocked entirely
 - **D4**: `_get_confirmed_payout_owner()` in `disbursements.py` — hard blocks if >1 confirmed payout owner
 - **D7**: `manage_owners` query never SELECTs `payout_mpesa`; disbursements log last 4 digits only
 - **D9**: `delete_payment` + `statement_correct_payment` — SMS active tenant on unit when payment reversed
 
 ### Planned defenses (Sprint 2+)
-- **D2**: Lock `set_owner_password` write path after first owner login
+- **D2 (full)**: Lock owner's own password-change route after first login; separate from admin-set path
 - **D5**: Guard on `properties.management_fee_rate` changes (when property settings UI is built)
 - **D6**: Owner activity tab at `/view/<property_id>/activity` (reads platform_shadow_log)
 - **D8**: Cumulative rent drift detection in `src/agent/detector.py` (Phase 5)

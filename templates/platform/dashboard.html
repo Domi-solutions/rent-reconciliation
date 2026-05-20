@@ -74,6 +74,7 @@
           <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Organisation</th>
           <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Properties</th>
           <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Units</th>
+          <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Platform Fee</th>
           <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Last Activity</th>
           <th style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;">Status</th>
           <th></th>
@@ -91,6 +92,7 @@
           </td>
           <td>{{ org.property_count }}</td>
           <td>{{ org.unit_count }}</td>
+          <td style="font-size: 13px; color: #4a5568;">{{ (org.platform_fee_rate * 100) | round(2) }}%</td>
           <td style="font-size: 13px; color: #4a5568;">
             {% if org.last_activity %}
               {{ org.last_activity[:16] }}
@@ -184,6 +186,11 @@
           <div class="mb-3">
             <label class="form-label">Phone</label>
             <input type="text" name="contact_phone" class="form-control" placeholder="+254 7xx xxx xxx">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Platform fee rate (%)</label>
+            <input type="number" name="platform_fee_rate" class="form-control" value="1" min="0" max="10" step="0.1">
+            <div class="form-text">Domi's transaction fee on disbursements (default 1%). Not visible to the org.</div>
           </div>
           <div class="mb-2">
             <label class="form-label">Slug <span style="font-weight:400;color:#718096;">(optional)</span></label>

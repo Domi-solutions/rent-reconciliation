@@ -25,6 +25,18 @@ def require_platform_auth():
     return redirect(url_for("platform.login", next=request.url))
 
 
+@platform_bp.context_processor
+def inject_pending_deletion_count():
+    try:
+        with get_connection() as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM properties WHERE status='deletion_requested'"
+            ).fetchone()[0]
+        return {"pending_deletion_count": n}
+    except Exception:
+        return {"pending_deletion_count": 0}
+
+
 @platform_bp.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -49,7 +61,7 @@ def logout():
 def dashboard():
     with get_connection() as conn:
         orgs = conn.execute(
-            "SELECT id, name, slug, contact_email, is_active, created_at, admin_password_hash IS NOT NULL AS has_password FROM organizations ORDER BY created_at DESC"
+            "SELECT id, name, slug, contact_email, is_active, created_at, platform_fee_rate, admin_password_hash IS NOT NULL AS has_password FROM organizations ORDER BY created_at DESC"
         ).fetchall()
 
         org_stats = []
@@ -80,6 +92,7 @@ def dashboard():
                     "is_active": org["is_active"],
                     "has_password": org["has_password"],
                     "created_at": org["created_at"],
+                    "platform_fee_rate": float(org["platform_fee_rate"] or 0.01),
                     "property_count": prop_count,
                     "unit_count": unit_count,
                     "last_activity": last_activity,
@@ -118,6 +131,35 @@ def dashboard():
     )
 
 
+@platform_bp.route("/outbox")
+def outbox():
+    channel = request.args.get("channel", "")
+    status = request.args.get("status", "")
+    with get_connection() as conn:
+        clauses = []
+        params = []
+        if channel:
+            clauses.append("channel = ?")
+            params.append(channel)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        entries = conn.execute(
+            f"SELECT * FROM platform_outbox {where} ORDER BY created_at DESC LIMIT 300",
+            params,
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM platform_outbox").fetchone()[0]
+    return render_template(
+        "platform/outbox.html",
+        entries=entries,
+        total=total,
+        filter_channel=channel,
+        filter_status=status,
+        active_tab="outbox",
+    )
+
+
 @platform_bp.route("/errors")
 def errors():
     error_type = request.args.get("type", "")
@@ -153,6 +195,12 @@ def create_org():
     contact_phone = request.form.get("contact_phone", "").strip() or None
     slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
     password = request.form.get("password", "").strip()
+    try:
+        platform_fee_rate = float(request.form.get("platform_fee_rate", "1").strip()) / 100
+    except (ValueError, AttributeError):
+        platform_fee_rate = 0.01
+    platform_fee_rate = max(0.0, min(0.10, platform_fee_rate))  # clamp 0–10%
+
     if not name:
         flash("Organisation name is required.", "danger")
         return redirect(url_for("platform.dashboard"))
@@ -168,9 +216,12 @@ def create_org():
             return redirect(url_for("platform.dashboard"))
         org_id = generate_id("ORG")
         conn.execute(
-            "INSERT INTO organizations (id, name, slug, contact_email, contact_phone, admin_password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+            """INSERT INTO organizations
+               (id, name, slug, contact_email, contact_phone, admin_password_hash, platform_fee_rate)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (org_id, name, slug or None, contact_email, contact_phone,
-             generate_password_hash(password) if password else None),
+             generate_password_hash(password) if password else None,
+             platform_fee_rate),
         )
     flash(f"Organisation '{name}' created." + (" Login password set." if password else " No login password set yet."), "success")
     return redirect(url_for("platform.dashboard"))
@@ -535,3 +586,165 @@ def parsers():
         result=result,
         message=message,
     )
+
+
+@platform_bp.route("/deletions")
+def deletions():
+    with get_connection() as conn:
+        pending = conn.execute("""
+            SELECT p.id, p.name, p.address, p.deletion_requested_at,
+                   o.name AS org_name, o.id AS org_id,
+                   CAST(julianday('now') - julianday(p.deletion_requested_at) AS INTEGER) AS days_elapsed
+            FROM properties p
+            LEFT JOIN organizations o ON o.id = p.organization_id
+            WHERE p.status = 'deletion_requested'
+            ORDER BY p.deletion_requested_at ASC
+        """).fetchall()
+
+        orgs = conn.execute(
+            "SELECT id, name FROM organizations WHERE is_active = 1 ORDER BY name"
+        ).fetchall()
+
+    return render_template("platform/deletions.html",
+        pending=pending, orgs=orgs, active_tab="deletions")
+
+
+@platform_bp.route("/properties/<property_id>/cancel-deletion", methods=["POST"])
+def cancel_deletion(property_id):
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ? AND status = 'deletion_requested'", (property_id,)
+        ).fetchone()
+        if not prop:
+            flash("Property not found or not pending deletion.", "danger")
+            return redirect(url_for("platform.deletions"))
+
+        conn.execute(
+            "UPDATE properties SET status='active', deletion_requested_at=NULL WHERE id=?",
+            (property_id,))
+
+        from src.platform.guardian import platform_log, notify_owner_change
+        notify_owner_change(conn, property_id,
+            f'Deletion cancelled: {prop["name"]}',
+            f'The deletion request for your property "{prop["name"]}" has been reviewed and cancelled by Domi. The property remains active.')
+        platform_log(conn, 'property_deletion_cancelled', 'property', property_id,
+            f'Deletion cancelled for "{prop["name"]}" by platform',
+            org_id=prop['organization_id'], property_id=property_id)
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('property_deletion_cancelled', 'property', property_id,
+             f'Platform cancelled deletion of "{prop["name"]}"', 'platform'))
+
+    flash(f'Deletion cancelled. "{prop["name"]}" restored to active.', 'success')
+    return redirect(url_for("platform.deletions"))
+
+
+@platform_bp.route("/properties/<property_id>/transfer", methods=["POST"])
+def transfer_property(property_id):
+    new_org_id = request.form.get("new_org_id", "").strip()
+    if not new_org_id:
+        flash("Please select a target organisation.", "danger")
+        return redirect(url_for("platform.deletions"))
+
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ? AND status = 'deletion_requested'", (property_id,)
+        ).fetchone()
+        if not prop:
+            flash("Property not found or not pending deletion.", "danger")
+            return redirect(url_for("platform.deletions"))
+
+        new_org = conn.execute(
+            "SELECT name FROM organizations WHERE id = ?", (new_org_id,)
+        ).fetchone()
+        if not new_org:
+            flash("Target organisation not found.", "danger")
+            return redirect(url_for("platform.deletions"))
+
+        conn.execute(
+            "UPDATE properties SET status='active', organization_id=?, deletion_requested_at=NULL WHERE id=?",
+            (new_org_id, property_id))
+
+        from src.platform.guardian import platform_log, notify_owner_change
+        notify_owner_change(conn, property_id,
+            f'Property transferred: {prop["name"]}',
+            f'Your property "{prop["name"]}" has been transferred to a new managing agency by Domi. All historical data has been preserved.')
+        platform_log(conn, 'property_transferred', 'property', property_id,
+            f'"{prop["name"]}" transferred from org {prop["organization_id"]} to {new_org_id}',
+            org_id=new_org_id, property_id=property_id)
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('property_transferred', 'property', property_id,
+             f'Transferred "{prop["name"]}" to {new_org["name"]}', 'platform'))
+
+    flash(f'"{prop["name"]}" transferred to {new_org["name"]} with all data intact.', 'success')
+    return redirect(url_for("platform.deletions"))
+
+
+@platform_bp.route("/properties/<property_id>/approve-deletion", methods=["POST"])
+def approve_deletion(property_id):
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ? AND status = 'deletion_requested'", (property_id,)
+        ).fetchone()
+        if not prop:
+            flash("Property not found or not pending deletion.", "danger")
+            return redirect(url_for("platform.deletions"))
+
+        days_elapsed = conn.execute(
+            "SELECT CAST(julianday('now') - julianday(deletion_requested_at) AS INTEGER) FROM properties WHERE id=?",
+            (property_id,)
+        ).fetchone()[0] or 0
+
+        if days_elapsed < 14:
+            flash(f"Cannot approve yet — {14 - days_elapsed} day(s) remaining in the 14-day owner dispute window.", "danger")
+            return redirect(url_for("platform.deletions"))
+
+        org_id = prop['organization_id']
+        from src.platform.guardian import platform_log, raise_alert
+
+        # Cascade delete in FK-safe order
+        conn.execute("DELETE FROM payment_allocations WHERE payment_id IN (SELECT id FROM payments WHERE property_id=?)", (property_id,))
+        conn.execute("DELETE FROM payment_allocations WHERE charge_id IN (SELECT id FROM rent_charges WHERE property_id=?)", (property_id,))
+        conn.execute("DELETE FROM payment_transactions WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM payments WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM disbursements WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM balance_snapshots WHERE property_id=? OR unit_id IN (SELECT id FROM units WHERE property_id=?)", (property_id, property_id))
+        conn.execute("DELETE FROM water_readings WHERE unit_id IN (SELECT id FROM units WHERE property_id=?)", (property_id,))
+        conn.execute("DELETE FROM water_uploads WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM rent_charges WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM maintenance_issues WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM messages WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM checkin_responses WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM inbound_sessions WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM inbound_messages WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM tenants WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM payment_claims WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM bank_transactions WHERE statement_id IN (SELECT id FROM bank_statements WHERE property_id=?)", (property_id,))
+        conn.execute("DELETE FROM statement_parse_errors WHERE statement_id IN (SELECT id FROM bank_statements WHERE property_id=?)", (property_id,))
+        conn.execute("DELETE FROM bank_statements WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM property_owners WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM caretakers WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM landlord_reports WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM message_templates WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM owner_messages WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM reminder_schedules WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM reminder_settings WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM report_settings WHERE property_id=?", (property_id,))
+        conn.execute("DELETE FROM units WHERE property_id=?", (property_id,))
+
+        platform_log(conn, 'property_deleted', 'property', property_id,
+            f'"{prop["name"]}" permanently deleted after 14-day window (platform approved)',
+            org_id=org_id, property_id=property_id)
+        raise_alert(conn, 'property_deleted',
+            f'"{prop["name"]}" permanently deleted by platform after 14-day window.',
+            org_id=org_id, property_id=property_id, severity='critical')
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('property_deleted', 'property', property_id,
+             f'Platform approved deletion of "{prop["name"]}" after 14-day window', 'platform'))
+
+        conn.execute("DELETE FROM properties WHERE id=?", (property_id,))
+
+    flash(f'"{prop["name"]}" permanently deleted.', 'success')
+    return redirect(url_for("platform.deletions"))

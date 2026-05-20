@@ -1,0 +1,103 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Outbox — Domi Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0 fw-bold">Platform Outbox</h5>
+    <div style="font-size:13px;color:#718096;">All outbound messages — {{ total }} total</div>
+  </div>
+</div>
+
+{# Filter bar #}
+<form method="GET" class="d-flex gap-2 mb-4 flex-wrap">
+  <select name="channel" class="form-select form-select-sm" style="width:auto;">
+    <option value="" {% if not filter_channel %}selected{% endif %}>All channels</option>
+    <option value="email" {% if filter_channel=='email' %}selected{% endif %}>Email</option>
+    <option value="sms" {% if filter_channel=='sms' %}selected{% endif %}>SMS</option>
+    <option value="whatsapp" {% if filter_channel=='whatsapp' %}selected{% endif %}>WhatsApp</option>
+    <option value="portal" {% if filter_channel=='portal' %}selected{% endif %}>Portal</option>
+  </select>
+  <select name="status" class="form-select form-select-sm" style="width:auto;">
+    <option value="" {% if not filter_status %}selected{% endif %}>All statuses</option>
+    <option value="sent" {% if filter_status=='sent' %}selected{% endif %}>Sent</option>
+    <option value="simulated" {% if filter_status=='simulated' %}selected{% endif %}>Simulated</option>
+    <option value="failed" {% if filter_status=='failed' %}selected{% endif %}>Failed</option>
+  </select>
+  <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
+  {% if filter_channel or filter_status %}
+  <a href="{{ url_for('platform.outbox') }}" class="btn btn-sm btn-link text-muted">Clear</a>
+  {% endif %}
+</form>
+
+{% if not entries %}
+<div class="text-center py-5 text-muted" style="font-size:14px;">
+  No messages in outbox yet. Messages appear here when the system sends emails, SMS, or portal notifications.
+</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle" style="font-size:13px;">
+    <thead class="table-light">
+      <tr>
+        <th style="width:140px;">Time</th>
+        <th style="width:70px;">Channel</th>
+        <th style="width:70px;">Status</th>
+        <th style="width:80px;">Type</th>
+        <th>To</th>
+        <th>Subject / Preview</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in entries %}
+    <tr data-bs-toggle="collapse" data-bs-target="#body-{{ loop.index }}" style="cursor:pointer;">
+      <td class="text-muted" style="white-space:nowrap;">{{ e.created_at[:16] if e.created_at else '—' }}</td>
+      <td>
+        {% if e.channel == 'email' %}
+          <span class="badge bg-primary">Email</span>
+        {% elif e.channel == 'sms' %}
+          <span class="badge bg-success">SMS</span>
+        {% elif e.channel == 'whatsapp' %}
+          <span class="badge" style="background:#25d366;">WhatsApp</span>
+        {% else %}
+          <span class="badge bg-secondary">Portal</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if e.status == 'sent' %}
+          <span class="badge bg-success">Sent</span>
+        {% elif e.status == 'failed' %}
+          <span class="badge bg-danger">Failed</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">Simulated</span>
+        {% endif %}
+      </td>
+      <td class="text-muted">{{ (e.message_type or '').replace('_', ' ').title() }}</td>
+      <td>
+        {% if e.to_name %}<strong>{{ e.to_name }}</strong><br>{% endif %}
+        {% if e.to_email %}<span class="text-muted">{{ e.to_email }}</span>{% endif %}
+        {% if e.to_phone %}<span class="text-muted">{{ e.to_phone }}</span>{% endif %}
+      </td>
+      <td>
+        {% if e.subject %}<div class="fw-semibold">{{ e.subject }}</div>{% endif %}
+        <div class="text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;">
+          {{ (e.body or '')[:120] }}
+        </div>
+        {% if e.error %}<div class="text-danger" style="font-size:11px;">{{ e.error }}</div>{% endif %}
+      </td>
+    </tr>
+    <tr class="collapse" id="body-{{ loop.index }}">
+      <td colspan="6" style="background:#f8f9fa;padding:16px 20px;">
+        {% if e.subject %}<div class="fw-semibold mb-1">{{ e.subject }}</div>{% endif %}
+        <pre style="white-space:pre-wrap;font-size:12px;margin:0;color:#374151;">{{ e.body }}</pre>
+        {% if e.error %}
+        <div class="mt-2 text-danger" style="font-size:12px;"><strong>Error:</strong> {{ e.error }}</div>
+        {% endif %}
+        <div class="mt-2 text-muted" style="font-size:11px;">ID: {{ e.id }}</div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

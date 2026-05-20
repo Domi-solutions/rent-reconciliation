@@ -280,6 +280,68 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ---
 
+#### Session 14 — PMO Account System, Owner Activation, Platform Outbox (2026-05-20) ✅ COMPLETE
+
+**Unified login (`/login`):**
+- [x] `admin_login` route now handles org admin + owner (persons) + master key in one form — priority: org email → person email → ADMIN_PASSWORD
+- [x] Owner login always redirects to `/owner/dashboard` (ignores `next` URL, preventing redirect loop back to org admin routes)
+- [x] `/owner/login` reduced to a redirect to `/login` (legacy URL preserved)
+- [x] `require_owner_auth` redirects to `admin_login` endpoint instead of `owner.login`
+- [x] `login.html` label changed from "Work email" to "Email address"
+
+**Token-based owner login (`/owner/l/<token>`):**
+- [x] `GET/POST /owner/l/<token>` — password-only login using `owners.access_token`; no email required; greets owner by first name
+- [x] `templates/owner/token_login.html` — three states: invalid token, not activated yet (links to activation), ready (password form)
+- [x] Owners page shows `/owner/l/<token>` link prominently when account is active; uses `generate_owner_token` route
+
+**Owner activation (email OTP, replaces phone OTP):**
+- [x] `src/messaging/email.py` — `send_email()` via SMTP; Mailtrap-compatible; returns `(False, 'SMTP not configured')` gracefully
+- [x] `src/messaging/outbox.py` — `log_outbox()` writes every outbound message to `platform_outbox` table regardless of channel
+- [x] `_send_email_otp()` helper in `owner_routes.py` — generates 6-digit OTP, stores with 10-min expiry, sends via email, always logs to outbox (status: 'simulated' if SMTP not configured)
+- [x] `activate` route: on password set → `_send_email_otp()` → redirect to `/owner/verify-email` (removed phone OTP path)
+- [x] `GET/POST /owner/verify-email` — enter 6-digit code; verify; log in; resend option
+- [x] `templates/owner/verify_email.html` — Step 2 of 2 progress bar; OTP input; resend link
+- [x] `verify_phone` route and template preserved (file exists) but no longer reachable via activation flow
+- [x] SMTP env vars documented in `scripts/run_dev.sh` comments
+
+**Platform Outbox:**
+- [x] `migrate_add_platform_outbox()` — creates `platform_outbox` table: id, to_name, to_email, to_phone, channel, subject, body, status, error, org_id, property_id, message_type, created_at
+- [x] `GET /platform/outbox` — filterable by channel + status; expandable rows showing full message body
+- [x] `templates/platform/outbox.html` — table with collapse rows; channel/status badges
+- [x] Outbox tab added to `templates/platform/base_platform.html`
+- [x] `delivery.py` `send_sms()` — logs every SMS to outbox via `_log_sms()` helper (never blocks delivery on logging failure)
+- [x] `guardian.py` `notify_owner_change()` — logs portal notifications to outbox for platform visibility
+
+**Owner security hardening (primary owner + email lock):**
+- [x] `migrate_add_primary_owner()` — adds `property_owners.is_primary INTEGER DEFAULT 0`; auto-migrates: first assigned owner per property marked primary
+- [x] `assign_property_to_owner` — auto-sets `is_primary=1` if no primary owner exists for the property; prevents double-assign
+- [x] `create_owner` inline assignment also sets `is_primary` correctly
+- [x] `remove_property_from_owner` — blocks removal if `is_primary=1` (must contact platform to transfer); requires `reason` field; logs reason to audit + shadow log + critical alert; SMS removed owner and remaining owners
+- [x] `edit_owner` — email field immutable once `persons.password_hash` is set; name/phone sync to `persons` row; persons.email never touched (login key)
+- [x] `owners.html` — property pills show PRIMARY (dark badge) / additional (gray badge); primary owner has 🔒 icon not × button; removal opens modal requiring reason; email field disabled with 🔒 label when account active
+
+**Platform fee:**
+- [x] `organizations.platform_fee_rate REAL DEFAULT 0.01` — Domi's 1% take, never shown in org admin routes
+- [x] Platform dashboard "Platform Fee" column; create org modal field
+- [x] `calculate_disbursement()` deducts both management fee and platform fee; disbursements table stores both
+
+**Org self-service settings:**
+- [x] `GET /settings` — email + password change; org name read-only
+- [x] `POST /settings/email` + `POST /settings/password`
+- [x] `templates/settings.html`; sidebar "Account Settings" link
+
+**Welcome wizard:**
+- [x] `/welcome` is a live DB query: `step1_done` (has property), `step2_done` (has owner), `step3_done` (has caretaker), `all_done`
+- [x] Step 2 and 3 unlock when step 1 done; celebration screen when all done
+- [x] Dashboard redirects to `/welcome` when org has no active properties
+
+**Misc fixes:**
+- [x] `require_admin_auth` always enforces auth (removed dev bypass); `ADMIN_PASSWORD=dev` in run_dev.sh as master key
+- [x] `onboard_preview` passes `organization_id = session.get('org_id')` to property INSERT (was NULL)
+- [x] `migrate_add_owners()` no longer seeds ghost "Property Owner" row on fresh install
+
+---
+
 #### Session 12 — Security Architecture: Threat Model + Sprint 1 Defenses (2026-05-19) ✅ COMPLETE
 
 **Documentation (new files):**
@@ -365,13 +427,57 @@ PLATFORM_ADMIN_PASSWORD=domiplatform ADMIN_PASSWORD=domiadmin ./scripts/run_dev.
 
 ---
 
+#### Session 12 — Business Model Alignment, Delete Property, PMO Account System Design (2026-05-19) 🔄 IN PROGRESS
+
+**Business model locked:**
+- Go-to-market: PMOs are the buyers, owners are the advocates. Target 1,000 properties at Mowin scale.
+- Revenue: `platform_fee_rate` (default 1%) on every disbursement. Silent in the float. Not a subscription.
+- Two fees: `management_fee_rate` (agency's, editable by org admin) vs `platform_fee_rate` (Domi's, platform-only, never in org admin routes/templates).
+- Bank statements are transitional — customer acquisition bridge while Daraja/Pesapal credentials are pending.
+- Informal monthly payment from PMOs during bridge period (not in app).
+- `ROADMAP.md`, `CLAUDE.md`, `CURSOR_PLAN.md` updated to reflect all of the above.
+
+**Delete property (robust):**
+- [x] `migrate_add_deletion_requested()` — `properties.deletion_requested_at TIMESTAMP` column
+- [x] `GET /properties/delete/<property_id>` — confirmation page with impact summary, typed name confirmation, 14-day window explanation
+- [x] `POST /properties/delete/<property_id>` — soft delete: `status='deletion_requested'`, SMS owners, critical platform alert, shadow log. Data fully preserved.
+- [x] Agency view automatically excludes `deletion_requested` properties (all queries filter `status='active'`)
+- [x] Platform `GET /platform/deletions` — table of pending properties with days remaining, Cancel/Transfer/Approve actions
+- [x] `POST /platform/properties/<id>/cancel-deletion` — restore to active, SMS owners
+- [x] `POST /platform/properties/<id>/transfer` — reassign `organization_id` to new agency, full history intact, SMS owners
+- [x] `POST /platform/properties/<id>/approve-deletion` — hard cascade delete, only after 14-day window expires
+- [x] Platform nav "Deletions" tab with red badge count
+- [x] `run_dev.sh` no longer fails when `data/dev.db` is missing — creates fresh DB instead
+- [x] `setup_property` FK bug fixed — stale `org_id` in session now validated before INSERT
+
+**Mowin data recreation (in progress):**
+- [x] Prod DB backed up to `backups/prod_2026-05-19_180211.db`
+- [x] Fresh `data/dev.db` created (all migrations run clean)
+- [ ] Onboard Mowin via `/onboard` (Excel upload) — next step
+- [ ] January workflow: generate charges → upload Family Bank + NBK Jan statements → verify → report
+- [ ] February: same (rent + service only, no water data)
+- [ ] March: upload Feb water readings → generate charges → upload statements → verify → report
+- [ ] Rongai: onboard property shell → tag Rongai transactions in statements → import Excel when ready
+
+**Phase I: PMO Account System (next to build):**
+- [ ] `organizations.platform_fee_rate REAL DEFAULT 0.01` — migration
+- [ ] `persons.activation_token TEXT` — migration (for owner account activation)
+- [ ] Org-specific login: `POST /login` checks `organizations.admin_password_hash` by slug/email
+- [ ] First-time wizard: `GET /welcome` shown on first login with no properties
+- [ ] Platform org creation: add `platform_fee_rate` field to `/platform/orgs/new`
+- [ ] `calculate_disbursement()` deducts `platform_fee_rate` after management fee
+- [ ] Owner activation: `GET /owner/activate/<token>` — owner sets password via OTP link
+- [ ] Owner invite SMS sent when PMO adds owner with phone number
+
+---
+
 ## Project Re-entry Overview (for AI agents)
 
 **Last updated:** 2026-05-19
 **Product:** Domi — property fintech platform, Kenya. Repo name: `rent-reconciliation` (unchanged).
 **Stack:** Python 3.13, Flask 3.0+, SQLite, APScheduler, Jinja2 + Bootstrap 5. Fly.io (Johannesburg).
 
-**Strategic direction (locked 2026-05-04):** Domi is a property fintech, not a property tool. Tenants pay rent via M-Pesa STK Push or card through Domi. Domi holds funds and disburses to landlords net of management fee. Fee embedded in disbursement spread — not a visible line item. This makes Domi infrastructure, not software, which means low churn and high switching cost.
+**Strategic direction (locked 2026-05-19):** Domi is a property fintech platform operated by its founders. PMOs are the buyers; owners are the advocates. Target: 1,000 properties at Mowin scale. Revenue: `platform_fee_rate` (1%) on every landlord disbursement — silent in the float, never visible to PMO or org admin. Bank statements are a transitional customer acquisition tool while Daraja/Pesapal credentials are pending. Two fees that must never be confused: `management_fee_rate` (agency's, PMO-editable) and `platform_fee_rate` (Domi's, platform-only). The payment rail + intelligence layer is the moat — switching requires changing payment instructions for every tenant.
 
 **Phases A–E are COMPLETE and deployed. Do not re-implement anything in those phases.**
 

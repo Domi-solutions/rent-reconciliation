@@ -24,12 +24,23 @@
           {% if not owner.phone and not owner.email %}<span style="color: var(--ink-4);">No contact info</span>{% endif %}
         </div>
         {% if assigned_props %}
-        <div style="font-size: 12px; color: var(--ink-3); margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+        <div style="font-size: 12px; color: var(--ink-3); margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
           {% for prop in assigned_props %}
-          <span style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; font-size: 11px; font-weight: 500;">{{ prop.name }}</span>
-          <form method="POST" action="{{ url_for('remove_property_from_owner', owner_id=owner.id, property_id=prop.id) }}" class="d-inline" onsubmit="return confirm('Remove {{ prop.name }} from this owner?');">
-            <button type="submit" class="btn btn-sm p-0 ms-0" style="color: var(--ink-4); font-size: 11px; border: none; background: none; cursor: pointer;" title="Remove property">×</button>
-          </form>
+          <span style="display:inline-flex;align-items:center;gap:4px;background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; font-size: 11px; font-weight: 500;">
+            {{ prop.name }}
+            {% if prop.is_primary %}
+            <span style="background:#1a1a2e;color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px;letter-spacing:.04em;">PRIMARY</span>
+            {% else %}
+            <span style="background:#e2e8f0;color:#64748b;font-size:9px;font-weight:600;border-radius:3px;padding:1px 4px;">additional</span>
+            {% endif %}
+            {% if not prop.is_primary %}
+            <button type="button"
+              onclick="openRemoveModal('{{ url_for('remove_property_from_owner', owner_id=owner.id, property_id=prop.id) }}', '{{ owner.name|e }}', '{{ prop.name|e }}')"
+              style="color:var(--ink-4);font-size:12px;border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;" title="Remove from property">×</button>
+            {% else %}
+            <span style="color:var(--ink-4);font-size:11px;padding:0 2px;" title="Primary owner — cannot be removed by admin">🔒</span>
+            {% endif %}
+          </span>
           {% endfor %}
         </div>
         {% else %}
@@ -37,18 +48,14 @@
         {% endif %}
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
-        {% if owner.access_token %}
-          <span class="badge bg-success" style="font-size: 11px;">Link active</span>
+        {% if owner.has_domi_password %}
+          <span class="badge bg-success" style="font-size: 11px;" title="Owner has set their password and can log in">Active</span>
+        {% elif owner.activation_token %}
+          <span class="badge bg-warning text-dark" style="font-size: 11px;" title="Activation link ready — copy and send to owner">Link not sent</span>
+        {% elif owner.person_id %}
+          <span class="badge bg-secondary" style="font-size: 11px;">Linked</span>
         {% else %}
-          <span class="badge bg-secondary" style="font-size: 11px;">No link</span>
-        {% endif %}
-        {% if owner.has_password %}
-          <span class="badge bg-success" style="font-size: 11px;">Password set</span>
-        {% else %}
-          <span class="badge bg-warning text-dark" style="font-size: 11px;">No password</span>
-        {% endif %}
-        {% if owner.person_id %}
-          <span class="badge bg-primary" style="font-size: 11px;" title="Owner can log in at /owner/login">Domi Login</span>
+          <span class="badge bg-secondary" style="font-size: 11px;">No account</span>
         {% endif %}
         <button class="topbar-btn-ghost btn-sm" data-bs-toggle="collapse" data-bs-target="#owner-actions-{{ loop.index }}">
           Manage
@@ -59,20 +66,62 @@
     <div class="collapse mt-3" id="owner-actions-{{ loop.index }}">
       <div style="padding-top: 12px; border-top: 1px solid var(--border); margin-top: 8px; display: flex; flex-direction: column; gap: 18px;">
 
-        {# PORTAL LINK #}
+        {# DOMI ACCOUNT #}
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Portal Link</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Domi Account</div>
+          {% if owner.has_domi_password %}
+            <div style="font-size: 13px; color: #16a34a; margin-bottom: 10px;">Active — owner can sign in two ways:</div>
+            <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 6px;">1. Email + password at <a href="{{ url_for('admin_login') }}">/login</a></div>
+            {% if owner.access_token %}
+            {% set login_url = request.host_url ~ 'owner/l/' ~ owner.access_token %}
+            <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 8px;">2. Password-only link (send this to the owner):</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <code id="login-link-{{ owner.id }}" style="font-size: 11px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; flex: 1; min-width: 0; word-break: break-all;">{{ login_url }}</code>
+              <button onclick="copyOwnerLink('{{ login_url }}', 'login-copied-{{ owner.id }}')" class="btn btn-sm btn-outline-secondary" style="white-space: nowrap; flex-shrink: 0;">Copy</button>
+            </div>
+            <span id="login-copied-{{ owner.id }}" style="font-size: 12px; color: #198754; display: none; margin-top: 4px;">✓ Copied</span>
+            {% else %}
+            <div style="font-size: 12px; color: var(--ink-4);">Generate a portal link to enable password-only login.</div>
+            <form method="POST" action="{{ url_for('generate_owner_token', owner_id=owner.id) }}" style="margin-top: 8px;">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Generate link</button>
+            </form>
+            {% endif %}
+          {% elif owner.activation_token %}
+            {% set activate_url = request.host_url ~ 'owner/activate/' ~ owner.activation_token %}
+            <div style="font-size: 13px; color: var(--ink-3); margin-bottom: 8px;">
+              Copy this link and send it to <strong>{{ owner.email or 'the owner' }}</strong>. They'll use it to set their password.
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <code id="invite-{{ owner.id }}" style="font-size: 11px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; flex: 1; min-width: 0; word-break: break-all;">{{ activate_url }}</code>
+              <button onclick="copyOwnerLink('{{ activate_url }}', 'invite-copied-{{ owner.id }}')" class="btn btn-sm btn-primary" style="white-space: nowrap; flex-shrink: 0;">Copy link</button>
+            </div>
+            <span id="invite-copied-{{ owner.id }}" style="font-size: 12px; color: #198754; display: none; margin-top: 4px;">✓ Copied</span>
+          {% elif owner.email %}
+            <div style="font-size: 13px; color: var(--ink-3); margin-bottom: 8px;">No activation link. Owner's email is <strong>{{ owner.email }}</strong>.</div>
+            <form method="POST" action="{{ url_for('resend_owner_invite', owner_id=owner.id) }}">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Generate activation link</button>
+            </form>
+          {% else %}
+            <div style="font-size: 13px; color: var(--ink-4);">Add an email address to give this owner dashboard access.</div>
+          {% endif %}
+        </div>
+
+        {# PORTAL LINK — only show if owner has no Domi account yet #}
+        {% if not owner.has_domi_password and not owner.activation_token %}
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Legacy Portal Link</div>
+          <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 8px;">Token-based read-only access. Use the Domi Account above for the full portal.</div>
           {% if owner.access_token %}
           {% set portal_url = request.host_url ~ 'view/o/' ~ owner.access_token %}
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <code id="link-{{ owner.id }}" style="font-size: 12px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; flex: 1; min-width: 0; word-break: break-all; display: block;">{{ portal_url }}</code>
-            <button onclick="copyOwnerLink('{{ portal_url }}', 'copied-{{ owner.id }}')" class="btn btn-sm btn-primary" style="white-space: nowrap; flex-shrink: 0;">
-              Copy Link
+            <button onclick="copyOwnerLink('{{ portal_url }}', 'copied-{{ owner.id }}')" class="btn btn-sm btn-outline-secondary btn-sm" style="white-space: nowrap; flex-shrink: 0;">
+              Copy
             </button>
           </div>
           <span id="copied-{{ owner.id }}" class="copy-btn-feedback" style="font-size: 12px; color: #198754; display: none; margin-top: 4px;">✓ Copied to clipboard</span>
           {% else %}
-          <div style="font-size: 13px; color: var(--ink-4); margin-bottom: 8px;">No link generated yet — click Generate to create one.</div>
+          <div style="font-size: 13px; color: var(--ink-4); margin-bottom: 8px;">No link generated yet.</div>
           {% endif %}
           <div style="margin-top: 8px;">
             <form method="POST" action="{{ url_for('generate_owner_token', owner_id=owner.id) }}" style="display: inline;">
@@ -80,11 +129,9 @@
                 {% if owner.access_token %}Regenerate link{% else %}Generate link{% endif %}
               </button>
             </form>
-            {% if owner.access_token %}
-            <span style="font-size: 12px; color: var(--ink-4); margin-left: 8px;">Regenerating will invalidate the old link.</span>
-            {% endif %}
           </div>
         </div>
+        {% endif %}
 
         {# EDIT DETAILS #}
         <div>
@@ -92,21 +139,16 @@
           <form method="POST" action="{{ url_for('edit_owner', owner_id=owner.id) }}" style="max-width: 360px; display: flex; flex-direction: column; gap: 8px;">
             <input type="text" name="name" class="form-control form-control-sm" value="{{ owner.name }}" placeholder="Name" required>
             <input type="text" name="phone" class="form-control form-control-sm" value="{{ owner.phone or '' }}" placeholder="Phone (+254...)">
+            {% if owner.has_domi_password %}
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="email" class="form-control form-control-sm" value="{{ owner.email or '' }}" disabled style="background:#f3f4f6;color:var(--ink-3);">
+              <span style="font-size:11px;color:var(--ink-3);white-space:nowrap;">🔒 Login email — locked</span>
+            </div>
+            {% else %}
             <input type="email" name="email" class="form-control form-control-sm" value="{{ owner.email or '' }}" placeholder="Email">
+            {% endif %}
             <div style="font-size: 11px; color: var(--ink-3);">Changing the phone number will send an SMS to the old number.</div>
             <div><button type="submit" class="btn btn-primary btn-sm">Save changes</button></div>
-          </form>
-        </div>
-
-        {# SET PASSWORD #}
-        <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">
-            {% if owner.has_password %}Change Password{% else %}Set Password{% endif %}
-          </div>
-          <form method="POST" action="{{ url_for('set_owner_password', owner_id=owner.id) }}" class="d-flex gap-2" style="max-width: 320px;">
-            <input type="password" name="password" class="form-control form-control-sm"
-                   placeholder="New password" required>
-            <button type="submit" class="btn btn-primary btn-sm" style="white-space: nowrap;">Set</button>
           </form>
         </div>
 
@@ -164,19 +206,11 @@
           <div class="mb-3">
             <label class="form-label">Phone</label>
             <input type="text" name="phone" class="form-control" placeholder="+254 7xx xxx xxx">
+            <div class="form-text">An SMS invite will be sent so the owner can set their own password and access their dashboard.</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Email</label>
+            <label class="form-label">Email <span style="font-size: 12px; color: var(--ink-3);">(optional)</span></label>
             <input type="email" name="email" class="form-control" placeholder="owner@example.com">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Token-link password <span style="font-size: 12px; color: var(--ink-3);">(for /view/o/token login)</span></label>
-            <input type="password" name="password" class="form-control" placeholder="Leave blank to set later">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Domi Login password <span style="font-size: 12px; color: var(--ink-3);">(for /owner/login — requires phone)</span></label>
-            <input type="password" name="domi_password" class="form-control" placeholder="Leave blank to skip">
-            <div class="form-text">Owner logs in with their phone number + this password at <code>/owner/login</code>.</div>
           </div>
           <div class="mb-2">
             <label class="form-label">Assign property <span style="font-size: 12px; color: var(--ink-3);">(optional)</span></label>
@@ -197,6 +231,31 @@
   </div>
 </div>
 
+{# Remove-from-property confirmation modal #}
+<div class="modal fade" id="removeOwnerModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold" style="font-size:16px;">Remove owner from property</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="removeOwnerForm" method="POST">
+        <div class="modal-body">
+          <p id="removeOwnerMsg" style="font-size:14px;color:#374151;"></p>
+          <div class="mb-1">
+            <label class="form-label fw-semibold" style="font-size:13px;">Reason for removal <span class="text-danger">*</span></label>
+            <input type="text" name="reason" class="form-control" placeholder="e.g. Owner sold property, incorrect assignment…" required>
+            <div style="font-size:11px;color:#718096;margin-top:4px;">Logged to the platform shadow log and triggers a critical alert. The owner will be notified by SMS.</div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;">Confirm removal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -206,7 +265,6 @@ function copyOwnerLink(url, feedbackId) {
     var el = document.getElementById(feedbackId);
     if (el) { el.style.display = 'inline'; setTimeout(function() { el.style.display = 'none'; }, 2500); }
   }).catch(function() {
-    // Fallback for browsers without clipboard API: create temp input
     var inp = document.createElement('input');
     inp.value = url;
     document.body.appendChild(inp);
@@ -216,6 +274,14 @@ function copyOwnerLink(url, feedbackId) {
     var el = document.getElementById(feedbackId);
     if (el) { el.style.display = 'inline'; setTimeout(function() { el.style.display = 'none'; }, 2500); }
   });
+}
+
+function openRemoveModal(actionUrl, ownerName, propName) {
+  document.getElementById('removeOwnerForm').action = actionUrl;
+  document.getElementById('removeOwnerMsg').textContent =
+    'You are about to remove ' + ownerName + ' from ' + propName + '. This action is logged and cannot be undone without platform review.';
+  document.querySelector('#removeOwnerModal input[name="reason"]').value = '';
+  new bootstrap.Modal(document.getElementById('removeOwnerModal')).show();
 }
 </script>
 {% endblock %}

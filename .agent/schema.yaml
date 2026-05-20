@@ -6,6 +6,35 @@
 
 tables:
 
+  organizations:
+    status: live
+    migration: migrate_add_orgs (Phase I)
+    note: "One org per PMO / property management company. First customer: Mowin Apartments."
+    columns:
+      id: {type: TEXT, pk: true}
+      name: {type: TEXT, required: true}
+      email: {type: TEXT, unique: true, note: "Org admin login email — set via /platform/orgs/<id>/set-email"}
+      password_hash: {type: TEXT, note: "Org admin login — set via /platform/orgs/<id>/set-password"}
+      platform_fee_rate: {type: REAL, default: 0.01, note: "Domi fee; silent in float; never shown in org admin UI"}
+      status: {type: TEXT, default: active, values: [active, inactive]}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  persons:
+    status: live
+    migration: migrate_add_persons (Phase I)
+    note: "Individual owner login accounts. Separate from org admin. One person can be linked to multiple owners across orgs. Auth: persons.email + password_hash."
+    columns:
+      id: {type: TEXT, pk: true}
+      owner_id: {type: TEXT, fk: owners.id, note: "Primary owner record this person authenticates on behalf of"}
+      name: {type: TEXT, required: true}
+      email: {type: TEXT, unique: true, required: true, note: "Login credential. Immutable once password_hash is set (account activated)."}
+      password_hash: {type: TEXT, note: "Set during activation flow. NULL = not yet activated."}
+      activation_token: {type: TEXT, unique: true, note: "Short-lived token sent in activation link. Cleared after activation."}
+      otp_code: {type: TEXT, note: "6-digit email OTP in transit. Cleared after verification."}
+      otp_expires_at: {type: TIMESTAMP, note: "OTP expiry (10 minutes). After expiry, owner must resend."}
+      phone_verified: {type: INTEGER, default: 0}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
   properties:
     status: live
     migration: schema.sql (base)
@@ -195,11 +224,12 @@ tables:
 
   property_owners:
     status: live
-    migration: migrate_add_property_owners
-    note: "M:M junction — one owner can have multiple properties"
+    migration: migrate_add_property_owners + migrate_add_primary_owner
+    note: "M:M junction — one owner can have multiple properties. First owner assigned to a property is auto-marked is_primary=1."
     columns:
       property_id: {type: TEXT, fk: properties.id}
       owner_id: {type: TEXT, fk: owners.id}
+      is_primary: {type: INTEGER, default: 0, added_by: migrate_add_primary_owner, note: "1 = first/primary owner for this property. Cannot be removed by admin — requires platform intervention. Auto-set on first assignment. Existing rows migrated using MIN(rowid) per property."}
     constraints:
       - PRIMARY KEY(property_id, owner_id)
 
@@ -544,6 +574,28 @@ tables:
     indexes:
       - idx_water_readings_upload ON (upload_id)
       - idx_water_readings_unit ON (unit_id)
+
+  platform_outbox:
+    status: live
+    migration: migrate_add_platform_outbox
+    note: "Every outbound message logged here regardless of delivery channel or status. Written by log_outbox() in src/messaging/outbox.py. Never used for business logic — audit/debug only. Surfaced at /platform/outbox."
+    columns:
+      id: {type: TEXT, pk: true}
+      to_name: {type: TEXT}
+      to_email: {type: TEXT}
+      to_phone: {type: TEXT}
+      channel: {type: TEXT, required: true, values: [sms, email, whatsapp, portal]}
+      subject: {type: TEXT, note: "Email only"}
+      body: {type: TEXT, required: true}
+      status: {type: TEXT, default: simulated, values: [sent, failed, simulated], note: "simulated = no API configured; code visible for testing"}
+      error: {type: TEXT, note: "Error message if status=failed"}
+      org_id: {type: TEXT}
+      property_id: {type: TEXT}
+      message_type: {type: TEXT, note: "e.g. email_otp, owner_notification, sms_payment_confirmed"}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+    indexes:
+      - idx_outbox_created ON (created_at)
+      - idx_outbox_channel ON (channel)
 
 views:
   unit_balances:

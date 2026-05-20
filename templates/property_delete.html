@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Request Deletion — {{ prop.name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="page-title">Request Property Deletion</div>
+  <div class="page-meta">Data is preserved for 14 days while Domi platform reviews the request.</div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+
+    <div class="surface-card mb-3">
+      <div style="padding: 20px 20px 4px;">
+        <div class="data-row-unit mb-1">{{ prop.name }}</div>
+        {% if prop.address %}<div class="data-row-meta">{{ prop.address }}</div>{% endif %}
+      </div>
+      <hr style="margin: 16px 0; border-color: var(--border);">
+      <div style="padding: 0 20px 20px;">
+        <div class="data-row-meta mb-3" style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Records that will be preserved</div>
+        <div class="row g-2">
+          {% set items = [
+            (unit_count, 'unit', 'units'),
+            (tenant_count, 'tenant', 'tenants'),
+            (charge_count, 'rent charge', 'rent charges'),
+            (payment_count, 'payment', 'payments'),
+            (statement_count, 'bank statement', 'bank statements'),
+          ] %}
+          {% for count, singular, plural in items %}
+          <div class="col-6">
+            <div style="padding: 12px 14px; border: 1px solid {% if count > 0 %}#fca5a5{% else %}var(--border){% endif %}; border-radius: 8px; background: {% if count > 0 %}#fff5f5{% else %}var(--bg){% endif %};">
+              <div style="font-size: 20px; font-weight: 700; color: {% if count > 0 %}#dc2626{% else %}var(--ink-3){% endif %};">{{ count }}</div>
+              <div class="data-row-meta">{{ plural if count != 1 else singular }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 14px 16px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; margin-bottom: 16px;">
+      <div style="font-size: 13px; font-weight: 600; color: #1e40af; margin-bottom: 6px;">What happens when you submit this request</div>
+      <ul style="font-size: 13px; color: #1e3a8a; margin: 0; padding-left: 18px;">
+        <li>The property disappears from your view immediately</li>
+        <li>All data — units, tenants, payments, charges — is fully preserved for 14 days</li>
+        <li>All property owners are notified via SMS right now</li>
+        <li>Domi platform receives a critical alert and reviews the request</li>
+        <li>Owners have 14 days to dispute before any data is removed</li>
+        <li>Platform can cancel the deletion, approve it, or transfer the property to a new agency</li>
+      </ul>
+    </div>
+
+    <div style="padding: 20px; border: 2px solid #ef4444; border-radius: 10px; background: #fff5f5;">
+      <div style="font-size: 13px; font-weight: 600; color: #dc2626; margin-bottom: 16px;">
+        Type <strong>{{ prop.name }}</strong> to submit the deletion request
+      </div>
+      <form method="POST">
+        <div class="mb-3">
+          <input type="text" id="confirm_name" name="confirm_name" class="form-control"
+            placeholder="Type property name exactly"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            style="border-color: #fca5a5;">
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" id="delete-btn" class="btn btn-danger" disabled>
+            Submit Deletion Request
+          </button>
+          <a href="{{ url_for('tools_index') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+  </div>
+
+  <div class="col-lg-4 offset-lg-1">
+    <div style="padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+      <div class="data-row-meta mb-2" style="font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;">Owner protection</div>
+      <div class="data-row-meta" style="font-size: 13px; line-height: 1.6;">
+        Deletion requires Domi platform approval. Owners can dispute and recover all data within the 14-day window. A new agency can be assigned to take over this property if needed.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var expected = {{ prop.name | tojson }};
+  var input = document.getElementById('confirm_name');
+  var btn = document.getElementById('delete-btn');
+  input.addEventListener('input', function () {
+    btn.disabled = input.value !== expected;
+  });
+})();
+</script>
+{% endblock %}

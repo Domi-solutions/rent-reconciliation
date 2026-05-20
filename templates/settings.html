@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Account Settings — Domi{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <h4 class="mb-1">Account Settings</h4>
+  <div style="font-size: 13px; color: #718096;">Manage your organisation's login credentials.</div>
+</div>
+
+{% if not org %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body py-5 text-center" style="color: #718096; font-size: 14px;">
+    No organisation is associated with this session.<br>
+    Log in with your organisation email and password to manage account settings.
+  </div>
+</div>
+{% else %}
+
+<div style="max-width: 560px;">
+
+  {# ── Login email ─────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body" style="padding: 24px;">
+      <h6 style="font-weight: 700; margin-bottom: 4px;">Login email</h6>
+      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+        This is the email address used to sign in to Domi.
+      </div>
+      <form method="POST" action="{{ url_for('settings_update_email') }}">
+        <div class="mb-3">
+          <label class="form-label" style="font-size: 13px; font-weight: 600;">Email address</label>
+          <input type="email" name="email" class="form-control"
+                 value="{{ org.contact_email or '' }}"
+                 placeholder="you@agency.co.ke" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Update email</button>
+      </form>
+    </div>
+  </div>
+
+  {# ── Password ─────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body" style="padding: 24px;">
+      <h6 style="font-weight: 700; margin-bottom: 4px;">Password</h6>
+      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+        Change your login password. You'll be required to enter your current password.
+      </div>
+      <form method="POST" action="{{ url_for('settings_update_password') }}">
+        <div class="mb-3">
+          <label class="form-label" style="font-size: 13px; font-weight: 600;">Current password</label>
+          <input type="password" name="current_password" class="form-control"
+                 placeholder="••••••••" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size: 13px; font-weight: 600;">New password</label>
+          <input type="password" name="new_password" class="form-control"
+                 placeholder="At least 8 characters" required minlength="8">
+        </div>
+        <div class="mb-4">
+          <label class="form-label" style="font-size: 13px; font-weight: 600;">Confirm new password</label>
+          <input type="password" name="confirm_password" class="form-control"
+                 placeholder="••••••••" required minlength="8">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Update password</button>
+      </form>
+    </div>
+  </div>
+
+  {# ── Org info (read-only) ─────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body" style="padding: 24px;">
+      <h6 style="font-weight: 700; margin-bottom: 4px;">Organisation</h6>
+      <div style="font-size: 13px; color: #718096; margin-bottom: 12px;">
+        Contact your Domi account manager to update your organisation name.
+      </div>
+      <div style="font-size: 14px;">
+        <span style="font-weight: 600; color: #4a5568;">Name:</span>
+        <span style="margin-left: 8px;">{{ org.name }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,6 +1,9 @@
 """
 SMS delivery via Africa's Talking.
 
+Every send attempt is also logged to platform_outbox regardless of outcome,
+so the platform can inspect all outbound SMS in /platform/outbox.
+
 Env vars:
   AT_API_KEY   — API key from AT Sandbox or Live dashboard
   AT_USERNAME  — 'sandbox' for testing, or your real AT username for live
@@ -16,6 +19,15 @@ import os
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 
+def _log_sms(phone, body, status, error=None):
+    try:
+        from src.messaging.outbox import log_outbox
+        log_outbox(channel='sms', to_phone=phone, body=body, status=status, error=error,
+                   message_type='sms')
+    except Exception:
+        pass  # Never let outbox logging break SMS delivery
+
+
 def send_sms(recipients, message):
     """
     Send an SMS to one or more recipients via Africa's Talking.
@@ -29,6 +41,9 @@ def send_sms(recipients, message):
     username = os.environ.get('AT_USERNAME', 'sandbox').strip()
 
     if not api_key:
+        for r in recipients:
+            raw = r.get('phone') if isinstance(r, dict) else r
+            _log_sms(str(raw or ''), message, 'simulated', 'AT_API_KEY not configured')
         return 0, len(recipients), ['AT_API_KEY not configured']
 
     # Normalize phone numbers
@@ -43,6 +58,8 @@ def send_sms(recipients, message):
             skipped.append(str(raw or 'empty'))
 
     if not numbers:
+        for s in skipped:
+            _log_sms(s, message, 'failed', 'Invalid phone number')
         return 0, len(recipients), ['No valid phone numbers to send to'] + skipped
 
     try:
@@ -54,14 +71,19 @@ def send_sms(recipients, message):
         result_recipients = response.get('SMSMessageData', {}).get('Recipients', [])
         success = sum(1 for r in result_recipients if r.get('statusCode') == 101)
         failed_sms = len(numbers) - success
-        errors = [
-            f"{r.get('number', '?')}: {r.get('status', '?')}"
-            for r in result_recipients
-            if r.get('statusCode') != 101
-        ]
+        errors = []
+        for r in result_recipients:
+            phone_num = r.get('number', '?')
+            ok = r.get('statusCode') == 101
+            _log_sms(phone_num, message, 'sent' if ok else 'failed',
+                     None if ok else r.get('status'))
+            if not ok:
+                errors.append(f"{phone_num}: {r.get('status', '?')}")
         if skipped:
             errors.append(f"Skipped (no valid phone): {', '.join(skipped)}")
         return success, failed_sms + len(skipped), errors
 
     except Exception as e:
+        for num in numbers:
+            _log_sms(num, message, 'failed', str(e))
         return 0, len(numbers) + len(skipped), [str(e)]

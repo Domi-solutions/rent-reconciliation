@@ -129,6 +129,23 @@
     </div>
   </div>
 
+  {% if prop %}
+  <div class="col-12">
+    <div class="surface-card-header" style="background: #fff5f5; border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid #fca5a5; border-bottom: none; padding: 14px 20px;">
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #dc2626; margin: 0;">Danger Zone</h6>
+    </div>
+    <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card); border-color: #fca5a5;">
+      <div class="row g-0">
+        <div class="col-md-6" style="padding: 20px;">
+          <div class="data-row-unit mb-1" style="color: #dc2626;">Delete {{ prop.name }}</div>
+          <div class="data-row-meta mb-3">Submits a deletion request to Domi platform. The property disappears from your view immediately. All data is preserved for 14 days while owners are notified and platform reviews the request.</div>
+          <a href="{{ url_for('delete_property', property_id=prop.id) }}" class="btn btn-outline-danger btn-sm">Request Deletion</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="col-12">
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
       <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Parser Test Tools</h6>

@@ -38,11 +38,19 @@
   <a href="{{ url_for('platform.dashboard') }}" class="{% if active_tab == 'dashboard' %}active{% endif %}">Organisations</a>
   <a href="{{ url_for('platform.alerts') }}" class="{% if active_tab == 'alerts' %}active{% endif %}">Alerts</a>
   <a href="{{ url_for('platform.disputes') }}" class="{% if active_tab == 'disputes' %}active{% endif %}">Disputes</a>
+  <a href="{{ url_for('platform.deletions') }}" class="{% if active_tab == 'deletions' %}active{% endif %}" style="position:relative;">
+    Deletions
+    {%- set _pending = namespace(n=0) %}
+    {%- if pending_deletion_count is defined and pending_deletion_count > 0 %}
+    <span style="position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;line-height:1.4;">{{ pending_deletion_count }}</span>
+    {%- endif %}
+  </a>
   <a href="{{ url_for('platform.shadow_log') }}" class="{% if active_tab == 'shadow_log' %}active{% endif %}">Shadow Log</a>
   <a href="{{ url_for('platform.trust') }}" class="{% if active_tab == 'trust' %}active{% endif %}">Trust Scores</a>
   <a href="{{ url_for('platform.errors') }}" class="{% if active_tab == 'errors' %}active{% endif %}">Errors</a>
   <a href="{{ url_for('platform.parse_errors_view') }}" class="{% if active_tab == 'parse_errors' %}active{% endif %}">Parse Errors</a>
   <a href="{{ url_for('platform.parsers') }}" class="{% if active_tab_nav == 'parsers' %}active{% endif %}">Parser Tools</a>
+  <a href="{{ url_for('platform.outbox') }}" class="{% if active_tab == 'outbox' %}active{% endif %}">Outbox</a>
 </nav>
 
 <div class="platform-main">

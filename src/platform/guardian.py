@@ -36,6 +36,7 @@ def notify_owner_change(conn, property_id, subject, body):
     """Notify all owners of a property of a change, bypassing agency delivery.
 
     Writes to owner_messages portal inbox and sends SMS directly.
+    Also logs each outbound SMS to platform_outbox.
     """
     notify_property_owners(
         conn,
@@ -46,3 +47,30 @@ def notify_owner_change(conn, property_id, subject, body):
         message_type='notification',
         sent_by='Domi Platform',
     )
+
+    # Log portal notifications to outbox for platform visibility
+    try:
+        from src.messaging.outbox import log_outbox
+        owners = conn.execute(
+            """SELECT o.id, p.name, p.email, p.phone
+               FROM owners o
+               JOIN property_owners po ON po.owner_id = o.id
+               JOIN persons p ON p.id = o.person_id
+               WHERE po.property_id = ?""",
+            (property_id,),
+        ).fetchall()
+        for owner in owners:
+            if owner['email']:
+                log_outbox(
+                    channel='portal',
+                    to_name=owner['name'],
+                    to_email=owner['email'],
+                    to_phone=owner['phone'],
+                    subject=subject,
+                    body=body,
+                    status='sent',
+                    property_id=property_id,
+                    message_type='owner_notification',
+                )
+    except Exception:
+        pass  # Never let logging break notification delivery

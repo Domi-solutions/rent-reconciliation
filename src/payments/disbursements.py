@@ -59,20 +59,24 @@ def calculate_disbursement(conn, property_id: str, period: str) -> dict:
     """
     Calculate disbursement for a property and period (YYYY-MM).
     Returns:
-      {total_collected, fee_rate, fee_amount, net_amount, unit_breakdown, period}
+      {total_collected, fee_rate, fee_amount, platform_fee_rate, platform_fee_amount,
+       net_amount, unit_breakdown, period}
     Does NOT write anything to the DB.
     """
     prop = conn.execute(
-        "SELECT name, management_fee_rate FROM properties WHERE id = ?",
+        """SELECT p.name, p.management_fee_rate, o.platform_fee_rate
+           FROM properties p
+           LEFT JOIN organizations o ON o.id = p.organization_id
+           WHERE p.id = ?""",
         (property_id,),
     ).fetchone()
     if not prop:
         raise ValueError(f"Property {property_id} not found")
 
-    fee_rate = float(prop["management_fee_rate"] or 0.08)
+    mgmt_fee_rate = float(prop["management_fee_rate"] or 0.08)
+    platform_fee_rate = float(prop["platform_fee_rate"] or 0.01)
 
     # Sum all completed Daraja/Pesapal payments for this period
-    # Period filter: payment_date starts with YYYY-MM
     rows = conn.execute(
         """
         SELECT pt.unit_id, pt.amount
@@ -86,8 +90,9 @@ def calculate_disbursement(conn, property_id: str, period: str) -> dict:
     ).fetchall()
 
     total_collected = sum(float(r["amount"]) for r in rows)
-    fee_amount = round(total_collected * fee_rate, 2)
-    net_amount = round(total_collected - fee_amount, 2)
+    mgmt_fee_amount = round(total_collected * mgmt_fee_rate, 2)
+    platform_fee_amount = round(total_collected * platform_fee_rate, 2)
+    net_amount = round(total_collected - mgmt_fee_amount - platform_fee_amount, 2)
 
     # Unit breakdown
     unit_totals = {}
@@ -98,8 +103,10 @@ def calculate_disbursement(conn, property_id: str, period: str) -> dict:
     return {
         "period": period,
         "total_collected": total_collected,
-        "fee_rate": fee_rate,
-        "fee_amount": fee_amount,
+        "fee_rate": mgmt_fee_rate,
+        "fee_amount": mgmt_fee_amount,
+        "platform_fee_rate": platform_fee_rate,
+        "platform_fee_amount": platform_fee_amount,
         "net_amount": net_amount,
         "unit_breakdown": unit_totals,
     }
@@ -143,9 +150,10 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
     conn.execute(
         """
         INSERT INTO disbursements
-            (id, property_id, period, total_collected, fee_rate, fee_amount, net_amount,
+            (id, property_id, period, total_collected, fee_rate, fee_amount,
+             platform_fee_rate, platform_fee_amount, net_amount,
              recipient_account, status, method, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'mpesa_b2c', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'mpesa_b2c', CURRENT_TIMESTAMP)
         """,
         (
             disb_id,
@@ -154,6 +162,8 @@ def execute_disbursement(conn, property_id: str, period: str) -> str:
             data["total_collected"],
             data["fee_rate"],
             data["fee_amount"],
+            data["platform_fee_rate"],
+            data["platform_fee_amount"],
             data["net_amount"],
             owner["payout_mpesa"],
         ),

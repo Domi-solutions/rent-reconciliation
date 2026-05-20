@@ -38,11 +38,21 @@ Every label, heading, and message uses data-descriptive voice. Never agency voic
 
 The app makes no claims about actions taken. It reports what the data knows.
 
-## Three Audiences (Over Time)
+## Go-To-Market (locked 2026-05-19)
 
-1. **Landlord** (NOW — priority): What's happening with my asset
-2. **Agency** (FUTURE): Where are we performing well/poorly across properties
-3. **Client-facing** (FUTURE): Same data, tone may shift for external presentation
+**Primary customer: Property Management Organisations (PMOs).** Agents, administrators, firms — people who manage properties on behalf of owners. They sign up, they pay (via transaction fees), they onboard their portfolio.
+
+**Secondary beneficiary: Property Owners.** They don't sign up themselves. They get invited when a PMO adds them. Their experience must be trustworthy and beautiful enough that they mandate Domi to any new manager they hire and recommend it to other owners. Owners are the word-of-mouth engine.
+
+**Sales motion:** Recruit agents/salespeople who bring PMOs onto the platform. Agent earns a share of the transaction fee revenue from every PMO they onboard — forever. This aligns incentives: agent only earns if the PMO stays active.
+
+**Target:** 1,000 properties at Mowin scale (40–120 units, KES 15K–25K avg rent). At 1% platform fee on KES 800K/month per property → KES 8M/month at 1,000 properties.
+
+## Three Audiences
+
+1. **PMO admin** (PRIMARY): Manages day-to-day operations. Uploads statements, generates charges, manages tenants. Domi makes them look professional and saves hours of WhatsApp coordination.
+2. **Property Owner** (ADVOCATE): Sees their asset clearly. Trusts the PMO more because Domi gives them an independent view. Tells other owners to use Domi.
+3. **Tenant** (END USER): Pays rent, sees their balance and history. No friction, no WhatsApp back-and-forth.
 
 ---
 
@@ -503,6 +513,47 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **Property context in statement detail** — when org has >1 property: Property column in verified/unmatched tables; "Property-tagged" or "Org-wide" badge in header; unit dropdowns use `<optgroup>` headers grouped by property
 - [x] **payment.property_id always derived from unit** — `statement_auto_assign()`, `statement_assign_payment()`, `statement_correct_payment()` all derive `property_id` from the target unit via SQL (`SELECT p.id FROM units u JOIN properties p ... WHERE u.id = ?`); never from session's selected property
 
+### Phase I: PMO Account System (COMPLETE — 2026-05-20) ✅
+
+**Platform creates the org:**
+- [x] Platform org creation form includes `platform_fee_rate` field (default 0.01)
+- [x] `organizations.platform_fee_rate REAL DEFAULT 0.01` — visible only in `/platform/*`
+
+**Org login:**
+- [x] `GET/POST /login` unified — handles org admin + owner (person) + ADMIN_PASSWORD master key
+- [x] Org identified by `contact_email`; sets `session['org_id']` + `session['admin_authenticated']`
+- [x] `ADMIN_PASSWORD=dev` in `run_dev.sh` as master key fallback
+- [x] `GET/POST /settings` (email + password change) + `templates/settings.html`
+
+**First-time wizard:**
+- [x] `GET /welcome` — live DB query: `step1_done`, `step2_done`, `step3_done`, `all_done`
+- [x] Dashboard redirects to `/welcome` when org has no active properties
+- [x] Steps unlock progressively; celebration screen when all complete
+
+**`platform_fee_rate` on disbursements:**
+- [x] `calculate_disbursement()` deducts platform fee after management fee
+- [x] `disbursements` table stores `platform_fee_rate` + `platform_fee_amount`
+- [x] Never appears in org admin routes or templates
+
+**Owner account activation:**
+- [x] `GET/POST /owner/activate/<token>` — sets password; stores in `persons.password_hash`
+- [x] Email OTP step 2: `_send_email_otp()` helper + `/owner/verify-email` route; logged to platform outbox
+- [x] `src/messaging/email.py` SMTP delivery (Mailtrap-compatible); simulated if unconfigured
+- [x] `persons.activation_token` + OTP columns (`otp_code`, `otp_expires_at`, `phone_verified`)
+
+**Owner login alternatives:**
+- [x] Email + password at `/login` (unified)
+- [x] `/owner/l/<token>` — password-only login via shareable link using `owners.access_token`
+
+**Owner security hardening:**
+- [x] `property_owners.is_primary` — auto-set; primary cannot be removed by admin
+- [x] Removal requires written reason; confirmation modal; critical alert + owner SMS
+- [x] `edit_owner` email immutable once account activated
+
+**Platform Outbox:**
+- [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
+- [x] All outbound SMS and portal notifications logged regardless of delivery status
+
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
 - [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"
@@ -544,9 +595,34 @@ Fee is embedded in disbursement spread — not a visible line item
 - Payment history shows what each payment was applied to (FIFO transparency)
 - SMS + email confirmation on every payment
 
+### Two Fees — Never Confuse Them
+
+| Field | Who sets it | Who benefits | Visible to PMO? |
+|---|---|---|---|
+| `properties.management_fee_rate` | PMO (their contract with owner) | PMO agency | Yes |
+| `properties.platform_fee_rate` | Platform only — never editable by org admin | Domi | No — deducted silently from float |
+
+Disbursement order: gross rent → minus management fee → minus platform fee → owner receives net.
+
+`platform_fee_rate` default: 0.01 (1%). Set by platform at org creation. Never appears in any org admin query or template.
+
+### Bank Statement Reconciliation — Transitional Feature
+
+The PDF bank statement upload + M-Pesa SMS claim workflow is **how we acquire customers while the payment rail is being built.** It is not the end state.
+
+**The bridge strategy:** PMOs onboard now using the bank statement workflow. They build their data, their owners see the value, their tenants learn Domi exists. When the Daraja/Pesapal credentials arrive, we flip the paybill instructions and the payment rail activates — existing customers transition automatically.
+
+Bank statement reconciliation stays in the product permanently for PMOs who have tenants paying directly to the property bank account (legacy arrangements). But it is no longer the primary payment flow once the rail is live.
+
+### Informal Monthly Payment (Bridge Period)
+
+During the customer acquisition phase (before transaction fees are technically live), Domi requests a direct monthly payment from PMOs. This is informal, not reflected in the app, and not enforced via the platform. It funds development. Amount to be discussed with each PMO during onboarding.
+
+Once the payment rail is live and transaction volumes are established, the informal fee is replaced by the automatic `platform_fee_rate` deduction from disbursements.
+
 ### Legacy Reconciliation Flow (kept permanently)
 
-Bank statement PDF + SMS claim workflow stays active. Tenants who pay directly to the owner's bank account continue to use proof-of-payment. Both flows write to the same `payments` table and run through the same FIFO allocator. Source field (`payment_transactions.source`) distinguishes origin.
+Bank statement PDF + SMS claim workflow stays active. Tenants who pay directly to the property's bank account continue to use proof-of-payment. Both flows write to the same `payments` table and run through the same FIFO allocator. Source field (`payment_transactions.source`) distinguishes origin.
 
 ### Payment Rail Checklist
 
@@ -577,11 +653,14 @@ Bank statement PDF + SMS claim workflow stays active. Tenants who pay directly t
 
 ## Business Context
 
-- Property management agency in Kenya, 2-3 person team
+- **We are the platform.** Domi is operated by its founders. The platform layer (`/platform/*`) is Domi's control room — never exposed to PMOs or owners.
 - **Product name: Domi** — derived from *domus* (Latin: home). Warm, neutral, non-intrusive.
-- Currently: 1 property (Mowin Apartments, 44 units, property ID: PROP-45ED445A)
-- Target: 3-5 properties near-term; 15+ at scale
-- **Revenue model (locked 2026-05-04):** Money-in-transit fintech model. Fee embedded in landlord disbursement spread. Target 8% management fee. Tenant pays → Domi holds → landlord receives net.
+- **First customer:** Mowin Apartments (44 units, Athi River) — used to build and validate the product. Data recreation from Jan 2026 in progress.
+- **Target market:** 1,000+ properties at Mowin scale (40–120 units) across Kenya → East Africa. The market is large, fragmented, and almost entirely undigitized.
+- **Revenue model (locked 2026-05-19):** Transaction fee on money flowing through the platform. `platform_fee_rate` (default 1%) deducted from each disbursement before owner receives funds. Not a SaaS subscription. No invoice to the PMO.
+  - Bridge period: informal monthly payment from each PMO while payment rail credentials are pending. Not in the app.
+  - Target economics: KES 8M/month at 1,000 properties at 1% fee → significant scale with no marginal cost per additional PMO.
+- **PMO onboarding:** Platform creates each org account manually (controlled growth). PMO receives credentials, logs in, completes the first-time wizard. No self-signup in Phase I.
 - Kenya market: M-Pesa dominant, WhatsApp is primary communication channel for all user types
 - The payment rail + intelligence layer IS the differentiator — spreadsheets cannot do either
 - **WhatsApp Business API application must be started immediately** — Meta approval has 2-6 week lead time; apply via Africa's Talking. This gates Phase H.

@@ -302,23 +302,25 @@ def migrate_add_owners():
         if 'owner_id' not in prop_columns:
             conn.execute("ALTER TABLE properties ADD COLUMN owner_id TEXT REFERENCES owners(id)")
 
-        # 3. Seed default owner if none exist yet
+        # 3. Seed default owner only when migrating from a legacy DB that had owner fields on properties
         owner_count = conn.execute("SELECT COUNT(*) FROM owners").fetchone()[0]
         if owner_count == 0:
-            first_prop = conn.execute(
-                "SELECT owner_name, owner_phone, owner_email FROM properties WHERE status = 'active' LIMIT 1"
-            ).fetchone()
-            owner_id = secrets.token_hex(8)
-            owner_name = (first_prop['owner_name'] if first_prop and first_prop['owner_name'] else 'Property Owner')
-            owner_phone = first_prop['owner_phone'] if first_prop else None
-            owner_email = first_prop['owner_email'] if first_prop else None
-            conn.execute(
-                "INSERT INTO owners (id, name, phone, email) VALUES (?, ?, ?, ?)",
-                (owner_id, owner_name, owner_phone, owner_email),
-            )
-            # Assign all unowned properties to this default owner
-            conn.execute("UPDATE properties SET owner_id = ? WHERE owner_id IS NULL", (owner_id,))
-            print(f"Migration: created default owner '{owner_name}' (id={owner_id}), assigned all properties.")
+            prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+            has_legacy_owner = 'owner_name' in prop_cols
+            if has_legacy_owner:
+                first_prop = conn.execute(
+                    "SELECT owner_name, owner_phone, owner_email FROM properties WHERE status = 'active' AND owner_name IS NOT NULL LIMIT 1"
+                ).fetchone()
+                if first_prop and first_prop['owner_name']:
+                    owner_id = secrets.token_hex(8)
+                    conn.execute(
+                        "INSERT INTO owners (id, name, phone, email) VALUES (?, ?, ?, ?)",
+                        (owner_id, first_prop['owner_name'], first_prop['owner_phone'], first_prop['owner_email']),
+                    )
+                    conn.execute("UPDATE properties SET owner_id = ? WHERE owner_id IS NULL", (owner_id,))
+                    print(f"Migration: created default owner '{first_prop['owner_name']}' (id={owner_id}), assigned all properties.")
+                    return
+            print("Migration migrate_add_owners: fresh install, no owner seed needed.")
         else:
             print("Migration migrate_add_owners: owners already exist, skipping seed.")
 
@@ -1267,4 +1269,86 @@ def migrate_bank_statements_nullable_property():
         raw.close()
 
     print("Migration complete: bank_statements.property_id now nullable.")
-    print("Migration complete: water_rate, water_uploads, water_readings ready.")
+
+
+def migrate_add_deletion_requested():
+    """Add deletion_requested_at to properties for platform-reviewed soft-delete. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if 'deletion_requested_at' not in cols:
+            conn.execute("ALTER TABLE properties ADD COLUMN deletion_requested_at TIMESTAMP")
+        print("Migration complete: properties.deletion_requested_at ready.")
+
+
+def migrate_add_platform_fee_rate():
+    """Add platform_fee_rate to organizations, activation_token to persons, platform fee columns
+    to disbursements. Idempotent."""
+    with get_connection() as conn:
+        org_cols = [r[1] for r in conn.execute("PRAGMA table_info(organizations)").fetchall()]
+        if 'platform_fee_rate' not in org_cols:
+            conn.execute("ALTER TABLE organizations ADD COLUMN platform_fee_rate REAL DEFAULT 0.01")
+
+        per_cols = [r[1] for r in conn.execute("PRAGMA table_info(persons)").fetchall()]
+        if 'activation_token' not in per_cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN activation_token TEXT")
+
+        dis_cols = [r[1] for r in conn.execute("PRAGMA table_info(disbursements)").fetchall()]
+        if 'platform_fee_rate' not in dis_cols:
+            conn.execute("ALTER TABLE disbursements ADD COLUMN platform_fee_rate REAL")
+        if 'platform_fee_amount' not in dis_cols:
+            conn.execute("ALTER TABLE disbursements ADD COLUMN platform_fee_amount REAL")
+        print("Migration complete: platform_fee_rate, activation_token, disbursement fee columns ready.")
+
+
+def migrate_add_owner_otp():
+    """Add OTP fields and phone_verified flag to persons. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(persons)").fetchall()]
+        if 'otp_code' not in cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN otp_code TEXT")
+        if 'otp_expires_at' not in cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN otp_expires_at TIMESTAMP")
+        if 'phone_verified' not in cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN phone_verified INTEGER DEFAULT 0")
+        print("Migration complete: persons OTP fields ready.")
+
+
+def migrate_add_primary_owner():
+    """Add is_primary flag to property_owners. First assigned owner per property becomes primary. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(property_owners)").fetchall()]
+        if 'is_primary' not in cols:
+            conn.execute("ALTER TABLE property_owners ADD COLUMN is_primary INTEGER DEFAULT 0")
+            # Mark earliest assignment per property as primary for existing data
+            conn.execute("""
+                UPDATE property_owners SET is_primary = 1
+                WHERE rowid IN (
+                    SELECT MIN(rowid) FROM property_owners GROUP BY property_id
+                )
+            """)
+        print("Migration complete: property_owners.is_primary ready.")
+
+
+def migrate_add_platform_outbox():
+    """Create platform_outbox table for logging all outbound messages. Idempotent."""
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS platform_outbox (
+                id          TEXT PRIMARY KEY,
+                to_name     TEXT,
+                to_email    TEXT,
+                to_phone    TEXT,
+                channel     TEXT NOT NULL,
+                subject     TEXT,
+                body        TEXT NOT NULL,
+                status      TEXT DEFAULT 'simulated',
+                error       TEXT,
+                org_id      TEXT,
+                property_id TEXT,
+                message_type TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_outbox_created ON platform_outbox(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_outbox_channel ON platform_outbox(channel)")
+        print("Migration complete: platform_outbox table ready.")

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Welcome to Domi{% endblock %}
+{% block content %}
+
+<div style="max-width: 680px; margin: 40px auto; padding: 0 16px;">
+
+  {% if all_done %}
+  <div style="text-align: center; margin-bottom: 40px;">
+    <div style="font-size: 40px; margin-bottom: 12px;">🎉</div>
+    <h3 style="font-weight: 700; margin-bottom: 6px;">You're all set{% if org_name %}, {{ org_name }}{% endif %}!</h3>
+    <p style="color: #718096; font-size: 15px; margin-bottom: 24px;">Property, owners, and caretaker are configured. Head to your dashboard.</p>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to dashboard &rarr;</a>
+  </div>
+  {% else %}
+  <div style="text-align: center; margin-bottom: 40px;">
+    <h3 style="font-weight: 700; margin-bottom: 6px;">
+      Welcome to Domi{% if org_name %}, {{ org_name }}{% endif %}
+    </h3>
+    <p style="color: #718096; font-size: 15px; margin: 0;">
+      Get your first property set up in three steps.
+    </p>
+  </div>
+  {% endif %}
+
+  {# ── Step 1 ─────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3"
+       style="border-radius: 12px; overflow: hidden;
+              {% if step1_done %}border-left: 4px solid #22c55e;{% endif %}">
+    <div class="card-body" style="padding: 24px;">
+      <div class="d-flex align-items-start gap-3">
+        <div style="width: 36px; height: 36px; border-radius: 50%;
+                    background: {{ '#22c55e' if step1_done else '#3b82f6' }};
+                    color: #fff; display: flex; align-items: center; justify-content: center;
+                    font-weight: 700; flex-shrink: 0; font-size: 16px;">
+          {{ '✓' if step1_done else '1' }}
+        </div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;
+                      {% if step1_done %}text-decoration: line-through; color: #6b7280;{% endif %}">
+            Add your property &amp; units
+          </div>
+          {% if step1_done %}
+          <div style="font-size: 13px; color: #22c55e; margin-bottom: 12px;">
+            {{ first_property.name }} added.
+          </div>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-outline-success btn-sm">Go to dashboard</a>
+          {% else %}
+          <div style="color: #718096; font-size: 14px; margin-bottom: 16px;">
+            Upload an Excel file with your unit list, or create the property manually.
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('onboard') }}" class="btn btn-primary btn-sm">Upload Excel (recommended)</a>
+            <a href="{{ url_for('setup_property') }}" class="btn btn-outline-secondary btn-sm">Create manually</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Step 2 ─────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3"
+       style="border-radius: 12px; overflow: hidden;
+              {% if step2_done %}border-left: 4px solid #22c55e;{% elif not step1_done %}opacity: 0.5;{% else %}border-left: 4px solid #3b82f6;{% endif %}">
+    <div class="card-body" style="padding: 24px;">
+      <div class="d-flex align-items-start gap-3">
+        <div style="width: 36px; height: 36px; border-radius: 50%;
+                    background: {{ '#22c55e' if step2_done else ('#3b82f6' if step1_done else '#e2e8f0') }};
+                    color: {{ '#fff' if step1_done or step2_done else '#4a5568' }};
+                    display: flex; align-items: center; justify-content: center;
+                    font-weight: 700; flex-shrink: 0; font-size: 16px;">
+          {{ '✓' if step2_done else '2' }}
+        </div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;
+                      {% if step2_done %}text-decoration: line-through; color: #6b7280;{% endif %}">
+            Add property owners
+          </div>
+          {% if step2_done %}
+          <div style="font-size: 13px; color: #22c55e; margin-bottom: 12px;">Owner linked.</div>
+          <a href="{{ url_for('manage_owners') }}" class="btn btn-outline-success btn-sm">Manage owners</a>
+          {% elif step1_done %}
+          <div style="color: #718096; font-size: 14px; margin-bottom: 16px;">
+            Link the landlord to this property. Owners get a read-only view of rent collection,
+            statements, and reports — independently from the agency.
+          </div>
+          <a href="{{ url_for('manage_owners') }}" class="btn btn-primary btn-sm">Add owner</a>
+          {% else %}
+          <div style="font-size: 13px; color: #a0aec0;">Complete step 1 first</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Step 3 ─────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4"
+       style="border-radius: 12px; overflow: hidden;
+              {% if step3_done %}border-left: 4px solid #22c55e;{% elif not step1_done %}opacity: 0.5;{% else %}border-left: 4px solid #3b82f6;{% endif %}">
+    <div class="card-body" style="padding: 24px;">
+      <div class="d-flex align-items-start gap-3">
+        <div style="width: 36px; height: 36px; border-radius: 50%;
+                    background: {{ '#22c55e' if step3_done else ('#3b82f6' if step1_done else '#e2e8f0') }};
+                    color: {{ '#fff' if step1_done or step3_done else '#4a5568' }};
+                    display: flex; align-items: center; justify-content: center;
+                    font-weight: 700; flex-shrink: 0; font-size: 16px;">
+          {{ '✓' if step3_done else '3' }}
+        </div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;
+                      {% if step3_done %}text-decoration: line-through; color: #6b7280;{% endif %}">
+            Add a caretaker
+          </div>
+          {% if step3_done %}
+          <div style="font-size: 13px; color: #22c55e; margin-bottom: 12px;">Caretaker added.</div>
+          <a href="{{ url_for('manage_caretakers') }}" class="btn btn-outline-success btn-sm">Manage caretakers</a>
+          {% elif step1_done %}
+          <div style="color: #718096; font-size: 14px; margin-bottom: 16px;">
+            Give your on-site caretaker access to log payments, submit water readings,
+            and receive daily briefings via SMS.
+          </div>
+          <a href="{{ url_for('manage_caretakers') }}" class="btn btn-primary btn-sm">Add caretaker</a>
+          {% else %}
+          <div style="font-size: 13px; color: #a0aec0;">Complete step 1 first</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if step1_done and not all_done %}
+  <div style="text-align: center;">
+    <a href="{{ url_for('dashboard') }}" style="font-size: 13px; color: #a0aec0; text-decoration: none;">
+      Skip for now &rarr; go to dashboard
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}Pending Deletions — Domi Platform{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <h4 class="mb-1">Pending Deletions</h4>
+  <div style="font-size:13px;color:#718096;">
+    Properties awaiting review. Data is fully preserved. Approve after the 14-day owner dispute window, cancel to restore, or transfer to a new agency.
+  </div>
+</div>
+
+{% if not pending %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5">
+    <div style="font-size:32px;margin-bottom:12px;">✓</div>
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">No pending deletions</div>
+    <div style="font-size:13px;color:#718096;">All properties are active.</div>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0" style="font-size:13px;">
+      <thead style="background:#f8f9fa;">
+        <tr>
+          <th style="padding:12px 16px;font-weight:600;">Property</th>
+          <th style="padding:12px 16px;font-weight:600;">Agency</th>
+          <th style="padding:12px 16px;font-weight:600;">Requested</th>
+          <th style="padding:12px 16px;font-weight:600;">Window</th>
+          <th style="padding:12px 16px;font-weight:600;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pending %}
+        {% set days_left = [14 - p.days_elapsed, 0] | max %}
+        <tr>
+          <td style="padding:14px 16px;">
+            <div style="font-weight:600;">{{ p.name }}</div>
+            {% if p.address %}<div style="font-size:12px;color:#718096;">{{ p.address }}</div>{% endif %}
+          </td>
+          <td style="padding:14px 16px;color:#718096;">{{ p.org_name or '—' }}</td>
+          <td style="padding:14px 16px;color:#718096;">{{ p.deletion_requested_at[:10] if p.deletion_requested_at else '—' }}</td>
+          <td style="padding:14px 16px;">
+            {% if days_left > 0 %}
+            <span style="color:#d97706;font-weight:600;">{{ days_left }} day{{ 's' if days_left != 1 }} left</span>
+            {% else %}
+            <span style="color:#dc2626;font-weight:600;">Window expired</span>
+            {% endif %}
+          </td>
+          <td style="padding:14px 16px;">
+            <div class="d-flex gap-2 flex-wrap">
+
+              {# Cancel — always available #}
+              <form method="POST" action="{{ url_for('platform.cancel_deletion', property_id=p.id) }}"
+                    onsubmit="return confirm('Restore {{ p.name }} to active? Agency will regain access.')">
+                <button type="submit" class="btn btn-sm btn-outline-success">Cancel &amp; Restore</button>
+              </form>
+
+              {# Transfer to new org #}
+              <form method="POST" action="{{ url_for('platform.transfer_property', property_id=p.id) }}"
+                    class="d-flex gap-1 align-items-center">
+                <select name="new_org_id" class="form-select form-select-sm" style="width:auto;" required>
+                  <option value="">Transfer to…</option>
+                  {% for org in orgs %}
+                  {% if org.id != p.org_id %}
+                  <option value="{{ org.id }}">{{ org.name }}</option>
+                  {% endif %}
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary">Transfer</button>
+              </form>
+
+              {# Approve deletion — only after 14 days #}
+              {% if days_left == 0 %}
+              <form method="POST" action="{{ url_for('platform.approve_deletion', property_id=p.id) }}"
+                    onsubmit="return confirm('Permanently delete {{ p.name }} and all data? This cannot be undone.')">
+                <button type="submit" class="btn btn-sm btn-danger">Approve &amp; Delete</button>
+              </form>
+              {% else %}
+              <button type="button" class="btn btn-sm btn-outline-danger" disabled
+                title="Available after the 14-day owner dispute window expires">Delete ({{ days_left }}d)</button>
+              {% endif %}
+
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

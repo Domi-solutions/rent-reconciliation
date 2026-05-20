@@ -102,6 +102,11 @@ from src.database.db import (
     migrate_add_payout_fields,
     migrate_add_water_readings,
     migrate_bank_statements_nullable_property,
+    migrate_add_deletion_requested,
+    migrate_add_platform_fee_rate,
+    migrate_add_owner_otp,
+    migrate_add_primary_owner,
+    migrate_add_platform_outbox,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -140,6 +145,11 @@ migrate_add_platform_alerts()
 migrate_add_payout_fields()
 migrate_add_water_readings()
 migrate_bank_statements_nullable_property()
+migrate_add_deletion_requested()
+migrate_add_platform_fee_rate()
+migrate_add_owner_otp()
+migrate_add_primary_owner()
+migrate_add_platform_outbox()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -181,10 +191,10 @@ if _should_start_scheduler and not scheduler.running:
 
 @app.before_request
 def require_admin_auth():
-    """Require admin password for all admin routes. Bypass if ADMIN_PASSWORD unset (dev mode)."""
+    """Require admin login for all org admin routes."""
     if request.endpoint is None:
         return None
-    exempt = ('admin_login', 'admin_logout', 'org_select', 'static')
+    exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome')
     if request.endpoint in exempt:
         return None
     if request.path.startswith('/view'):
@@ -198,8 +208,6 @@ def require_admin_auth():
     if request.path.startswith('/platform'):
         return None
     if request.path.startswith('/owner'):
-        return None
-    if not os.environ.get('ADMIN_PASSWORD'):
         return None
     if not session.get('admin_authenticated'):
         return redirect(url_for('admin_login', next=request.url))
@@ -362,33 +370,47 @@ def inject_property_context():
 
 @app.route('/login', methods=['GET', 'POST'])
 def admin_login():
-    """Admin login. Email + password identifies the org; global ADMIN_PASSWORD is the master key."""
+    """Unified login for org admins and property owners.
+
+    Priority: org email → owner (person) email → global ADMIN_PASSWORD master key.
+    """
     from werkzeug.security import check_password_hash
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
-        next_url = request.form.get('next') or request.args.get('next') or url_for('dashboard')
+        next_url = request.form.get('next') or request.args.get('next') or ''
 
-        # Email-based org login
         if email:
             with get_connection() as conn:
+                # 1. Org admin login
                 org = conn.execute(
                     "SELECT id, name, admin_password_hash FROM organizations WHERE LOWER(contact_email) = ? AND is_active = 1",
                     (email,),
                 ).fetchone()
-            if org and org['admin_password_hash'] and check_password_hash(org['admin_password_hash'], password):
-                session['admin_authenticated'] = True
-                session['org_id'] = org['id']
-                session['org_selection_done'] = True
-                session.pop('property_id', None)
-                return redirect(next_url)
+                if org and org['admin_password_hash'] and check_password_hash(org['admin_password_hash'], password):
+                    session['admin_authenticated'] = True
+                    session['org_id'] = org['id']
+                    session['org_selection_done'] = True
+                    session.pop('property_id', None)
+                    return redirect(next_url or url_for('dashboard'))
 
-        # Fall back to global ADMIN_PASSWORD (master key / dev mode)
+                # 2. Owner (person) login — always goes to owner dashboard, never org admin routes
+                person = conn.execute(
+                    "SELECT id, name, password_hash FROM persons WHERE LOWER(email) = ?",
+                    (email,),
+                ).fetchone()
+                if person and person['password_hash'] and check_password_hash(person['password_hash'], password):
+                    session['person_id'] = person['id']
+                    session['person_role'] = 'owner'
+                    session['person_name'] = person['name']
+                    return redirect(url_for('owner.dashboard'))
+
+        # 3. Master key fallback (dev mode / emergency access)
         global_pw = os.environ.get('ADMIN_PASSWORD')
         if global_pw and password == global_pw:
             session['admin_authenticated'] = True
-            return redirect(next_url)
+            return redirect(next_url or url_for('dashboard'))
 
         return render_template('login.html', error='Incorrect email or password.')
 
@@ -403,6 +425,92 @@ def admin_logout():
     session.pop('org_selection_done', None)
     session.pop('property_id', None)
     return redirect(url_for('admin_login'))
+
+
+@app.route('/settings', methods=['GET'])
+def org_settings():
+    """Organisation account settings — email and password."""
+    org_id = session.get('org_id')
+    org = None
+    if org_id:
+        with get_connection() as conn:
+            org = conn.execute(
+                "SELECT id, name, contact_email, contact_phone FROM organizations WHERE id = ?",
+                (org_id,),
+            ).fetchone()
+    return render_template('settings.html', org=org)
+
+
+@app.route('/settings/email', methods=['POST'])
+def settings_update_email():
+    """Change the org's login email address."""
+    org_id = session.get('org_id')
+    if not org_id:
+        flash('No organisation selected.', 'error')
+        return redirect(url_for('org_settings'))
+    new_email = request.form.get('email', '').strip().lower()
+    if not new_email:
+        flash('Email cannot be empty.', 'error')
+        return redirect(url_for('org_settings'))
+    with get_connection() as conn:
+        org = conn.execute("SELECT name, contact_email FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            flash('Organisation not found.', 'error')
+            return redirect(url_for('org_settings'))
+        conflict = conn.execute(
+            "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
+            (new_email, org_id),
+        ).fetchone()
+        if conflict:
+            flash(f"Email '{new_email}' is already used by another organisation.", 'error')
+            return redirect(url_for('org_settings'))
+        conn.execute("UPDATE organizations SET contact_email = ? WHERE id = ?", (new_email, org_id))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('org_email_changed', 'organization', org_id,
+             f"Email changed from {org['contact_email']} to {new_email}", 'admin'),
+        )
+    flash('Login email updated.', 'success')
+    return redirect(url_for('org_settings'))
+
+
+@app.route('/settings/password', methods=['POST'])
+def settings_update_password():
+    """Change the org's login password."""
+    from werkzeug.security import check_password_hash, generate_password_hash
+    org_id = session.get('org_id')
+    if not org_id:
+        flash('No organisation selected.', 'error')
+        return redirect(url_for('org_settings'))
+    current_pw = request.form.get('current_password', '')
+    new_pw = request.form.get('new_password', '').strip()
+    confirm_pw = request.form.get('confirm_password', '').strip()
+    if len(new_pw) < 8:
+        flash('New password must be at least 8 characters.', 'error')
+        return redirect(url_for('org_settings'))
+    if new_pw != confirm_pw:
+        flash('Passwords do not match.', 'error')
+        return redirect(url_for('org_settings'))
+    with get_connection() as conn:
+        org = conn.execute(
+            "SELECT name, admin_password_hash FROM organizations WHERE id = ?", (org_id,)
+        ).fetchone()
+        if not org:
+            flash('Organisation not found.', 'error')
+            return redirect(url_for('org_settings'))
+        if org['admin_password_hash'] and not check_password_hash(org['admin_password_hash'], current_pw):
+            flash('Current password is incorrect.', 'error')
+            return redirect(url_for('org_settings'))
+        conn.execute(
+            "UPDATE organizations SET admin_password_hash = ? WHERE id = ?",
+            (generate_password_hash(new_pw), org_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('org_password_changed', 'organization', org_id, 'Password changed by org admin', 'admin'),
+        )
+    flash('Password updated.', 'success')
+    return redirect(url_for('org_settings'))
 
 
 @app.route('/org-select', methods=['GET', 'POST'])
@@ -506,25 +614,65 @@ def select_property(property_id):
     return redirect(url_for('dashboard'))
 
 
-@app.route('/properties/delete/<property_id>', methods=['POST'])
+@app.route('/properties/delete/<property_id>', methods=['GET', 'POST'])
 def delete_property(property_id):
-    """Soft-delete a property (set status=inactive)."""
+    """Confirm and permanently delete a property and all associated data."""
     with get_connection() as conn:
         prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
         if not prop:
             flash('Property not found.', 'error')
             return redirect(url_for('property_list'))
 
-        conn.execute("UPDATE properties SET status = 'inactive' WHERE id = ?", (property_id,))
+        if request.method == 'GET':
+            unit_count     = conn.execute("SELECT COUNT(*) FROM units WHERE property_id=?", (property_id,)).fetchone()[0]
+            tenant_count   = conn.execute("SELECT COUNT(*) FROM tenants WHERE property_id=?", (property_id,)).fetchone()[0]
+            payment_count  = conn.execute("SELECT COUNT(*) FROM payments WHERE property_id=?", (property_id,)).fetchone()[0]
+            charge_count   = conn.execute("SELECT COUNT(*) FROM rent_charges WHERE property_id=?", (property_id,)).fetchone()[0]
+            statement_count = conn.execute("SELECT COUNT(*) FROM bank_statements WHERE property_id=?", (property_id,)).fetchone()[0]
+            return render_template('property_delete.html', prop=prop,
+                unit_count=unit_count, tenant_count=tenant_count,
+                payment_count=payment_count, charge_count=charge_count,
+                statement_count=statement_count)
+
+        confirm_name = request.form.get('confirm_name', '').strip()
+        if confirm_name != prop['name']:
+            flash('Property name did not match. Deletion request cancelled.', 'error')
+            return redirect(url_for('delete_property', property_id=property_id))
+
+        org_id = prop['organization_id']
+
+        from src.platform.guardian import platform_log, raise_alert, notify_owner_change
+
+        # Soft delete — property disappears from agency view immediately, data fully preserved
         conn.execute(
-            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('property_deleted', 'property', property_id, f'Deactivated: {prop["name"]}', 'admin'),
-        )
+            "UPDATE properties SET status='deletion_requested', deletion_requested_at=CURRENT_TIMESTAMP WHERE id=?",
+            (property_id,))
+
+        # Notify all owners directly (bypasses agency)
+        notify_owner_change(conn, property_id,
+            f'Deletion request: {prop["name"]}',
+            f'Your property "{prop["name"]}" has been scheduled for deletion by the managing agency. '
+            f'All data will be preserved for 14 days. If you did not authorise this, '
+            f'contact Domi immediately to dispute.')
+
+        platform_log(conn, 'property_deletion_requested', 'property', property_id,
+            f'Deletion requested for "{prop["name"]}"', org_id=org_id, property_id=property_id)
+        raise_alert(conn, 'property_deletion_requested',
+            f'Agency requested deletion of property "{prop["name"]}". Data preserved. Review within 14 days.',
+            org_id=org_id, property_id=property_id, severity='critical')
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
+            ('property_deletion_requested', 'property', property_id,
+             f'Deletion requested: {prop["name"]}', 'admin'))
 
         if session.get('property_id') == property_id:
             session.pop('property_id', None)
 
-    flash(f'Property "{prop["name"]}" has been deactivated.', 'success')
+    flash(
+        f'Deletion request submitted for "{prop["name"]}". '
+        f'The property has been removed from your view. '
+        f'All owners have been notified. Domi platform will review within 14 days.',
+        'success')
     return redirect(url_for('property_list'))
 
 
@@ -534,7 +682,15 @@ def dashboard():
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
-            any_prop = conn.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
+            org_id = session.get('org_id')
+            if org_id:
+                # Org is set but has no properties — show first-time wizard
+                prop_count = conn.execute(
+                    "SELECT COUNT(*) FROM properties WHERE organization_id = ? AND status='active'", (org_id,)
+                ).fetchone()[0]
+                if prop_count == 0:
+                    return redirect(url_for('welcome'))
+            any_prop = conn.execute("SELECT COUNT(*) FROM properties WHERE status='active'").fetchone()[0]
             if any_prop == 0:
                 return redirect(url_for('setup_property'))
             return redirect(url_for('property_list'))
@@ -755,9 +911,15 @@ def setup_property():
 
         property_id = generate_id('PROP')
         with get_connection() as conn:
+            org_id = session.get('org_id')
+            if org_id:
+                exists = conn.execute("SELECT 1 FROM organizations WHERE id = ?", (org_id,)).fetchone()
+                if not exists:
+                    org_id = None
+                    session.pop('org_id', None)
             conn.execute(
                 "INSERT INTO properties (id, name, address, organization_id) VALUES (?, ?, ?, ?)",
-                (property_id, name, address, session.get('org_id')),
+                (property_id, name, address, org_id),
             )
             details = f'Name: {name}'
             if address:
@@ -771,6 +933,51 @@ def setup_property():
         return redirect(url_for('manage_units'))
 
     return render_template('setup_property.html')
+
+
+@app.route('/welcome')
+def welcome():
+    """First-time setup wizard — shows live step completion from the DB."""
+    org_id = session.get('org_id')
+    org_name = None
+    props = []
+    has_owner = False
+    has_caretaker = False
+
+    if org_id:
+        with get_connection() as conn:
+            org = conn.execute("SELECT name FROM organizations WHERE id = ?", (org_id,)).fetchone()
+            if org:
+                org_name = org['name']
+            props = conn.execute(
+                "SELECT id, name FROM properties WHERE organization_id = ? AND status = 'active' ORDER BY name",
+                (org_id,),
+            ).fetchall()
+            if props:
+                prop_ids = [p['id'] for p in props]
+                placeholders = ','.join('?' * len(prop_ids))
+                has_owner = conn.execute(
+                    f"SELECT COUNT(*) FROM property_owners WHERE property_id IN ({placeholders})",
+                    prop_ids,
+                ).fetchone()[0] > 0
+                has_caretaker = conn.execute(
+                    f"SELECT COUNT(*) FROM caretakers WHERE property_id IN ({placeholders})",
+                    prop_ids,
+                ).fetchone()[0] > 0
+
+    step1_done = len(props) > 0
+    step2_done = has_owner
+    step3_done = has_caretaker
+
+    return render_template(
+        'welcome.html',
+        org_name=org_name,
+        step1_done=step1_done,
+        step2_done=step2_done,
+        step3_done=step3_done,
+        first_property=props[0] if props else None,
+        all_done=step1_done and step2_done and step3_done,
+    )
 
 
 @app.route('/units')
@@ -1199,17 +1406,20 @@ def manage_owners():
                    o.password_hash IS NOT NULL as has_password,
                    o.person_id,
                    o.created_at,
+                   per.activation_token,
+                   per.password_hash IS NOT NULL as has_domi_password,
                    COUNT(p.id) as property_count
             FROM owners o
             LEFT JOIN property_owners po ON po.owner_id = o.id
             LEFT JOIN properties p ON p.id = po.property_id AND p.status = 'active'
+            LEFT JOIN persons per ON per.id = o.person_id
             GROUP BY o.id
             ORDER BY o.name
         """).fetchall()
         owner_properties = {}
         for o in owners:
             props = conn.execute("""
-                SELECT p.id, p.name FROM properties p
+                SELECT p.id, p.name, po.is_primary FROM properties p
                 JOIN property_owners po ON po.property_id = p.id
                 WHERE po.owner_id = ? AND p.status = 'active'
             """, (o['id'],)).fetchall()
@@ -1222,79 +1432,78 @@ def manage_owners():
 
 @app.route('/owners/new', methods=['POST'])
 def create_owner():
-    """Create a new owner record. If phone is provided, create/link a persons row for Domi Login."""
-    from werkzeug.security import generate_password_hash
+    """Create a new owner record. If email is provided, create a persons row with an activation link."""
     import secrets as _secrets
     name = request.form.get('name', '').strip()
     phone = request.form.get('phone', '').strip()
-    email = request.form.get('email', '').strip()
-    password = request.form.get('password', '').strip()
-    domi_password = request.form.get('domi_password', '').strip()
+    email = request.form.get('email', '').strip().lower() or None
     if not name:
         flash('Name is required.', 'error')
         return redirect(url_for('manage_owners'))
     property_id = request.form.get('property_id', '').strip()
     owner_id = _secrets.token_hex(8)
-    password_hash = generate_password_hash(password) if password else None
-
-    # Normalize phone for persons lookup
     phone_norm = _normalize_phone(phone) if phone else None
 
     with get_connection() as conn:
-        # Create or link persons row if phone is provided
+        # Create or link a persons row keyed on email (login identifier)
         person_id = None
-        if phone_norm:
-            existing = conn.execute(
-                "SELECT id FROM persons WHERE phone = ?", (phone_norm,)
-            ).fetchone()
+        activation_token = None
+        if email:
+            existing = conn.execute("SELECT id FROM persons WHERE email = ?", (email,)).fetchone()
             if existing:
                 person_id = existing['id']
-                if domi_password:
-                    conn.execute(
-                        "UPDATE persons SET password_hash = ? WHERE id = ?",
-                        (generate_password_hash(domi_password), person_id),
-                    )
             else:
                 person_id = generate_id('PERS')
+                activation_token = _secrets.token_urlsafe(24)
                 conn.execute(
-                    "INSERT INTO persons (id, name, phone, email, password_hash) VALUES (?, ?, ?, ?, ?)",
-                    (person_id, name, phone_norm, email or None,
-                     generate_password_hash(domi_password) if domi_password else None),
+                    "INSERT INTO persons (id, name, phone, email, activation_token) VALUES (?, ?, ?, ?, ?)",
+                    (person_id, name, phone_norm, email, activation_token),
                 )
 
         conn.execute(
-            "INSERT INTO owners (id, name, phone, email, password_hash, person_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (owner_id, name, phone or None, email or None, password_hash, person_id),
+            "INSERT INTO owners (id, name, phone, email, person_id) VALUES (?, ?, ?, ?, ?)",
+            (owner_id, name, phone_norm or phone or None, email, person_id),
         )
         if property_id:
             jid = generate_id('POWN')
+            has_primary = conn.execute(
+                "SELECT COUNT(*) FROM property_owners WHERE property_id = ? AND is_primary = 1",
+                (property_id,)
+            ).fetchone()[0]
             conn.execute(
-                "INSERT OR IGNORE INTO property_owners (id, property_id, owner_id) VALUES (?, ?, ?)",
-                (jid, property_id, owner_id)
+                "INSERT OR IGNORE INTO property_owners (id, property_id, owner_id, is_primary) VALUES (?, ?, ?, ?)",
+                (jid, property_id, owner_id, 0 if has_primary else 1)
             )
             conn.execute("UPDATE properties SET owner_id = ? WHERE id = ? AND owner_id IS NULL", (owner_id, property_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('owner_created', 'owner', owner_id,
-             f"Owner: {name}" + (" | Domi Login: enabled" if person_id and domi_password else ""), 'admin'),
+             f"Owner: {name}" + (f" | Activation link generated for {email}" if activation_token else ""), 'admin'),
         )
         from src.platform.guardian import platform_log, raise_alert
         _org_id = session.get('org_id')
         platform_log(conn, 'owner_created', 'owner', owner_id,
-                     f"New owner '{name}' created by agency. Phone: {phone or 'none'}. "
+                     f"New owner '{name}' created by agency. Email: {email or 'none'}. "
                      f"Property linked: {property_id or 'none'}.",
                      org_id=_org_id)
         raise_alert(conn, 'owner_created',
                     f"Agency created new owner '{name}' (id={owner_id}). "
                     f"Verify this is a real owner before the next disbursement cycle.",
                     org_id=_org_id, severity='critical')
-    flash(f"Owner '{name}' created." + (" Domi Login enabled." if person_id and domi_password else ""), 'success')
+
+    msg = f"Owner '{name}' created."
+    if activation_token:
+        msg += f" Activation link ready — copy it from the owner's Manage section and send to {email}."
+    elif email and not activation_token:
+        msg += " Linked to existing Domi account."
+    flash(msg, 'success')
     return redirect(url_for('manage_owners'))
 
 
 @app.route('/owners/<owner_id>/edit', methods=['POST'])
 def edit_owner(owner_id):
-    """Update owner name/email/phone. Sending SMS to old phone if phone changes (D1 — blocks T1)."""
+    """Update owner name/phone. Email is locked once the Domi account is activated (D2 extension).
+    Phone change SMSes the old number (D1 — blocks T1)."""
     from src.platform.guardian import platform_log
     from src.messaging.delivery import send_sms
     name = request.form.get('name', '').strip()
@@ -1305,27 +1514,49 @@ def edit_owner(owner_id):
         return redirect(url_for('manage_owners'))
     with get_connection() as conn:
         owner = conn.execute(
-            "SELECT name, phone FROM owners WHERE id = ?", (owner_id,)
+            """SELECT o.name, o.phone, o.email, o.person_id,
+                      p.password_hash IS NOT NULL AS account_active
+               FROM owners o
+               LEFT JOIN persons p ON p.id = o.person_id
+               WHERE o.id = ?""",
+            (owner_id,)
         ).fetchone()
         if not owner:
             flash('Owner not found.', 'error')
             return redirect(url_for('manage_owners'))
+
         old_phone = owner['phone']
         phone_norm = _normalize_phone(phone) if phone else None
+        new_phone = phone_norm or phone or None
+
+        # Email is immutable once the Domi account is activated
+        if owner['account_active']:
+            new_email = owner['email']  # preserve, don't allow change
+        else:
+            new_email = email or None
+
         conn.execute(
             "UPDATE owners SET name = ?, phone = ?, email = ? WHERE id = ?",
-            (name, phone_norm or phone or None, email or None, owner_id),
+            (name, new_phone, new_email, owner_id),
         )
+        # Keep persons row in sync (name and phone only — email is the login key, never touch it)
+        if owner['person_id']:
+            conn.execute(
+                "UPDATE persons SET name = ?, phone = ? WHERE id = ?",
+                (name, new_phone, owner['person_id']),
+            )
+
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('owner_edited', 'owner', owner_id,
-             f"Name: {name} | Phone: {phone_norm or phone or '—'}", 'admin'),
+             f"Name: {name} | Phone: {new_phone or '—'}", 'admin'),
         )
         _org_id = session.get('org_id')
         platform_log(conn, 'owner_phone_changed', 'owner', owner_id,
-                     f"Owner '{name}' phone updated from {old_phone or 'unset'} to {phone_norm or phone or 'unset'} by agency.",
+                     f"Owner '{name}' contact info updated by agency. "
+                     f"Phone: {old_phone or 'unset'} → {new_phone or 'unset'}.",
                      org_id=_org_id)
-        if old_phone and old_phone != (phone_norm or phone or ''):
+        if old_phone and old_phone != new_phone:
             send_sms(
                 [{'phone': old_phone}],
                 f"Domi: Your contact number on your owner profile has been updated by the managing agency. "
@@ -1351,6 +1582,40 @@ def generate_owner_token(owner_id):
             ('owner_token_generated', 'owner', owner_id, f"Owner: {owner['name']} | New portal link", 'admin'),
         )
     flash(f"New access link generated for {owner['name']}.", 'success')
+    return redirect(url_for('manage_owners'))
+
+
+@app.route('/owners/<owner_id>/resend-invite', methods=['POST'])
+def resend_owner_invite(owner_id):
+    """Regenerate activation token for an owner (copy link from Manage section to send manually)."""
+    import secrets as _secrets
+    with get_connection() as conn:
+        owner = conn.execute(
+            "SELECT o.name, o.email, o.phone, p.id AS person_id, p.password_hash AS has_password FROM owners o LEFT JOIN persons p ON p.id = o.person_id WHERE o.id = ?",
+            (owner_id,)
+        ).fetchone()
+        if not owner:
+            flash('Owner not found.', 'error')
+            return redirect(url_for('manage_owners'))
+        if owner['has_password']:
+            flash(f"{owner['name']} already has an active Domi account.", 'info')
+            return redirect(url_for('manage_owners'))
+        email = owner['email']
+        if not email:
+            flash('Owner has no email address — add one before generating an activation link.', 'error')
+            return redirect(url_for('manage_owners'))
+        activation_token = _secrets.token_urlsafe(24)
+        phone_norm = _normalize_phone(owner['phone']) if owner['phone'] else None
+        if owner['person_id']:
+            conn.execute("UPDATE persons SET activation_token = ? WHERE id = ?", (activation_token, owner['person_id']))
+        else:
+            person_id = generate_id('PERS')
+            conn.execute(
+                "INSERT INTO persons (id, name, phone, email, activation_token) VALUES (?, ?, ?, ?, ?)",
+                (person_id, owner['name'], phone_norm, email, activation_token),
+            )
+            conn.execute("UPDATE owners SET person_id = ? WHERE id = ?", (person_id, owner_id))
+    flash(f"New activation link generated for {owner['name']}. Copy it from the Manage section.", 'success')
     return redirect(url_for('manage_owners'))
 
 
@@ -1396,16 +1661,28 @@ def assign_property_to_owner(owner_id):
         if not owner or not prop:
             flash('Owner or property not found.', 'error')
             return redirect(url_for('manage_owners'))
+        already = conn.execute(
+            "SELECT COUNT(*) FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()[0]
+        if already:
+            flash(f"{owner['name']} is already assigned to {prop['name']}.", 'info')
+            return redirect(url_for('manage_owners'))
+        has_primary = conn.execute(
+            "SELECT COUNT(*) FROM property_owners WHERE property_id = ? AND is_primary = 1",
+            (property_id,)
+        ).fetchone()[0]
+        is_primary = 0 if has_primary else 1
         jid = generate_id('POWN')
         conn.execute(
-            "INSERT OR IGNORE INTO property_owners (id, property_id, owner_id) VALUES (?, ?, ?)",
-            (jid, property_id, owner_id)
+            "INSERT INTO property_owners (id, property_id, owner_id, is_primary) VALUES (?, ?, ?, ?)",
+            (jid, property_id, owner_id, is_primary)
         )
         conn.execute("UPDATE properties SET owner_id = ? WHERE id = ? AND owner_id IS NULL", (owner_id, property_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('property_assigned', 'owner', owner_id,
-             f"Property '{prop['name']}' assigned to {owner['name']}", 'admin'),
+             f"Property '{prop['name']}' assigned to {owner['name']} (primary={is_primary})", 'admin'),
         )
         from src.platform.guardian import platform_log, raise_alert
         from src.messaging.delivery import send_sms
@@ -1473,10 +1750,31 @@ def delete_owner(owner_id):
 
 @app.route('/owners/<owner_id>/remove-property/<property_id>', methods=['POST'])
 def remove_property_from_owner(owner_id, property_id):
-    """Remove a property from an owner's assignments."""
+    """Remove an owner from a property. Primary owner cannot be removed. Requires a reason."""
+    reason = request.form.get('reason', '').strip()
+    if not reason:
+        flash('A reason is required to remove an owner from a property.', 'error')
+        return redirect(url_for('manage_owners'))
+
     with get_connection() as conn:
+        assignment = conn.execute(
+            "SELECT is_primary FROM property_owners WHERE owner_id = ? AND property_id = ?",
+            (owner_id, property_id)
+        ).fetchone()
+        if not assignment:
+            flash('Assignment not found.', 'error')
+            return redirect(url_for('manage_owners'))
+        if assignment['is_primary']:
+            flash('The primary owner cannot be removed from a property. '
+                  'Contact Domi platform support to transfer primary ownership.', 'error')
+            return redirect(url_for('manage_owners'))
+
         owner = conn.execute("SELECT name, phone FROM owners WHERE id = ?", (owner_id,)).fetchone()
         prop = conn.execute("SELECT name, organization_id FROM properties WHERE id = ?", (property_id,)).fetchone()
+        owner_name = owner['name'] if owner else owner_id
+        prop_name = prop['name'] if prop else property_id
+        org_id = prop['organization_id'] if prop else None
+
         conn.execute(
             "DELETE FROM property_owners WHERE owner_id = ? AND property_id = ?",
             (owner_id, property_id)
@@ -1488,35 +1786,35 @@ def remove_property_from_owner(owner_id, property_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('property_unassigned', 'owner', owner_id,
-             f"Property {property_id} removed from owner {owner_id}", 'admin'),
+             f"Property '{prop_name}' removed from owner '{owner_name}'. Reason: {reason}", 'admin'),
         )
         from src.platform.guardian import platform_log, raise_alert
         from src.messaging.delivery import send_sms
-        org_id = prop['organization_id'] if prop else None
-        owner_name = owner['name'] if owner else owner_id
-        prop_name = prop['name'] if prop else property_id
         platform_log(conn, 'owner_removed_from_property', 'owner', owner_id,
-                     f"Owner {owner_name} removed from property {prop_name}",
+                     f"Owner '{owner_name}' removed from '{prop_name}' by agency. Reason: {reason}",
                      org_id=org_id, property_id=property_id)
         raise_alert(conn, 'owner_removed',
-                    f"Owner {owner_name} was removed from {prop_name} by the agency.",
+                    f"Owner '{owner_name}' removed from '{prop_name}'. Reason given: \"{reason}\". "
+                    f"Verify this removal is legitimate before next disbursement.",
                     org_id=org_id, property_id=property_id, severity='critical')
+
+        # Notify the removed owner directly
         if owner and owner['phone']:
             send_sms([{'phone': owner['phone']}],
                      f"Domi: Your access to {prop_name} has been removed by the managing agency. "
-                     f"If this was not expected, contact Domi support.")
-        remaining_owners = conn.execute(
+                     f"If this was not expected, contact Domi support immediately.")
+        # Notify remaining owners
+        remaining = conn.execute(
             "SELECT o.name, o.phone FROM owners o JOIN property_owners po ON po.owner_id = o.id "
             "WHERE po.property_id = ? AND po.owner_id != ?",
             (property_id, owner_id),
         ).fetchall()
-        for ro in remaining_owners:
+        for ro in remaining:
             if ro['phone']:
-                send_sms(
-                    [{'phone': ro['phone']}],
-                    f"Domi: Owner {owner_name} has been removed from {prop_name} by the managing agency.",
-                )
-    flash('Property removed from owner.', 'success')
+                send_sms([{'phone': ro['phone']}],
+                         f"Domi: Owner {owner_name} has been removed from {prop_name} by the managing agency.")
+
+    flash(f"'{owner_name}' removed from {prop_name}.", 'success')
     return redirect(url_for('manage_owners'))
 
 
@@ -3949,9 +4247,15 @@ def onboard_preview():
             with get_connection() as conn:
                 # Create property
                 property_id = generate_id('PROP')
+                _org_id = session.get('org_id')
+                if _org_id:
+                    exists = conn.execute("SELECT 1 FROM organizations WHERE id = ?", (_org_id,)).fetchone()
+                    if not exists:
+                        _org_id = None
+                        session.pop('org_id', None)
                 conn.execute(
-                    "INSERT INTO properties (id, name, address) VALUES (?, ?, ?)",
-                    (property_id, data['property_name'], data['property_address'])
+                    "INSERT INTO properties (id, name, address, organization_id) VALUES (?, ?, ?, ?)",
+                    (property_id, data['property_name'], data['property_address'], _org_id)
                 )
 
                 units_created = 0
@@ -4001,6 +4305,9 @@ def onboard_preview():
             session['property_id'] = property_id
             session.pop('onboard_data', None)
             flash(f"Successfully onboarded {data['property_name']}: {units_created} units, {tenants_created} tenants.", 'success')
+            # Return to wizard if we came from welcome (org has more steps to complete)
+            if session.get('org_id'):
+                return redirect(url_for('welcome'))
             return redirect(url_for('dashboard'))
 
     return render_template('onboard_preview.html', data=data)
@@ -4048,7 +4355,7 @@ def tools_index():
                 "SELECT MAX(timestamp) FROM audit_log WHERE action LIKE 'export_%'",
                 ).fetchone()[0])
 
-    return render_template('tools_index.html', workflow=workflow, period=period)
+    return render_template('tools_index.html', workflow=workflow, period=period, prop=prop)
 
 
 @app.route('/tools/test-pdf', methods=['GET', 'POST'])
