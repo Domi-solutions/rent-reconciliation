@@ -35,7 +35,7 @@
           <td>
             {% if u.status == 'occupied' %}<span class="status-paid">Occupied</span>
             {% elif u.status == 'vacant' %}<span class="status-vacant">Vacant</span>
-            {% else %}<span class="status-pending">Office</span>{% endif %}
+            {% else %}<span class="status-pending">{{ u.status|title }}</span>{% endif %}
           </td>
           <td>{{ u.tenant_name or '—' }}</td>
           <td class="text-end">
@@ -43,7 +43,14 @@
             {% if bal > 0 %}<span class="amount-danger">KES {{ "%.2f"|format(bal) }}</span>
             {% else %}KES {{ "%.2f"|format(bal) }}{% endif %}
           </td>
-          <td><a href="{{ url_for('manage_units') }}" class="report-view-btn">View all units →</a></td>
+          <td style="white-space:nowrap;">
+            <a href="{{ url_for('manage_units') }}?q={{ u.unit_number }}"
+               class="report-view-btn me-1">View unit →</a>
+            {% if u.tenant_id %}
+            <a href="{{ url_for('messaging.thread', tenant_id=u.tenant_id) }}"
+               class="btn btn-sm btn-outline-primary">Message</a>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -63,6 +70,7 @@
           <th>Unit</th>
           <th>Phone</th>
           <th>Move-in</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -72,6 +80,12 @@
           <td>{{ t.unit_number or '—' }}</td>
           <td>{{ t.phone or '—' }}</td>
           <td>{{ t.move_in_date or '—' }}</td>
+          <td style="white-space:nowrap;">
+            <a href="{{ url_for('tenant_statement', tenant_id=t.id) }}"
+               class="btn btn-sm btn-outline-secondary">Statement</a>
+            <a href="{{ url_for('messaging.thread', tenant_id=t.id) }}"
+               class="btn btn-sm btn-outline-primary">Message</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

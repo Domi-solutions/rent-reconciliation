@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Messages — {{ property.name }}{% endblock %}
+{% block extra_css %}
+<style>
+  #qs-results { margin-top: 12px; }
+  #qs-results table { margin-bottom: 0; }
+  .qs-empty { color: #adb5bd; font-size: 13px; padding: 12px 0; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
@@ -30,6 +37,32 @@
   </div>
 </div>
 
+{# ── Quick Send ───────────────────────────────────────────────── #}
+<div class="surface-card mb-4">
+  <div class="surface-card-header">
+    <h6>Quick Send</h6>
+  </div>
+  <div class="p-3">
+    <input type="text" id="qs-input" class="form-control"
+           placeholder="Search tenant by name or unit number…" autocomplete="off">
+
+    <div id="qs-results" style="display:none;">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Unit</th>
+            <th>Tenant</th>
+            <th class="text-end">Balance (KES)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="qs-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Recent Messages ──────────────────────────────────────────── #}
 <div class="surface-card">
   <div class="surface-card-header">
     <h6>Recent Messages</h6>
@@ -68,4 +101,42 @@
   <a href="{{ url_for('messaging.reminders') }}" class="btn btn-outline-secondary">Reminder settings</a>
   <a href="{{ url_for('messaging.reminder_schedules') }}" class="btn btn-outline-secondary">Schedules</a>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TENANTS = {{ tenants_json | safe }};
+const input   = document.getElementById('qs-input');
+const results = document.getElementById('qs-results');
+const tbody   = document.getElementById('qs-body');
+
+input.addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  if (!q) { results.style.display = 'none'; tbody.innerHTML = ''; return; }
+
+  const matches = TENANTS.filter(function(t) {
+    return t.name.toLowerCase().includes(q) ||
+           (t.unit_number || '').toLowerCase().includes(q);
+  });
+
+  if (!matches.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="qs-empty">No tenants match "' + q + '"</td></tr>';
+    results.style.display = 'block';
+    return;
+  }
+
+  tbody.innerHTML = matches.map(function(t) {
+    const bal    = parseFloat(t.balance) || 0;
+    const balFmt = bal.toLocaleString('en-KE', {maximumFractionDigits: 0});
+    const balCls = bal > 0 ? 'amount-danger' : 'text-muted';
+    return '<tr>' +
+      '<td>' + (t.unit_number || '—') + '</td>' +
+      '<td>' + t.name + '</td>' +
+      '<td class="text-end"><span class="' + balCls + '">' + balFmt + '</span></td>' +
+      '<td><a href="/messages/thread/' + t.id + '" class="btn btn-sm btn-outline-primary">Message</a></td>' +
+    '</tr>';
+  }).join('');
+  results.style.display = 'block';
+});
+</script>
 {% endblock %}

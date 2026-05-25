@@ -1,0 +1,247 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Statement — {{ tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ct-stmt-header { margin-bottom: 20px; }
+  .ct-stmt-name   { font-size: 18px; font-weight: 700; color: var(--ink); }
+  .ct-stmt-sub    { font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+  .ct-balance     { display:inline-block; padding:4px 12px; border-radius:12px; font-size:13px; font-weight:700; margin-top:8px; }
+  .ct-bal-arrears { background:#f8d7da; color:#842029; }
+  .ct-bal-current { background:#d1fae5; color:#065f46; }
+
+  .ct-claim { border-radius:8px; padding:12px 14px; margin-bottom:10px; font-size:13px; }
+  .ct-claim-flagged { background:#fff5f5; border:1px solid #f1aeb5; }
+  .ct-claim-pending { background:#eff6ff; border:1px solid #bfdbfe; }
+  .ct-ref { font-family:monospace; font-size:13px; font-weight:700; background:#f1f5f9; padding:3px 8px; border-radius:4px; letter-spacing:.5px; }
+
+  .ledger-row { border-bottom:1px solid var(--border); padding:10px 0; }
+  .ledger-row:last-child { border-bottom:none; }
+  .ledger-row-outstanding { background:#fff5f5; margin:0 -16px; padding:10px 16px; }
+  .ledger-row-partial     { background:#fffbeb; margin:0 -16px; padding:10px 16px; }
+  .ledger-row-arrears     { background:#fff8e7; margin:0 -16px; padding:10px 16px; border-left:3px solid #d97706; padding-left:13px; }
+  .ledger-date   { font-size:11px; color:var(--ink-3); }
+  .ledger-desc   { font-size:13px; font-weight:600; color:var(--ink); }
+  .ledger-amount { font-size:14px; font-weight:700; }
+  .ledger-bal    { font-size:11px; color:var(--ink-3); }
+  .amount-charge  { color:#dc3545; }
+  .amount-payment { color:#16a34a; }
+  .status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .pill-paid        { background:#d1fae5; color:#065f46; }
+  .pill-outstanding { background:#f8d7da; color:#842029; }
+  .pill-partial     { background:#fef9c3; color:#854d0e; }
+  .pill-verified    { background:#dbeafe; color:#1e40af; }
+
+  @media print {
+    .ct-no-print { display:none !important; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set final_balance = ledger[-1].running_balance if ledger else 0 %}
+
+{# ── Header ── #}
+<div class="ct-stmt-header ct-no-print">
+  <a href="{{ url_for('caretaker.tenants', property_id=property.id) }}"
+     style="font-size:13px; color:var(--ink-3); text-decoration:none;">← Tenants</a>
+</div>
+<div class="ct-stmt-header">
+  <div class="ct-stmt-name">{{ tenant.name }}</div>
+  <div class="ct-stmt-sub">
+    Unit {{ tenant.unit_number or '—' }}
+    {% if tenant.phone %}
+      · <a href="tel:{{ tenant.phone }}" style="color:var(--ink-3); text-decoration:none;">{{ tenant.phone }}</a>
+    {% endif %}
+    {% if tenant.move_in_date %} · Since {{ tenant.move_in_date }}{% endif %}
+  </div>
+  <div>
+    {% if final_balance > 0 %}
+    <span class="ct-balance ct-bal-arrears">KES {{ "{:,.0f}".format(final_balance) }} owed</span>
+    {% else %}
+    <span class="ct-balance ct-bal-current">All paid up</span>
+    {% endif %}
+  </div>
+  <div class="mt-2 ct-no-print">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">Print / Save PDF</button>
+  </div>
+</div>
+
+{# ── Quick Verify ── #}
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:14px 16px;margin-bottom:16px;" class="ct-no-print">
+  <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">Verify a payment</div>
+  <div style="font-size:12px;color:var(--ink-3);margin-bottom:8px;">
+    Paste M-Pesa message or enter reference code
+  </div>
+  <textarea id="ct-qv-input" class="form-control form-control-sm" rows="2"
+            placeholder="e.g. QJC5EFAXCQ or full M-Pesa SMS"
+            style="font-size:12px;resize:none;margin-bottom:8px;"></textarea>
+  <button id="ct-qv-btn" class="btn btn-sm btn-primary w-100">Check against bank records</button>
+  <div id="ct-qv-result" class="mt-3" style="display:none;"></div>
+</div>
+
+<script>
+(function () {
+  const input   = document.getElementById('ct-qv-input');
+  const btn     = document.getElementById('ct-qv-btn');
+  const result  = document.getElementById('ct-qv-result');
+  const verifyUrl  = {{ url_for('caretaker.tenant_quick_verify', property_id=property.id, tenant_id=tenant.id) | tojson }};
+  const assignBase = {{ url_for('caretaker.tenant_quick_assign', property_id=property.id, tenant_id=tenant.id, txn_id='__TXN__') | tojson }};
+
+  btn.addEventListener('click', function () {
+    const text = input.value.trim();
+    if (!text) return;
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    result.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('text', text);
+    fetch(verifyUrl, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(renderResult)
+      .catch(() => renderResult({ status: 'parse_error', message: 'Request failed. Try again.' }))
+      .finally(() => { btn.disabled = false; btn.textContent = 'Check against bank records'; });
+  });
+
+  function fmt(n) { return n != null ? 'KES ' + Number(n).toLocaleString('en-KE', { maximumFractionDigits: 0 }) : ''; }
+
+  function renderResult(d) {
+    result.style.display = 'block';
+    let html = '';
+    if (d.status === 'parse_error') {
+      html = `<div class="ct-claim ct-claim-flagged">
+        <strong style="color:#842029;">Could not read reference</strong>
+        <div style="font-size:12px;margin-top:4px;">${d.message || ''}</div>
+      </div>`;
+    } else if (d.status === 'not_found') {
+      html = `<div class="ct-claim ct-claim-flagged">
+        <strong style="color:#842029;">Ref <span class="ct-ref">${d.ref}</span> — not in bank records</strong>
+        <div style="font-size:12px;margin-top:4px;">${d.parsed_amount ? fmt(d.parsed_amount) + ' ' : ''}${d.parsed_sender || ''}</div>
+        <div style="font-size:11px;color:#6c757d;margin-top:4px;">
+          Not yet in any uploaded bank statement. Ask admin to upload the latest statement.
+        </div>
+      </div>`;
+    } else if (d.status === 'already_this_unit') {
+      html = `<div class="ct-claim" style="background:#d1fae5;border:1px solid #6ee7b7;">
+        <strong style="color:#065f46;">✓ Already recorded for this tenant</strong>
+        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
+        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span></div>
+      </div>`;
+    } else if (d.status === 'already_other_unit') {
+      html = `<div class="ct-claim" style="background:#fff8e7;border:1px solid #fde68a;">
+        <strong style="color:#92400e;">⚠ Already assigned to unit ${d.assigned_unit}</strong>
+        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
+        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span></div>
+      </div>`;
+    } else if (d.status === 'found') {
+      const assignUrl = assignBase.replace('__TXN__', d.txn_id);
+      html = `<div class="ct-claim ct-claim-pending">
+        <strong style="color:#1e40af;">Found — not yet assigned to this tenant</strong>
+        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
+        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span> · ${d.statement_filename || ''}</div>
+        <form method="post" action="${assignUrl}" style="margin-top:10px;">
+          <button type="submit" class="btn btn-sm btn-primary w-100" style="font-size:13px;">
+            Assign ${fmt(d.amount)} to this tenant
+          </button>
+        </form>
+      </div>`;
+    }
+    result.innerHTML = html;
+  }
+})();
+</script>
+
+{# ── Open claims ── #}
+{% if open_claims %}
+<div class="mb-3">
+  <div style="font-size:12px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px;">Unresolved Claims</div>
+  {% for c in open_claims %}
+    {% if c.status == 'flagged' %}
+    <div class="ct-claim ct-claim-flagged">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div style="font-weight:700; color:#842029;">⚠ Disputed — ref not found</div>
+        <div style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</div>
+      </div>
+      <div style="margin-top:4px;">
+        KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
+        {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+      </div>
+      <div style="margin-top:4px;">Ref <span class="ct-ref">{{ c.mpesa_ref }}</span></div>
+      {% if c.checked_statements %}
+      <div style="font-size:11px; color:#6c757d; margin-top:5px;">
+        Checked against:
+        {% for s in c.checked_statements %}
+          <div style="font-size:11px;">{{ s.filename }}</div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="font-size:11px; color:#6c757d; margin-top:4px;">No bank statement uploaded for this period yet</div>
+      {% endif %}
+      <div style="font-size:11px; color:#6c757d; margin-top:5px;">Ask tenant for a valid M-Pesa confirmation. Do not accept new claims until admin clears this.</div>
+    </div>
+    {% else %}
+    <div class="ct-claim ct-claim-pending">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div style="font-weight:700; color:#1e40af;">Pending — awaiting bank verification</div>
+        <div style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</div>
+      </div>
+      <div style="margin-top:4px;">
+        KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
+        {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+      </div>
+      <div style="margin-top:4px;">Ref <span class="ct-ref">{{ c.mpesa_ref }}</span></div>
+    </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Ledger ── #}
+<div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden;">
+  {% if ledger %}
+  <div style="padding:0 16px;">
+    {% for r in ledger %}
+    <div class="ledger-row{% if r.is_arrears %} ledger-row-arrears{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} ledger-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} ledger-row-partial{% endif %}">
+      <div class="d-flex justify-content-between align-items-start">
+        <div style="flex:1; min-width:0;">
+          <div class="ledger-date">{{ r.row_date[:10] if r.row_date else '—' }}</div>
+          <div class="ledger-desc">{{ r.description }}</div>
+          {% if r.ref %}
+          <div style="margin-top:3px;">
+            <span class="ct-ref">{{ r.ref }}</span>
+          </div>
+          {% endif %}
+          {% if r.sender %}
+          <div style="font-size:11px; color:var(--ink-3);">{{ r.sender }}</div>
+          {% endif %}
+        </div>
+        <div class="text-end" style="flex-shrink:0; margin-left:12px;">
+          {% if r.row_type == 'charge' %}
+            <div class="ledger-amount amount-charge">−{{ "{:,.0f}".format(r.debit) }}</div>
+            <span class="status-pill {% if r.status == 'Paid' %}pill-paid{% elif r.status == 'Partial' %}pill-partial{% else %}pill-outstanding{% endif %}">
+              {{ r.status }}
+            </span>
+          {% else %}
+            <div class="ledger-amount amount-payment">+{{ "{:,.0f}".format(r.credit) }}</div>
+            <span class="status-pill pill-verified">✓ Verified</span>
+          {% endif %}
+          <div class="ledger-bal">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div style="padding:12px 16px; background:#f8f9fa; border-top:2px solid var(--border); display:flex; justify-content:space-between; font-weight:700;">
+    <span>Current balance</span>
+    <span class="{{ 'amount-charge' if final_balance > 0 else 'amount-payment' }}">
+      KES {{ "{:,.0f}".format(final_balance) }}
+    </span>
+  </div>
+  {% else %}
+  <div style="padding:32px 16px; text-align:center; color:var(--ink-3); font-size:13px;">
+    No charges or payments recorded yet.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

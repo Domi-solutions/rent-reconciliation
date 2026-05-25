@@ -1,0 +1,165 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ tenant.name }} — Payment History{% endblock %}
+{% block active_tab %}arrears{% endblock %}
+
+{% block extra_css %}
+<style>
+  .vw-stmt-name  { font-size:18px; font-weight:700; color:var(--ink); }
+  .vw-stmt-sub   { font-size:13px; color:var(--ink-3); margin-top:2px; }
+  .vw-balance    { display:inline-block; padding:4px 12px; border-radius:12px; font-size:13px; font-weight:700; margin-top:8px; }
+  .vw-bal-arrears { background:#f8d7da; color:#842029; }
+  .vw-bal-current { background:#d1fae5; color:#065f46; }
+
+  .data-row-charge      { border-left:3px solid #f8d7da; }
+  .data-row-payment     { border-left:3px solid #d1fae5; }
+  .data-row-outstanding { background:#fff5f5 !important; border-left:3px solid #dc3545; }
+  .data-row-partial     { background:#fffbeb !important; border-left:3px solid #d97706; }
+  .data-row-arrears     { background:#fff8e7 !important; border-left:3px solid #d97706; }
+  .ref-code { font-family:monospace; font-size:12px; background:#f1f5f9; padding:2px 6px; border-radius:4px; }
+
+  .vw-summary { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  .vw-stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; flex:1; min-width:120px; }
+  .vw-stat-label { font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; }
+  .vw-stat-value { font-size:18px; font-weight:700; color:var(--ink); margin-top:2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set final_balance = ledger[-1].running_balance if ledger else 0 %}
+{% set total_charged = ledger | selectattr('row_type','eq','charge') | sum(attribute='debit') %}
+{% set total_paid    = ledger | selectattr('row_type','eq','payment') | sum(attribute='credit') %}
+{% set payment_count = ledger | selectattr('row_type','eq','payment') | list | length %}
+
+{# ── Back link ── #}
+<div class="mb-3">
+  <a href="{{ url_for('viewer.property_arrears', property_id=property.id) }}"
+     class="data-row-meta" style="text-decoration:none;">← Arrears</a>
+</div>
+
+{# ── Header ── #}
+<div class="mb-4">
+  <div class="vw-stmt-name">{{ tenant.name }}</div>
+  <div class="vw-stmt-sub">
+    Unit {{ tenant.unit_number or '—' }}
+    {% if tenant.move_in_date %} · Tenant since {{ tenant.move_in_date }}{% endif %}
+  </div>
+  <div>
+    {% if final_balance > 0 %}
+    <span class="vw-balance vw-bal-arrears">KES {{ "{:,.0f}".format(final_balance) }} outstanding</span>
+    {% else %}
+    <span class="vw-balance vw-bal-current">All paid up</span>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Summary stats ── #}
+<div class="vw-summary">
+  <div class="vw-stat">
+    <div class="vw-stat-label">Total charged</div>
+    <div class="vw-stat-value">{{ "{:,.0f}".format(total_charged) }}</div>
+  </div>
+  <div class="vw-stat">
+    <div class="vw-stat-label">Total paid</div>
+    <div class="vw-stat-value" style="color:#16a34a;">{{ "{:,.0f}".format(total_paid) }}</div>
+  </div>
+  <div class="vw-stat">
+    <div class="vw-stat-label">Payments made</div>
+    <div class="vw-stat-value">{{ payment_count }}</div>
+  </div>
+  <div class="vw-stat">
+    <div class="vw-stat-label">Outstanding</div>
+    <div class="vw-stat-value {{ 'amount-danger' if final_balance > 0 else '' }}">
+      {{ "{:,.0f}".format(final_balance) }}
+    </div>
+  </div>
+</div>
+
+{# ── Pending / flagged claims notice ── #}
+{% if open_claims %}
+<div class="mb-3">
+  {% for c in open_claims %}
+  {% if c.status == 'flagged' %}
+  <div class="banner-danger mb-2" style="font-size:13px;">
+    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px;">
+      <strong>Disputed claim</strong>
+      <span style="font-size:11px; opacity:.75;">via {{ c.source_label }}</span>
+    </div>
+    KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
+    · Ref <span class="ref-code">{{ c.mpesa_ref }}</span>
+    {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+    — reference not found in bank records.
+    {% if c.checked_statements %}
+    <div style="font-size:11px; margin-top:4px; opacity:.8;">
+      Checked against:
+      {% for s in c.checked_statements %}
+        <span style="background:rgba(0,0,0,.06); padding:1px 5px; border-radius:3px; margin-right:2px;">{{ s.filename }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="banner-warning mb-2" style="font-size:13px;">
+    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px;">
+      <strong>Pending claim</strong>
+      <span style="font-size:11px; opacity:.75;">via {{ c.source_label }}</span>
+    </div>
+    KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
+    · Ref <span class="ref-code">{{ c.mpesa_ref }}</span>
+    {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+    — awaiting bank statement verification.
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Ledger ── #}
+<div class="surface-card">
+  {% if ledger %}
+    {% for r in ledger %}
+    <div class="data-row data-row-{{ r.row_type }}{% if r.is_arrears %} data-row-arrears{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} data-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} data-row-partial{% endif %}">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="data-row-amount {{ 'amount-danger' if r.row_type == 'charge' else 'amount-success' }}"
+               style="font-size:15px;">
+            {% if r.row_type == 'charge' %}
+              KES {{ "{:,.0f}".format(r.debit) }}
+            {% else %}
+              KES {{ "{:,.0f}".format(r.credit) }}
+            {% endif %}
+          </div>
+          <div class="data-row-meta">{{ r.description }}</div>
+          {% if r.ref %}
+          <div class="data-row-meta mt-1">Ref <span class="ref-code">{{ r.ref }}</span></div>
+          {% endif %}
+        </div>
+        <div class="text-end">
+          <div class="data-row-meta">{{ r.row_date[:10] if r.row_date else '—' }}</div>
+          <div class="mt-1">
+            {% if r.status == 'Paid' %}<span class="status-paid">Paid</span>
+            {% elif r.status == 'Outstanding' %}<span class="status-pending">Outstanding</span>
+            {% elif r.status == 'Partial' %}<span class="status-pending">Partial</span>
+            {% elif r.status == 'Verified' %}<span class="status-paid">Verified</span>
+            {% endif %}
+          </div>
+          <div class="data-row-meta">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="data-row" style="background:#f8f9fa; font-weight:700;">
+      <div class="d-flex justify-content-between">
+        <span>Current balance</span>
+        <span class="{{ 'amount-danger' if final_balance > 0 else 'amount-success' }}">
+          KES {{ "{:,.0f}".format(final_balance) }}
+        </span>
+      </div>
+    </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-title">No records yet</div>
+    <div class="empty-state-sub">No charges or payments have been recorded for this tenant.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

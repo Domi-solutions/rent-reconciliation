@@ -140,6 +140,7 @@ def _arrears_rows(conn, property_id):
             u.id as unit_id,
             u.unit_number,
             u.monthly_rent,
+            t.id as tenant_id,
             t.name as tenant_name,
             t.phone as tenant_phone,
             COALESCE(ch.total, 0) - COALESCE(py.total, 0) as balance,
@@ -275,6 +276,7 @@ def tenants(property_id):
             SELECT
                 u.unit_number,
                 u.apartment_size,
+                t.id as tenant_id,
                 t.name as tenant_name,
                 t.phone as tenant_phone,
                 t.move_in_date,
@@ -1306,3 +1308,91 @@ def payment_note(property_id, payment_id):
 
     flash('Note saved.', 'success')
     return redirect(url_for('caretaker.payment_activity', property_id=property_id))
+
+
+@caretaker_bp.route('/<property_id>/tenant/<tenant_id>/statement')
+def tenant_statement(property_id, tenant_id):
+    """Caretaker view: tenant charge + payment ledger for dispute resolution."""
+    from src.utils.statement import get_tenant_statement
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, property_id)
+        if not tenant:
+            abort(404)
+    return render_template('caretaker/statement.html',
+                           property=prop,
+                           tenant=tenant,
+                           ledger=ledger,
+                           open_claims=open_claims,
+                           active_tab='tenants')
+
+
+@caretaker_bp.route('/<property_id>/tenant/<tenant_id>/quick-verify', methods=['POST'])
+def tenant_quick_verify(property_id, tenant_id):
+    """AJAX: parse M-Pesa message/ref and check bank records."""
+    from flask import jsonify
+    from src.utils.statement import quick_verify_ref
+    text = request.form.get('text', '').strip()
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            return jsonify({'status': 'parse_error', 'message': 'Property not found'}), 404
+        org_id = conn.execute(
+            "SELECT organization_id FROM properties WHERE id = ?", (property_id,)
+        ).fetchone()['organization_id']
+        tenant = conn.execute(
+            "SELECT unit_id FROM tenants WHERE id = ? AND property_id = ?",
+            (tenant_id, property_id)
+        ).fetchone()
+        if not tenant:
+            return jsonify({'status': 'parse_error', 'message': 'Tenant not found'}), 404
+        result = quick_verify_ref(conn, text, tenant['unit_id'], org_id)
+    return jsonify(result)
+
+
+@caretaker_bp.route('/<property_id>/tenant/<tenant_id>/quick-assign/<txn_id>', methods=['POST'])
+def tenant_quick_assign(property_id, tenant_id, txn_id):
+    """Assign a found bank transaction to this tenant directly from the statement page."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        tenant = conn.execute(
+            "SELECT unit_id, name FROM tenants WHERE id = ? AND property_id = ?",
+            (tenant_id, property_id)
+        ).fetchone()
+        if not tenant:
+            abort(404)
+        unit_id = tenant['unit_id']
+
+        txn = conn.execute("SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('caretaker.tenant_statement', property_id=property_id, tenant_id=tenant_id))
+        if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (txn_id,)).fetchone():
+            flash('Transaction has already been assigned.', 'warning')
+            return redirect(url_for('caretaker.tenant_statement', property_id=property_id, tenant_id=tenant_id))
+
+        caretaker_name = session.get('caretaker_name', 'Caretaker')
+        payment_id = generate_id('PAY')
+        conn.execute("""
+            INSERT INTO payments
+            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+             assignment_type, assignment_reason, assigned_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from caretaker statement view', ?)
+        """, (payment_id, property_id, unit_id, txn_id, txn['statement_id'],
+              txn['amount'], txn['txn_date'] or '', caretaker_name))
+        allocate_payment(conn, payment_id, unit_id, txn['amount'])
+
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_manual_assigned', 'payment', payment_id,
+             f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):,.0f} | "
+             f"Assigned to {tenant['name']} by {caretaker_name} from statement view",
+             caretaker_name)
+        )
+
+    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
+    return redirect(url_for('caretaker.tenant_statement', property_id=property_id, tenant_id=tenant_id))

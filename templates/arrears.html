@@ -43,6 +43,12 @@
         {% if a.monthly_rent > 0 %}
         <div class="data-row-meta">KES {{ "{:,.0f}".format(a.monthly_rent) }}/mo</div>
         {% endif %}
+        {% if a.tenant_id %}
+        <div class="mt-1">
+          <a href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) }}"
+             class="data-row-meta" style="font-size:12px; color:#0d6efd;">View statement →</a>
+        </div>
+        {% endif %}
       </div>
       <div class="text-end">
         <div class="data-row-amount amount-danger">

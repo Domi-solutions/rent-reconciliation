@@ -36,12 +36,14 @@
           </td>
           <td style="color: var(--ink-3);">{{ t.apartment_size or '—' }}</td>
           <td style="color: var(--ink-3); font-size: 12px;">{{ t.move_in_date or '—' }}</td>
-          <td class="text-end" style="padding-right: 18px;">
+          <td class="text-end" style="padding-right: 18px; white-space:nowrap;">
             {% if (t.balance or 0) > 0 %}
             <span style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #f8d7da; color: #842029;">Behind</span>
             {% else %}
             <span style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #d1fae5; color: #065f46;">Current</span>
             {% endif %}
+            <a href="{{ url_for('caretaker.tenant_statement', property_id=property.id, tenant_id=t.tenant_id) }}"
+               class="btn btn-sm btn-outline-secondary ms-1" style="font-size:11px;">Statement</a>
           </td>
         </tr>
         {% endfor %}

@@ -26,6 +26,8 @@ def enrich_with_suggestions(rows, conn, property_id, org_id=None):
 
     Tier 1 — unit_hint exact match against unit_number (org-scoped or property-scoped).
     Tier 2 — sender name token overlap against active tenant names (>= 2 tokens in common).
+    Tier 3 — sender history: sender has previously paid for this unit (>= 2 token overlap
+              against confirmed bank_transaction sender names, ranked by frequency).
     """
     if not rows:
         return
@@ -46,6 +48,17 @@ def enrich_with_suggestions(rows, conn, property_id, org_id=None):
             JOIN properties p ON u.property_id = p.id
             WHERE p.organization_id = ? AND t.status = 'active'
         """, (org_id,)).fetchall()
+
+        history_rows = conn.execute("""
+            SELECT bt.sender_name, p.unit_id, u.unit_number, COUNT(*) AS cnt
+            FROM bank_transactions bt
+            JOIN payments p ON p.bank_txn_id = bt.id
+            JOIN units u ON u.id = p.unit_id
+            JOIN properties pr ON pr.id = u.property_id
+            WHERE pr.organization_id = ? AND bt.sender_name IS NOT NULL
+            GROUP BY bt.sender_name, p.unit_id
+            ORDER BY cnt DESC
+        """, (org_id,)).fetchall()
     else:
         def _lookup_hint(hint_key):
             return conn.execute("""
@@ -60,11 +73,36 @@ def enrich_with_suggestions(rows, conn, property_id, org_id=None):
             WHERE t.property_id = ? AND t.status = 'active'
         """, (property_id,)).fetchall()
 
+        history_rows = conn.execute("""
+            SELECT bt.sender_name, p.unit_id, u.unit_number, COUNT(*) AS cnt
+            FROM bank_transactions bt
+            JOIN payments p ON p.bank_txn_id = bt.id
+            JOIN units u ON u.id = p.unit_id
+            WHERE u.property_id = ? AND bt.sender_name IS NOT NULL
+            GROUP BY bt.sender_name, p.unit_id
+            ORDER BY cnt DESC
+        """, (property_id,)).fetchall()
+
     tenant_index = [
         {'unit_id': t['unit_id'], 'unit_number': t['unit_number'],
          'name': t['name'], 'tokens': set(_name_tokens(t['name']))}
         for t in tenant_rows if len(_name_tokens(t['name'])) >= 2
     ]
+
+    # Tier 3 index: deduplicated by (sender token set) — highest-frequency unit wins
+    sender_history = []
+    seen_tokens = []
+    for h in history_rows:
+        toks = frozenset(_name_tokens(h['sender_name']))
+        if len(toks) < 2:
+            continue
+        if not any(len(toks & s) >= 2 for s in seen_tokens):
+            sender_history.append({
+                'unit_id': h['unit_id'],
+                'unit_number': h['unit_number'],
+                'tokens': toks,
+            })
+            seen_tokens.append(toks)
 
     for r in rows:
         # Tier 1 — unit hint
@@ -76,7 +114,7 @@ def enrich_with_suggestions(rows, conn, property_id, org_id=None):
                 r['suggested_unit_number'] = hits[0]['unit_number']
                 r['suggestion_source'] = 'unit_hint'
 
-        # Tier 2 — sender name match
+        # Tier 2 — sender name match against current tenant names
         if not r.get('suggested_unit_id'):
             stokens = set(_name_tokens(r.get('sender_name') or ''))
             if len(stokens) >= 2:
@@ -86,6 +124,17 @@ def enrich_with_suggestions(rows, conn, property_id, org_id=None):
                         r['suggested_unit_number'] = tenant['unit_number']
                         r['suggested_tenant_name'] = tenant['name']
                         r['suggestion_source'] = 'name_match'
+                        break
+
+        # Tier 3 — sender history (past verified payers)
+        if not r.get('suggested_unit_id'):
+            stokens = set(_name_tokens(r.get('sender_name') or ''))
+            if len(stokens) >= 2:
+                for hist in sender_history:
+                    if len(stokens & hist['tokens']) >= 2:
+                        r['suggested_unit_id'] = hist['unit_id']
+                        r['suggested_unit_number'] = hist['unit_number']
+                        r['suggestion_source'] = 'sender_history'
                         break
 
 

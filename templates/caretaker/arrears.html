@@ -82,7 +82,7 @@
               <div style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.balance or 0) }}</div>
             {% endif %}
           </td>
-          <td class="text-end" style="padding-right: 18px;">
+          <td class="text-end" style="padding-right: 18px; white-space:nowrap;">
             {% if is_flagged %}
               <span class="mo-badge mo-flagged">Disputed — follow up</span>
             {% elif fully_pending %}
@@ -90,6 +90,10 @@
             {% elif a.months_behind %}
               <span class="mo-badge {% if a.months_behind >= 2 %}mo-danger{% else %}mo-warn{% endif %}">{{ a.months_behind }}mo behind</span>
             {% else %}—{% endif %}
+            {% if a.tenant_id %}
+            <a href="{{ url_for('caretaker.tenant_statement', property_id=property.id, tenant_id=a.tenant_id) }}"
+               class="btn btn-sm btn-outline-secondary ms-1" style="font-size:11px;">Statement</a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

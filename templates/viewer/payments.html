@@ -41,7 +41,7 @@
           KES {{ "{:,.0f}".format(p.amount or 0) }}
         </div>
         <div class="data-row-meta">
-          {{ p.unit_number }} — {{ p.tenant_name or 'Unknown' }}
+          {{ p.unit_number }} — {% if p.tenant_id %}<a href="{{ url_for('viewer.tenant_statement', property_id=property.id, tenant_id=p.tenant_id) }}" style="color:inherit;">{{ p.tenant_name or 'Unknown' }}</a>{% else %}{{ p.tenant_name or 'Unknown' }}{% endif %}
           {% if p.departed_tenant_id is defined and p.departed_tenant_id %}
             <span style="font-size: 10px; background: #6b7280; color: #fff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; font-weight: 600;">Departed</span>
           {% endif %}

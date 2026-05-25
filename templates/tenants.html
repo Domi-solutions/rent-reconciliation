@@ -82,6 +82,8 @@
           {% endif %}
         </td>
         <td>
+          <a href="{{ url_for('tenant_statement', tenant_id=t.id) }}"
+             class="btn btn-sm btn-outline-secondary">Statement</a>
           {% if t.status == 'active' %}
           <form method="post" action="{{ url_for('move_out_tenant', tenant_id=t.id) }}" class="d-inline move-out-form">
             <button type="submit" class="btn btn-sm btn-outline-secondary" style="color: var(--red); border-color: rgba(255,59,48,0.3);">Move out</button>

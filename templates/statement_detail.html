@@ -214,6 +214,8 @@
           <span class="badge bg-success-subtle text-success" style="font-size:10px;" title="Extracted from M-Pesa narration">Unit {{ r.suggested_unit_number }} · Hint</span>
           {% elif r.get('suggestion_source') == 'name_match' %}
           <span class="badge bg-warning-subtle text-warning" style="font-size:10px;" title="Sender name matches tenant {{ r.suggested_tenant_name }}">Unit {{ r.suggested_unit_number }} · Name match</span>
+          {% elif r.get('suggestion_source') == 'sender_history' %}
+          <span class="badge bg-info-subtle text-info" style="font-size:10px;" title="Sender has previously paid for this unit">Unit {{ r.suggested_unit_number }} · Past payer</span>
           {% elif r.unit_hint %}
           <span class="badge bg-secondary-subtle text-secondary" style="font-size:10px;">Hint: {{ r.unit_hint }}</span>
           {% else %}
@@ -243,6 +245,8 @@
               Assign {{ r.mpesa_ref or r.id }} · KES {{ "{:,.0f}".format(r.amount) }}
               {% if r.get('suggestion_source') == 'name_match' %}
               <span class="badge bg-warning-subtle text-warning ms-2" style="font-size:10px;">Name match: {{ r.suggested_tenant_name }}</span>
+              {% elif r.get('suggestion_source') == 'sender_history' %}
+              <span class="badge bg-info-subtle text-info ms-2" style="font-size:10px;">Past payer for this unit</span>
               {% endif %}
             </div>
             <div class="row g-2 align-items-end">
@@ -276,7 +280,7 @@
                 <label style="font-size:11px;font-weight:600;color:#374151;">Reason <span style="color:#dc2626;">*</span></label>
                 <input type="text" name="reason" class="form-control form-control-sm" required minlength="5"
                   placeholder="e.g. Tenant confirmed via WhatsApp"
-                  value="{% if r.get('suggestion_source') == 'name_match' %}Sender name matched tenant: {{ r.suggested_tenant_name }}{% endif %}">
+                  value="{% if r.get('suggestion_source') == 'name_match' %}Sender name matched tenant: {{ r.suggested_tenant_name }}{% elif r.get('suggestion_source') == 'sender_history' %}Sender previously paid for this unit{% endif %}">
               </div>
               <div class="col-auto">
                 <button type="submit" class="btn btn-primary btn-sm">Assign</button>

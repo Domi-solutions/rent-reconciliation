@@ -933,7 +933,7 @@ def admin_arrears():
         rows = conn.execute("""
             SELECT
                 ub.unit_id, ub.unit_number, ub.tenant_name, ub.tenant_phone,
-                ub.monthly_rent, ub.balance,
+                ub.tenant_id, ub.monthly_rent, ub.balance,
                 COALESCE(pending.pending_amount, 0) AS pending_amount
             FROM unit_balances ub
             LEFT JOIN (
@@ -955,6 +955,7 @@ def admin_arrears():
                 'unit_number': r['unit_number'],
                 'tenant_name': r['tenant_name'],
                 'tenant_phone': r['tenant_phone'],
+                'tenant_id': r['tenant_id'],
                 'balance': balance,
                 'monthly_rent': monthly_rent,
                 'pending_amount': pending_amount,
@@ -1456,6 +1457,94 @@ def revoke_tenant_token(tenant_id):
         )
     flash('Portal link revoked.', 'success')
     return redirect(url_for('manage_tenants'))
+
+
+@app.route('/tenants/<tenant_id>/statement')
+def tenant_statement(tenant_id):
+    """Admin view: full charge + payment ledger for one tenant."""
+    from src.utils.statement import get_tenant_statement
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'error')
+            return redirect(url_for('property_list'))
+        tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, prop['id'])
+        if not tenant:
+            abort(404)
+    return render_template('tenant_statement.html',
+                           property=prop,
+                           tenant=tenant,
+                           ledger=ledger,
+                           open_claims=open_claims)
+
+
+@app.route('/tenants/<tenant_id>/quick-verify', methods=['POST'])
+def tenant_quick_verify(tenant_id):
+    """AJAX: parse M-Pesa message/ref and check against bank records for this tenant's unit."""
+    from flask import jsonify
+    from src.utils.statement import quick_verify_ref
+    text = request.form.get('text', '').strip()
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return jsonify({'status': 'parse_error', 'message': 'No property selected'}), 400
+        org_id = prop.get('organization_id') or conn.execute(
+            "SELECT organization_id FROM properties WHERE id = ?", (prop['id'],)
+        ).fetchone()['organization_id']
+        tenant = conn.execute(
+            "SELECT unit_id FROM tenants WHERE id = ? AND property_id = ?",
+            (tenant_id, prop['id'])
+        ).fetchone()
+        if not tenant:
+            return jsonify({'status': 'parse_error', 'message': 'Tenant not found'}), 404
+        result = quick_verify_ref(conn, text, tenant['unit_id'], org_id)
+    return jsonify(result)
+
+
+@app.route('/tenants/<tenant_id>/quick-assign/<txn_id>', methods=['POST'])
+def tenant_quick_assign(tenant_id, txn_id):
+    """Assign a found bank transaction directly to this tenant from the statement page."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('No property selected.', 'error')
+            return redirect(url_for('tenant_statement', tenant_id=tenant_id))
+
+        tenant = conn.execute(
+            "SELECT unit_id, name FROM tenants WHERE id = ? AND property_id = ?",
+            (tenant_id, prop['id'])
+        ).fetchone()
+        if not tenant:
+            abort(404)
+        unit_id = tenant['unit_id']
+
+        txn = conn.execute("SELECT * FROM bank_transactions WHERE id = ?", (txn_id,)).fetchone()
+        if not txn:
+            flash('Transaction not found.', 'error')
+            return redirect(url_for('tenant_statement', tenant_id=tenant_id))
+        if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (txn_id,)).fetchone():
+            flash('Transaction has already been assigned.', 'warning')
+            return redirect(url_for('tenant_statement', tenant_id=tenant_id))
+
+        payment_id = generate_id('PAY')
+        conn.execute("""
+            INSERT INTO payments
+            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+             assignment_type, assignment_reason, assigned_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from tenant statement view', 'admin')
+        """, (payment_id, prop['id'], unit_id, txn_id, txn['statement_id'],
+              txn['amount'], txn['txn_date'] or ''))
+        allocate_payment(conn, payment_id, unit_id, txn['amount'])
+
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_manual_assigned', 'payment', payment_id,
+             f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):,.0f} | "
+             f"Assigned to {tenant['name']} from statement view", 'admin')
+        )
+
+    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
+    return redirect(url_for('tenant_statement', tenant_id=tenant_id))
 
 
 @app.route('/tenants/<tenant_id>/link-person', methods=['POST'])
@@ -3154,15 +3243,16 @@ def flagged_claims_admin():
 def admin_clear_flag(claim_id):
     """Admin clears a flagged claim with a mandatory explanation. Fully audited."""
     note = request.form.get('note', '').strip()
+    next_url = request.form.get('next') or url_for('flagged_claims_admin')
     if len(note) < 10:
         flash('Explanation required (min 10 characters).', 'error')
-        return redirect(request.referrer or url_for('flagged_claims_admin'))
+        return redirect(next_url)
 
     with get_connection() as conn:
         claim = conn.execute("SELECT * FROM payment_claims WHERE id = ?", (claim_id,)).fetchone()
         if not claim or claim['status'] != 'flagged':
             flash('Claim not found or not flagged.', 'error')
-            return redirect(url_for('flagged_claims_admin'))
+            return redirect(next_url)
 
         conn.execute("""
             UPDATE payment_claims
@@ -3181,8 +3271,44 @@ def admin_clear_flag(claim_id):
                      f"Admin cleared flag on ref {claim['mpesa_ref']}. Note: {note}",
                      property_id=claim['property_id'])
 
-    flash('Flag cleared and explanation recorded. Claim remains under platform review.', 'success')
-    return redirect(url_for('flagged_claims_admin'))
+    flash('Claim marked as resolved. Note recorded for audit.', 'success')
+    return redirect(next_url)
+
+
+@app.route('/claims/<claim_id>/delete', methods=['POST'])
+def admin_delete_claim(claim_id):
+    """Admin deletes a claim with a mandatory note. Audit record written before deletion."""
+    note = request.form.get('note', '').strip()
+    next_url = request.form.get('next') or url_for('flagged_claims_admin')
+    if len(note) < 10:
+        flash('Reason required (min 10 characters).', 'error')
+        return redirect(next_url)
+
+    with get_connection() as conn:
+        claim = conn.execute("SELECT * FROM payment_claims WHERE id = ?", (claim_id,)).fetchone()
+        if not claim:
+            flash('Claim not found.', 'error')
+            return redirect(next_url)
+
+        # Write audit record before deletion so there is always a trace
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('claim_deleted', 'claim', claim_id,
+             f"Ref: {claim['mpesa_ref']} | Unit: {claim['unit_id']} | "
+             f"Amount: {claim['claimed_amount']} | Status at deletion: {claim['status']} | "
+             f"Admin note: {note}", 'admin')
+        )
+
+        from src.platform.guardian import platform_log
+        platform_log(conn, 'claim_deleted', 'claim', claim_id,
+                     f"Admin deleted claim ref {claim['mpesa_ref']} (status={claim['status']}). "
+                     f"Note: {note}",
+                     property_id=claim['property_id'])
+
+        conn.execute("DELETE FROM payment_claims WHERE id = ?", (claim_id,))
+
+    flash('Claim deleted. Deletion recorded in audit log.', 'success')
+    return redirect(next_url)
 
 
 @app.route('/statements/<statement_id>')
@@ -4328,7 +4454,7 @@ def search():
             if property_row:
                 pid = property_row['id']
                 units = conn.execute("""
-                    SELECT u.*, t.name AS tenant_name, ub.balance
+                    SELECT u.*, t.id AS tenant_id, t.name AS tenant_name, ub.balance
                     FROM units u
                     LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
                     LEFT JOIN unit_balances ub ON ub.unit_id = u.id

@@ -37,7 +37,8 @@ def _substitute(text, variables):
 
 @messaging_bp.route('/')
 def dashboard():
-    """Messaging dashboard: counts and recent activity."""
+    """Messaging dashboard: counts, recent activity, and quick-send search."""
+    import json
     with get_connection() as conn:
         prop = get_current_property(conn)
         if not prop:
@@ -65,6 +66,17 @@ def dashboard():
             (pid,),
         ).fetchone()[0]
 
+        tenant_rows = conn.execute("""
+            SELECT t.id, t.name, t.phone, u.unit_number,
+                   COALESCE(ub.balance, 0) AS balance
+            FROM tenants t
+            LEFT JOIN units u ON t.unit_id = u.id
+            LEFT JOIN unit_balances ub ON ub.unit_id = u.id
+            WHERE t.property_id = ? AND t.status = 'active'
+            ORDER BY u.unit_number
+        """, (pid,)).fetchall()
+        tenants_json = json.dumps([dict(r) for r in tenant_rows])
+
     return render_template(
         'messaging/dashboard.html',
         property=prop,
@@ -72,6 +84,92 @@ def dashboard():
         unread_count=unread,
         recent_messages=recent,
         reminder_count=reminder_count,
+        tenants_json=tenants_json,
+    )
+
+
+@messaging_bp.route('/thread/<tenant_id>', methods=['GET', 'POST'])
+def thread(tenant_id):
+    """Chat-style message thread for a single tenant."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'error')
+            return redirect(url_for('property_list'))
+        pid = prop['id']
+
+        tenant = conn.execute("""
+            SELECT t.*, u.unit_number FROM tenants t
+            LEFT JOIN units u ON t.unit_id = u.id
+            WHERE t.id = ? AND t.property_id = ?
+        """, (tenant_id, pid)).fetchone()
+        if not tenant:
+            flash('Tenant not found.', 'error')
+            return redirect(url_for('messaging.dashboard'))
+
+        if request.method == 'POST':
+            subject = request.form.get('subject', '').strip()
+            body = request.form.get('body', '').strip()
+            channel = request.form.get('channel', 'portal')
+            if subject:
+                msg_id = generate_id('MSG')
+                conn.execute("""
+                    INSERT INTO messages
+                        (id, property_id, tenant_id, subject, body, template_body,
+                         message_type, delivery_channel, delivery_status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
+                """, (msg_id, pid, tenant_id, subject, body, body, channel))
+                if channel == 'sms' and tenant['phone']:
+                    from src.messaging.delivery import send_sms_async
+                    sms_text = f"{subject}\n\n{body}" if body else subject
+                    send_sms_async([{'phone': tenant['phone']}], sms_text)
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    ('message_sent', 'tenant', tenant_id,
+                     f"Subject: {subject[:50]} | Channel: {channel}", 'admin'),
+                )
+            return redirect(url_for('messaging.thread', tenant_id=tenant_id))
+
+        # Outbound messages (admin → tenant)
+        outbound = conn.execute("""
+            SELECT subject, body, delivery_channel AS channel, created_at, 'out' AS direction
+            FROM messages
+            WHERE tenant_id = ? AND property_id = ?
+            ORDER BY created_at
+        """, (tenant_id, pid)).fetchall()
+
+        # Inbound messages from tenant's phone
+        inbound = []
+        if tenant['phone']:
+            from src.utils.phone import normalize_to_e164
+            phone_e164 = normalize_to_e164(tenant['phone'])
+            if phone_e164:
+                inbound = conn.execute("""
+                    SELECT NULL AS subject, raw_body AS body, channel,
+                           received_at AS created_at, 'in' AS direction
+                    FROM inbound_messages
+                    WHERE sender_phone = ?
+                    ORDER BY received_at
+                """, (phone_e164,)).fetchall()
+
+        messages = sorted(
+            [dict(r) for r in outbound] + [dict(r) for r in inbound],
+            key=lambda x: x['created_at'] or ''
+        )
+
+        templates = conn.execute("""
+            SELECT id, template_key, subject, body
+            FROM message_templates
+            WHERE (property_id = ? OR property_id IS NULL) AND enabled = 1
+            ORDER BY property_id DESC NULLS LAST
+        """, (pid,)).fetchall()
+
+    return render_template('messaging/thread.html',
+        property=prop,
+        tenant=tenant,
+        messages=messages,
+        templates=templates,
     )
 
 

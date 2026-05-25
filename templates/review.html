@@ -220,6 +220,8 @@
                                 Unit {{ t.suggested_unit_number }} · Name match
                                 {% if t.suggested_tenant_name %} ({{ t.suggested_tenant_name }}){% endif %}
                               </span>
+                            {% elif t.suggestion_source == 'sender_history' %}
+                              <span class="badge bg-info text-dark">Unit {{ t.suggested_unit_number }} · Past payer</span>
                             {% else %}
                               <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
                             {% endif %}
@@ -234,8 +236,8 @@
                           <form method="post" action="{{ url_for('auto_assign_payment', txn_id=t.id) }}" style="display:inline;">
                             <button type="submit" class="btn btn-sm btn-success">Use suggestion</button>
                           </form>
-                          {% elif t.suggested_unit_id and t.suggestion_source == 'name_match' %}
-                          <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source='name_match', suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
+                          {% elif t.suggested_unit_id and t.suggestion_source in ('name_match', 'sender_history') %}
+                          <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source=t.suggestion_source, suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
                           {% endif %}
                           <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-secondary ms-1">Assign single</a>
                         </td>
@@ -291,6 +293,8 @@
                     Unit {{ t.suggested_unit_number }} · Name match
                     {% if t.suggested_tenant_name %} ({{ t.suggested_tenant_name }}){% endif %}
                   </span>
+                {% elif t.suggestion_source == 'sender_history' %}
+                  <span class="badge bg-info text-dark">Unit {{ t.suggested_unit_number }} · Past payer</span>
                 {% else %}
                   <span class="badge bg-secondary">Unit {{ t.suggested_unit_number }}</span>
                 {% endif %}
@@ -305,8 +309,8 @@
               <form method="post" action="{{ url_for('auto_assign_payment', txn_id=t.id) }}" style="display:inline;">
                 <button type="submit" class="btn btn-sm btn-success">Use suggestion</button>
               </form>
-              {% elif t.suggested_unit_id and t.suggestion_source == 'name_match' %}
-              <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source='name_match', suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
+              {% elif t.suggested_unit_id and t.suggestion_source in ('name_match', 'sender_history') %}
+              <a href="{{ url_for('assign_payment', txn_id=t.id, suggested_unit_id=t.suggested_unit_id, suggestion_source=t.suggestion_source, suggested_tenant_name=t.suggested_tenant_name or '') }}" class="btn btn-sm btn-outline-warning">Use suggestion</a>
               {% endif %}
               <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="btn btn-sm btn-outline-secondary ms-1">Assign</a>
               <form method="post" action="{{ url_for('ignore_transaction', txn_id=t.id) }}" style="display:inline;" class="ms-1">

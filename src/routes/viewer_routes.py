@@ -298,6 +298,7 @@ def property_payments(property_id):
         verified = conn.execute("""
             SELECT p.amount, p.payment_date as date, u.unit_number,
                    COALESCE(dt.name, t.name) as tenant_name,
+                   COALESCE(t.id, pc.departed_tenant_id) as tenant_id,
                    COALESCE(bt.mpesa_ref, p.assignment_reason) as mpesa_ref,
                    p.source,
                    pc.departed_tenant_id,
@@ -316,8 +317,8 @@ def property_payments(property_id):
         # Pending claims
         pending = conn.execute("""
             SELECT pc.claimed_amount as amount, pc.created_at as date,
-                   u.unit_number, t.name as tenant_name, pc.mpesa_ref,
-                   'pending' as status
+                   u.unit_number, t.id as tenant_id, t.name as tenant_name,
+                   pc.mpesa_ref, 'pending' as status
             FROM payment_claims pc
             JOIN units u ON u.id = pc.unit_id
             LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
@@ -368,6 +369,7 @@ def property_arrears(property_id):
                 u.id as unit_id,
                 u.unit_number,
                 u.monthly_rent,
+                t.id as tenant_id,
                 t.name as tenant_name,
                 t.phone as tenant_phone,
                 COALESCE(charges.total, 0) as total_charged,
@@ -1141,3 +1143,31 @@ def payout_confirm_otp(property_id):
         'success'
     )
     return redirect(url_for('viewer.property_wallet', property_id=property_id))
+
+
+@viewer_bp.route('/<property_id>/tenant/<tenant_id>/statement')
+def tenant_statement(property_id, tenant_id):
+    """Owner view: tenant charge + payment history for a property they own."""
+    from src.utils.statement import get_tenant_statement
+    with get_connection() as conn:
+        prop = conn.execute(
+            "SELECT * FROM properties WHERE id = ?", (property_id,)
+        ).fetchone()
+        if not prop:
+            abort(404)
+        owner_id = session.get('owner_id')
+        access = conn.execute(
+            "SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+            (property_id, owner_id)
+        ).fetchone()
+        if not access:
+            abort(403)
+        tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, property_id)
+        if not tenant:
+            abort(404)
+    return render_template('viewer/tenant_statement.html',
+                           property=prop,
+                           tenant=tenant,
+                           ledger=ledger,
+                           open_claims=open_claims,
+                           active_tab='arrears')

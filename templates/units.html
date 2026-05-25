@@ -147,6 +147,10 @@
               <button type="submit" class="btn btn-sm btn-outline-secondary">Gen link</button>
             </form>
             {% endif %}
+            <a href="{{ url_for('tenant_statement', tenant_id=u.tenant_id) }}"
+               class="btn btn-sm btn-outline-secondary">Statement</a>
+            <a href="{{ url_for('messaging.thread', tenant_id=u.tenant_id) }}"
+               class="btn btn-sm btn-outline-secondary">Message</a>
             <a href="{{ url_for('move_out_tenant', unit_id=u.id) }}"
                class="btn btn-sm btn-outline-secondary"
                style="color:var(--red);border-color:rgba(255,59,48,0.3);">Move out</a>
@@ -272,6 +276,19 @@ document.querySelectorAll('.status-select').forEach(function(sel) {
     });
   });
 });
+
+// ── URL filter (?q=unit_number) — from search results deep-link ─
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const q = (params.get('q') || '').trim().toLowerCase();
+  if (!q) return;
+  document.querySelectorAll('#units-table tbody tr').forEach(function(row) {
+    const unitCell = row.querySelector('td:first-child');
+    if (!unitCell) return;
+    const unitNum = unitCell.textContent.trim().toLowerCase();
+    if (!unitNum.includes(q)) row.style.display = 'none';
+  });
+})();
 
 // ── Portal link copy ─────────────────────────────────────────
 document.querySelectorAll('.copy-portal-link').forEach(function(btn) {
