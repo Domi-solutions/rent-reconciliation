@@ -26,7 +26,7 @@ threats:
       they can set a new password, log in as the owner, and initiate the payout OTP flow
       from the owner's portal session.
     defense: D2
-    status: planned — Sprint 2
+    status: partial — persons.email immutable after activation (Sprint 1.5); password lock still planned Sprint 2
 
   T3:
     name: Silent ownership removal
@@ -119,16 +119,18 @@ defenses:
   D2:
     name: Lock owner password after first login
     threat: T2
-    status: planned — Sprint 2
+    status: partial — Sprint 1.5 done; full lock planned Sprint 2
     how: >
-      Two options: (A) Admin sets temp password; owner forced to change on first login;
-      after that, admin write path to password_hash is removed.
-      (B) Admin never sets password; owner receives "set password" SMS link on creation.
-      Option B is cleaner; requires SMS channel live. Current set_owner_password route
-      will be locked to owner-only once implemented.
+      Sprint 1.5 (done): persons.email is immutable once password_hash is set (account activated).
+      Enforced in edit_owner() — admin form rejects email changes for activated accounts.
+      This prevents admin from changing the login email to reroute OTPs.
+      Sprint 2 (planned): Lock admin write path to persons.password_hash entirely after first
+      owner login. Admin sets temp password once; owner changes it on first login; after that
+      the set_owner_password route becomes owner-only.
     files:
-      - app.py (set_owner_password route — lock to owner-initiated only)
-      - src/routes/viewer_routes.py or owner_routes.py (add self-serve password change)
+      - app.py (edit_owner route — email immutability enforced)
+      - app.py (set_owner_password route — full lock planned Sprint 2)
+      - src/routes/owner_routes.py (self-serve password change — planned Sprint 2)
 
   D3:
     name: Ownership changes trigger direct SMS to all affected owners
@@ -225,7 +227,7 @@ defenses:
       - src/messaging/delivery.py (send_sms)
 
 # Summary table (for quick agent reference)
-# D1 ✅ D2 ⏳ D3 ✅ D4 ✅ D5 ⏳ D6 ⏳ D7 ✅ D8 ⏳ D9 ✅
+# D1 ✅ D2 ⚠️(partial) D3 ✅ D4 ✅ D5 ⏳ D6 ⏳ D7 ✅ D8 ⏳ D9 ✅
 
 # Owner-facing talking points (use when onboarding a new landlord):
 talking_points:

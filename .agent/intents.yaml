@@ -105,7 +105,12 @@ intents:
     description: "Caretaker submitting a payment claim on behalf of tenant"
     examples:
       - "A7 paid — QKL2X4RTYE 15000"
-    action: "Create payment_claims record with source='caretaker'"
+    action: >
+      Three-outcome at-submission bank check (same as portal log-payment):
+      (1) ref found + no existing payment → create payment, FIFO allocate, verify immediately;
+      (2) ref found + payment already assigned → link claim to that payment, verify;
+      (3) ref absent from bank data for period (or all periods if no timestamp) → flag immediately.
+      Leaves pending only if no bank data exists yet.
     extracted_fields: [unit_reference, mpesa_ref, amount]
 
   escalation_request:
