@@ -13,10 +13,12 @@ tables:
     columns:
       id: {type: TEXT, pk: true}
       name: {type: TEXT, required: true}
-      email: {type: TEXT, unique: true, note: "Org admin login email — set via /platform/orgs/<id>/set-email"}
-      password_hash: {type: TEXT, note: "Org admin login — set via /platform/orgs/<id>/set-password"}
+      slug: {type: TEXT, unique: true, nullable: true, note: "URL-safe identifier; auto-generated at creation if not provided"}
+      contact_email: {type: TEXT, unique: true, nullable: true, note: "Org admin login email. Login query: WHERE LOWER(contact_email) = ? AND is_active = 1. Editable via /platform/orgs/<id>/edit or /platform/orgs/<id>/set-email."}
+      contact_phone: {type: TEXT, nullable: true}
+      admin_password_hash: {type: TEXT, nullable: true, note: "Org admin login password. Set via /platform/orgs/<id>/set-password. NULL = no password set yet."}
       platform_fee_rate: {type: REAL, default: 0.01, note: "Domi fee; silent in float; never shown in org admin UI"}
-      status: {type: TEXT, default: active, values: [active, inactive]}
+      is_active: {type: INTEGER, default: 1, note: "1=active, 0=inactive. Login blocked when 0. Toggled via /platform/orgs/<id>/toggle."}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   persons:

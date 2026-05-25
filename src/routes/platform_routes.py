@@ -290,22 +290,22 @@ def toggle_org(org_id):
 
 @platform_bp.route("/orgs/<org_id>/edit", methods=["POST"])
 def edit_org(org_id):
-    """Edit org name, email, phone, slug, platform fee rate, and optionally password."""
-    from werkzeug.security import generate_password_hash
+    """Edit org name, email, phone, slug, platform fee rate. Password handled separately."""
     name = request.form.get("name", "").strip()
-    email = request.form.get("contact_email", "").strip().lower() or None
+    email = request.form.get("contact_email", "").strip().lower()
     phone = request.form.get("contact_phone", "").strip() or None
     slug = request.form.get("slug", "").strip().lower().replace(" ", "-") or None
-    password = request.form.get("password", "").strip()
     try:
         platform_fee_rate = float(request.form.get("platform_fee_rate", "1").strip()) / 100
+        platform_fee_rate = max(0.0, min(0.10, platform_fee_rate))
     except (ValueError, AttributeError):
         platform_fee_rate = None
-    if platform_fee_rate is not None:
-        platform_fee_rate = max(0.0, min(0.10, platform_fee_rate))
 
     if not name:
         flash("Organisation name is required.", "danger")
+        return redirect(url_for("platform.dashboard"))
+    if not email:
+        flash("Login email is required — cannot be left blank.", "danger")
         return redirect(url_for("platform.dashboard"))
 
     with get_connection() as conn:
@@ -314,14 +314,13 @@ def edit_org(org_id):
             flash("Organisation not found.", "danger")
             return redirect(url_for("platform.dashboard"))
 
-        if email:
-            conflict = conn.execute(
-                "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
-                (email, org_id),
-            ).fetchone()
-            if conflict:
-                flash(f"Email '{email}' is already used by another organisation.", "danger")
-                return redirect(url_for("platform.dashboard"))
+        conflict = conn.execute(
+            "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
+            (email, org_id),
+        ).fetchone()
+        if conflict:
+            flash(f"Email '{email}' is already used by another organisation.", "danger")
+            return redirect(url_for("platform.dashboard"))
 
         if slug:
             slug_conflict = conn.execute(
@@ -337,13 +336,10 @@ def edit_org(org_id):
         if platform_fee_rate is not None:
             fields += ", platform_fee_rate = ?"
             params.append(platform_fee_rate)
-        if password:
-            fields += ", admin_password_hash = ?"
-            params.append(generate_password_hash(password))
         params.append(org_id)
         conn.execute(f"UPDATE organizations SET {fields} WHERE id = ?", params)
 
-    flash(f"'{name}' updated." + (" Password changed." if password else ""), "success")
+    flash(f"'{name}' updated successfully.", "success")
     return redirect(url_for("platform.dashboard"))
 
 

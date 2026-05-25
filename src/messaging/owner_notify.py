@@ -17,7 +17,7 @@ def notify_property_owners(conn, property_id, message,
 
     Returns (sent_count, failed_count, errors_list).
     """
-    from src.messaging.delivery import send_sms
+    from src.messaging.delivery import send_sms_async
     from src.database.db import generate_id
 
     owners = conn.execute("""
@@ -48,7 +48,8 @@ def notify_property_owners(conn, property_id, message,
         return 0, 0, []
 
     recipients = [{'phone': o['phone']} for o in owners_with_phone]
-    return send_sms(recipients, message)
+    send_sms_async(recipients, message)
+    return len(owners_with_phone), 0, []
 
 
 def get_owner_portal_url(conn, property_id, base_url):

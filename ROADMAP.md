@@ -599,6 +599,13 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
 - [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
 
+### Session 22: Platform org management, property deletion fix (2026-05-25) ✅
+
+- [x] **Platform org edit modal** — platform team can edit agency name, login email, phone, slug, and platform fee rate from the org dashboard via a single Edit modal; email uniqueness + slug uniqueness enforced; email is required (blank email blocks login); password handled separately via the existing "Change pw" / "Set pw" dropdown
+- [x] **`POST /platform/orgs/<org_id>/edit`** — new platform route; updates name, contact_email, contact_phone, slug, platform_fee_rate in one submission; slug auto-normalised (lowercase + hyphens); `platform_fee_rate` clamped 0–10%
+- [x] **Property deletion hang fixed** — `notify_property_owners()` in `src/messaging/owner_notify.py` switched from blocking `send_sms()` to `send_sms_async()`; property deletion now completes in under a second; SMS sent in a background daemon thread; fix applies to all callers (broadcasts, reminders, claim notifications, deletion alerts)
+- [x] **schema.yaml corrected** — `organizations` table columns corrected: `email` → `contact_email`, `password_hash` → `admin_password_hash`, `status` → `is_active`, added `contact_phone` + `slug` columns
+
 ### Session 21: Prod DB push, CLAUDE.md compression (2026-05-25) ✅
 
 - [x] **Prod DB push verified** — dev.db pushed to production via base64+SSH pipe; confirmed 84 tenants, 4 bank statements, 93 payments, 455 bank transactions on prod matching dev

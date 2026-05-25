@@ -322,7 +322,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 - Scope: current property only
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
-- `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims
+- `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications
 - Payment SMS wording: "payment confirmed" — never mention bank statements
 
 ---
