@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## AI Re-entry Overview
 
-**Domi** is a property intelligence platform for Kenya — an invisible layer across residential properties handling rent reconciliation, reporting, maintenance, and communication for landlords, managers, caretakers, and tenants. Name: *domus* (Latin: home).
-
-**Codebase name:** `rent-reconciliation` (repo/deploy name unchanged)
+**Domi** is a Kenya property intelligence platform — rent reconciliation, reporting, maintenance, and communication for landlords, managers, caretakers, and tenants. Deployed as `rent-reconciliation` on Fly.io. Name: *domus* (Latin: home).
 
 **Strategic direction (locked 2026-05-04):** Property fintech. Tenants pay via M-Pesa STK Push or card through Domi. Domi holds and disburses to landlords net of management fee. See `ROADMAP.md` "Layer F" for spec.
 
@@ -18,64 +16,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `.agent/jobs.yaml` — ground truth for all scheduled jobs
 - `.agent/env.yaml` — all environment variables
 - `CLAUDE.md` (this file) — technical patterns, conventions, business rules
-- `ROADMAP.md` — product vision, phase checklist, language rules
+- `ROADMAP.md` — product vision, phase checklist, language rules, next steps
 - `CURSOR_PLAN.md` — current work focus, next steps, implementation notes
 - `CURSOR_PATTERNS.md` — failure log; **read before writing any code**
 - `README.md` — how to run and deploy
 
-**Next steps (in order):**
-1. **Mowin data recreation** — fresh dev DB, onboard Mowin via `/onboard`, run Jan→May workflow with real bank statements. Validates the product end-to-end with real data.
-2. Phase 4 (The Conversation): LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md` Phase 4 checklist
-3. Phase 5 (The Coordinator): admin task feed, anomaly detection, caretaker morning briefing — see `ROADMAP.md` Phase 5 checklist
-4. Sprint 2 security: D2 (lock owner password after first login), D5 (management fee rate guard), D6 (owner activity tab in viewer)
-5. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
-6. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
-5. Phase H: WhatsApp live channel (gated on Meta approval via Africa's Talking — apply now)
-6. Flip AT_USERNAME from `sandbox` → live, set Daraja/Pesapal to production when credentials arrive
-
-**Phases 0–3 and Phase G are COMPLETE. Do not re-implement anything in those phases.**
+**Phases 0–3 and Phase G are COMPLETE. See `ROADMAP.md` for what's next. Do not re-implement anything in those phases.**
 
 ---
 
 ## Development Commands
 
 ```bash
-# Start dev server (port 5001, data/dev.db, no passwords)
-./scripts/run_dev.sh
-
-# Pull production DB from Fly.io to local
-./scripts/download_prod_db.sh
-
-# Reset dev DB from latest prod snapshot
-./scripts/reset_dev_db.sh
-
-# Verify app imports cleanly (run after any structural change)
-./venv/bin/python -c "from app import app; print('OK')"
-
-# Deploy to Fly.io
-export PATH="$HOME/.fly/bin:$PATH"
-fly deploy
+./scripts/run_dev.sh                                          # dev server :5001, data/dev.db, no passwords
+./scripts/download_prod_db.sh                                 # pull prod DB → backups/ + data/dev.db
+./scripts/reset_dev_db.sh                                     # reset dev.db from latest backup
+./venv/bin/python -c "from app import app; print('OK')"       # verify imports (run after structural changes)
+export PATH="$HOME/.fly/bin:$PATH" && fly deploy              # deploy to Fly.io
 ```
 
-**Env vars for local SMS sandbox testing:**
-```bash
-AT_USERNAME=sandbox AT_API_KEY=<your-sandbox-key> ./scripts/run_dev.sh
-```
-
-**Env vars for local M-Pesa (Daraja) sandbox testing:**
-```bash
-DARAJA_ENV=sandbox DARAJA_CONSUMER_KEY=... DARAJA_CONSUMER_SECRET=... ./scripts/run_dev.sh
-```
+Sandbox testing: `AT_USERNAME=sandbox AT_API_KEY=<key> ./scripts/run_dev.sh` | `DARAJA_ENV=sandbox DARAJA_CONSUMER_KEY=... DARAJA_CONSUMER_SECRET=... ./scripts/run_dev.sh`
 
 There are no automated tests. Verification is manual: run the dev server, walk through the workflow, inspect DB state.
-
----
-
-## Vision
-
-Domi is a **financial and operational intelligence layer** — pull → push model. Lazy users are the expected baseline; the system delivers value regardless. Two data layers: financial (structured) + qualitative (unstructured → parsed via LLM). Full product layer specs and phase status are in `ROADMAP.md`.
-
-**Data-descriptive language (hard rule):** Every user-facing string reports what the data knows — never what the agency did. "KES 312,000 verified against bank records" not "We collected KES 312,000". Full rule table in `ROADMAP.md`.
 
 ---
 
@@ -90,91 +52,41 @@ Domi is a **financial and operational intelligence layer** — pull → push mod
 
 ---
 
-## Project Structure
+## Key Source Files
 
 ```
-rent-reconciliation/
-├── app.py                    # Flask app, admin routes, blueprint registration, APScheduler init
-├── src/
-│   ├── platform/
-│   │   ├── __init__.py
-│   │   └── guardian.py       # platform_log(), raise_alert(), notify_owner_change() — platform oversight helpers
-│   ├── agent/
-│   │   ├── coordinator.py    # Orchestrates all scheduled jobs
-│   │   ├── detector.py       # Anomaly detection + task checker + nudges
-│   │   ├── briefings.py      # Digest + briefing generators
-│   │   ├── inbound.py        # Inbound parsing, intent classification, action handlers
-│   │   ├── responder.py      # Response message generation
-│   │   ├── router.py         # Delivery abstraction: portal / SMS / WhatsApp / email
-│   │   ├── llm.py            # LLM wrapper — only file that imports Anthropic SDK
-│   │   └── state.py          # Conversation session state (inbound_sessions)
-│   ├── parsers/
-│   │   ├── router.py         # Input auto-detection & routing
-│   │   ├── pdf_parser.py     # Bank statement parsing (detect_bank_statement_format → 'cooperative'|'tabular_kes'|'unknown'|'scanned'); scanned PDFs use call_llm_vision (Claude Haiku) as last resort
-│   │   ├── sms_parser.py     # M-Pesa SMS parsing (exports parse_mpesa_message)
-│   │   ├── excel_parser.py   # Tenant Excel import (exports parse_currency)
-│   │   ├── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate); non-numeric charge values ("Vacant", "N/A", "-", "nil", blank) skipped with warning, not error
-│   │   └── banks/
-│   │       ├── __init__.py   # Empty
-│   │       └── registry.py   # BANK_DISPLAY_NAMES, bank_display_name(), SUPPORTED_FORMATS — add new bank here
-│   ├── routes/
-│   │   ├── viewer_routes.py  # /view/*
-│   │   ├── tenant_routes.py  # /tenant/<token>
-│   │   ├── messaging_routes.py  # /messages/*
-│   │   ├── report_routes.py  # /reports/*
-│   │   ├── caretaker_routes.py  # /caretaker/*
-│   │   ├── agent_routes.py   # /agent/*
-│   │   ├── payment_routes.py # /inbound/payment/* (Daraja + Pesapal callbacks)
-│   │   ├── inbound_routes.py # /inbound/sms, /inbound/whatsapp (Africa's Talking + WhatsApp webhooks)
-│   │   └── test_routes.py    # /test/*
-│   ├── reports/
-│   │   └── landlord_report.py   # generate_report() + enrich_report_data()
-│   ├── messaging/
-│   │   ├── delivery.py       # send_sms(); every call logs to platform_outbox via _log_sms()
-│   │   ├── email.py          # send_email() via SMTP (Mailtrap-compatible); returns (False, 'SMTP not configured') if env vars absent
-│   │   ├── outbox.py         # log_outbox() — writes every outbound message to platform_outbox regardless of channel or delivery status
-│   │   ├── owner_notify.py   # notify_property_owners()
-│   │   └── reminders.py      # Due-date reminder generation
-│   ├── payments/             # Phase G — COMPLETE
-│   │   ├── daraja.py         # STK Push (initiate), B2C (disburse to landlord)
-│   │   ├── pesapal.py        # Card checkout integration
-│   │   └── disbursements.py  # calculate_disbursement(), execute_disbursement(); _get_confirmed_payout_owner() guards disbursements — raises ValueError + critical alert if no confirmed owner found
-│   ├── database/
-│   │   ├── db.py             # get_connection(), generate_id(), all migrations
-│   │   └── schema.sql
-│   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── phone.py          # normalize_to_e164(), normalize_to_daraja() — ONLY place phone normalization lives
-│   │   ├── metrics.py        # get_property_occupancy(), get_expected_monthly_income(), get_months_behind() — ONLY place these are computed
-│   │   └── statement.py      # get_tenant_statement(conn, tenant_id, property_id) → (tenant, ledger_rows, open_claims); quick_verify_ref(conn, text, unit_id, org_id) → status dict. Used by all three statement routes.
-│   └── reconciliation/
-│       ├── matcher.py        # enrich_with_suggestions() (Tier 1: unit_hint, Tier 2: name_match, Tier 3: sender_history), match_sms_to_bank()
-│       └── state_machine.py  # Payment lifecycle
-├── templates/
-│   ├── base.html             # Admin base (sidebar, property selector) — never modify for viewer changes
-│   ├── agent/                # Simulator, digest preview, briefing preview
-│   ├── viewer/               # base_viewer.html + dashboard, arrears, payments, reports, maintenance, notifications, tenant_statement.html
-│   ├── tenant/               # base_tenant.html + portal, charges, payments, messages, maintenance
-│   ├── messaging/            # broadcast, templates, reminders, schedules, thread.html (chat-style per-tenant thread)
-│   ├── reports/              # history, preview, caretaker_preview
-│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, payment_activity.html, flagged_claims.html, reports.html, report_detail.html, water.html, water_new.html, statement.html
-│   ├── owner/                # activate.html, verify_email.html (email OTP step 2), token_login.html (password-only login via access_token link)
-│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
-│   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
-│   ├── tenant_statement.html # Admin: full charge+payment ledger; quick-verify AJAX panel; disputed claim resolve/delete actions
-│   ├── move_out.html         # Move-out form: deposit offset calculator, resolution options, settlement summary
-│   ├── owners.html
-│   └── caretakers.html
-├── scripts/
-│   ├── run_dev.sh            # Dev server :5001, data/dev.db, no passwords
-│   ├── download_prod_db.sh   # Pull prod DB → backups/ + data/dev.db
-│   ├── reset_dev_db.sh       # Reset dev.db from latest backup
-│   ├── seed_phase6.py        # Seeds 2 orgs, 4 properties, owners, tenants (Phase 6)
-│   └── seed_demo_payments.py # Seeds 132 rent charges, 12 statements, 56 payments with realistic scenarios
-└── data/
-    ├── rent.db               # Default DB
-    └── dev.db                # Dev DB (set via DATABASE_PATH env var)
+app.py                         # Flask app, admin routes, blueprint registration, APScheduler init
+src/platform/guardian.py       # platform_log(), raise_alert(), notify_owner_change()
+src/agent/coordinator.py       # orchestrates all scheduled jobs
+src/agent/detector.py          # anomaly detection + task checker + nudges
+src/agent/briefings.py         # digest + briefing generators
+src/agent/inbound.py           # inbound parsing, intent classification, action handlers
+src/agent/llm.py               # ONLY file that imports Anthropic SDK; call_llm(prompt, model='fast'|'smart')
+src/agent/router.py            # ONLY place that knows about SMS/WhatsApp/email channels; route_message()
+src/parsers/pdf_parser.py      # detect_bank_statement_format() → 'cooperative'|'tabular_kes'|'scanned'|'unknown'
+src/parsers/sms_parser.py      # parse_mpesa_message()
+src/parsers/router.py          # parse_input() — auto-detects SMS/PDF/Excel
+src/parsers/excel_parser.py    # parse_currency() — reused by water_parser; do not duplicate
+src/parsers/water_parser.py    # water readings Excel; non-numeric values ("Vacant","N/A","-","nil",blank) skipped with warning
+src/parsers/banks/registry.py  # bank_display_name(), SUPPORTED_FORMATS — add new banks here
+src/database/db.py             # get_connection(), generate_id(), allocate_payment(), all migrations
+src/utils/phone.py             # normalize_to_e164(), normalize_to_daraja() — ONLY phone normalization
+src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_income(), get_months_behind()
+src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
+src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
+src/reconciliation/state_machine.py  # payment lifecycle
+src/reports/landlord_report.py # generate_report(), enrich_report_data()
+src/messaging/delivery.py      # send_sms(), send_sms_async() — logs to platform_outbox via _log_sms()
+src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
+src/messaging/owner_notify.py  # notify_property_owners()
+src/payments/daraja.py         # STK Push (initiate), B2C (disburse)
+src/payments/pesapal.py        # card checkout
+src/payments/disbursements.py  # _get_confirmed_payout_owner() — hard blocks unsafe disbursements
+src/routes/viewer_routes.py, tenant_routes.py, messaging_routes.py, report_routes.py
+src/routes/caretaker_routes.py, agent_routes.py, payment_routes.py, inbound_routes.py
 ```
+
+Templates: `base.html` (admin base), `viewer/base_viewer.html` + `viewer/wallet.html`, `caretaker/`, `tenant/`, `platform/`, `messaging/`, `tenant_statement.html`, `move_out.html`, `owners.html`, `caretakers.html`
 
 ---
 
@@ -282,8 +194,8 @@ allocations = allocate_payment(conn, payment_id, unit_id, amount)
 **SMS — async for confirmations, sync for security-critical alerts:**
 ```python
 from src.messaging.delivery import send_sms, send_sms_async
-send_sms_async(recipients, message)   # non-blocking daemon thread; use for confirmations, notifications
-send_sms(recipients, message)         # blocking; use only for security-critical messages (payout OTP, fraud alert)
+send_sms_async(recipients, message)   # non-blocking daemon thread; confirmations, notifications
+send_sms(recipients, message)         # blocking; payout OTP, fraud alert only
 ```
 
 **LLM wrapper — never import Anthropic SDK outside this module:**
@@ -292,54 +204,26 @@ from src.agent.llm import call_llm
 result = call_llm(prompt, model='fast')   # 'fast' = haiku, 'smart' = sonnet
 ```
 
-**Delivery router — agent code never calls send_sms() directly:**
-```python
-from src.agent.router import route_message
-route_message({'recipient_phone': '+254712345678', 'recipient_role': 'caretaker',
-               'property_id': 'PROP-45ED445A', 'message_type': 'daily_briefing', 'body': '...'})
-```
-
-**Intent classification:**
-```python
-from src.agent.inbound import classify_intent
-result = classify_intent(raw_text, sender_role='caretaker')
-# Returns: {'intent': 'maintenance_report', 'confidence': 0.94, 'extracted': {...}}
-# confidence >= 0.85 → act + confirm; below → ask before acting
-```
-
-**Input router:**
-```python
-from src.parsers.router import parse_input
-result = parse_input(data)  # Auto-detects SMS/PDF/Excel
-```
-
 **Bank format registry — always use for display names and format lists:**
 ```python
 from src.parsers.banks.registry import bank_display_name, SUPPORTED_FORMATS
 label = bank_display_name('cooperative')  # → 'Co-operative Bank'
-label = bank_display_name('unknown')      # → 'Unknown format'
 label = bank_display_name('scanned')      # → 'Scanned PDF (AI)'
-# To add a new bank: add entry to BANK_DISPLAY_NAMES in registry.py,
-# write parser in src/parsers/banks/<bank>.py,
+# To add a new bank: add to BANK_DISPLAY_NAMES, write src/parsers/banks/<bank>.py,
 # add detection branch in detect_bank_statement_format() in pdf_parser.py
 ```
 
 **Scanned PDF parsing — LLM vision fallback (last resort only):**
 - Triggered automatically when pdfplumber extracts zero text from a PDF
-- Requires `ANTHROPIC_API_KEY` env var; without it, returns a clear error message
-- Uses Claude Haiku (`call_llm_vision`) with 2 pages per chunk to avoid output token limits
-- Balance validation is bypassed for scanned results (vision doesn't read running totals)
-- Result includes a `warnings` list with advisory to request a digital statement instead
+- Requires `ANTHROPIC_API_KEY`; uses Claude Haiku with 2 pages per chunk
+- Balance validation bypassed for scanned results (vision can't read running totals)
 - Cost: ~$0.05–$0.20 per 7-page statement — factor into per-property pricing
 
 **Platform guardian — call from any route that performs a sensitive agency action:**
 ```python
 from src.platform.guardian import platform_log, raise_alert, notify_owner_change
-# Log to shadow log (always):
 platform_log(conn, 'action_name', 'entity_type', entity_id, 'details', org_id=org_id, property_id=pid)
-# Raise an alert visible only to platform:
 raise_alert(conn, 'alert_type', 'details', org_id=org_id, property_id=pid, severity='critical')
-# Notify all owners of a property directly (bypasses agency):
 notify_owner_change(conn, property_id, 'Subject line', 'Body text')
 ```
 Sensitive actions that must call guardian: unit field edit (rent/service change >10%), owner removed from property, tenant moved out, payment reversed.
@@ -409,27 +293,9 @@ Full migration call order in `app.py` startup (append-only, never reorder):
 
 ---
 
-## Admin Sidebar Structure
+## Admin Sidebar
 
-The sidebar in `base.html` follows a frequency-of-use philosophy. Never reorder without understanding the rationale.
-
-**Main section (daily use):** Overview → Units → Payments → Messages → Bank Statements → Water Charges → Reports → Activity
-
-**Monthly section (labeled):** Monthly Workflow only — links to `tools_index` route which shows live green/red status for each of the 5 workflow steps (Water Charges → Generate Charges → Upload Bank Statement → Verify Payments → Export & Report). Status is green if the step was completed in the current `YYYY-MM` period, red otherwise.
-
-**Setup section (labeled, touch-once):** Caretakers → Owners
-
-**Footer:** Tools & Settings (parser test tools, onboard property) → Log out
-
-`active_nav` is derived from `request.endpoint` via a chained Jinja2 ternary at the top of `base.html`. When adding a new route that should highlight a sidebar item, add the endpoint to the correct `active_nav` branch.
-
----
-
-## New User Onboarding
-
-**Setup checklist on dashboard (`dashboard.html`):** Shown when `show_setup_checklist=True` (set in `dashboard()` route when `not (has_owner and has_caretaker and has_charges)`). Three linked steps: (1) Add property owners, (2) Add a caretaker, (3) Run monthly workflow. Each step shows a green ✓ and strikethrough text once its condition is met. The entire card disappears once all three conditions are satisfied. This is a live DB check on every dashboard load — no dismissal button needed.
-
-**Empty states:** Key pages (Payments confirmed tab, Bank Statements, Unreported credits) have actionable empty states with context about next steps and links to the relevant workflow step — not just "nothing here yet."
+`active_nav` is derived from `request.endpoint` via a chained Jinja2 ternary at the top of `base.html`. When adding a new route that should highlight a sidebar item, add the endpoint to the correct `active_nav` branch. Never modify `base.html` for viewer-side changes.
 
 ---
 
@@ -474,37 +340,23 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 
 Channel-agnostic and additive. Never modifies existing routes. Writes to existing tables (audit_log, messages, owner_messages) and new agent tables.
 
-**Agent owns (runs without human input):**
-- Daily balance snapshots; monthly charge generation (if not done by day 3)
-- Weekly digest (Monday morning); caretaker morning briefing (routine issues batched; urgent forwarded immediately 24/7)
-- Monthly tenant check-ins (1–3 rating + free text); payment rejection notifications; reminder sending
-- Anomaly detection: water >30% above 3-month avg (configurable), vacancy duration, arrears thresholds, collection pace
+**Agent owns (runs without human input):** daily balance snapshots; monthly charge generation (if not done by day 3); weekly digest (Monday morning); caretaker morning briefing (routine batched, urgent forwarded 24/7); monthly tenant check-ins; payment rejection notifications; reminder sending; anomaly detection (water >30% above 3-month avg, vacancy duration, arrears thresholds, collection pace).
 
-**Agent flags (human decides):**
-- Missing bank statement, water charges, claims aging >7 days, unassigned transactions
-- No payment/claim by day 15 → nudge caretaker; arrears threshold crossings → nudge + owner report
-- Water anomaly → caretaker must acknowledge (non-response logged); unit goes vacant → caretaker must comment
-- Caretaker escalation requests (always in owner report); 24h acknowledgment failures (logged)
-- Low-confidence inbound parses (<0.85); owner instructions from inbound replies
+**Agent flags (human decides):** missing bank statement or water charges; claims aging >7 days; unassigned transactions; no payment/claim by day 15 (nudge caretaker); arrears threshold crossings; water anomalies (caretaker must acknowledge); caretaker escalation requests; low-confidence inbound parses (<0.85); owner instructions from inbound replies.
 
 **Language:** All outbound supports English + Kiswahili. `tenants.language_preference` NULL triggers "English or Kiswahili?" on first inbound contact.
 
-**Tenant flagging:** Triggered when M-Pesa reference absent from bank statement. `tenants.flagged = true` — future claims not given pending-state treatment. Admin clears manually.
+**Tenant flagging:** `tenants.flagged = true` when M-Pesa ref absent from bank statement. Admin clears manually only.
 
-**Admin task feed:** Embedded in main dashboard (`dashboard.html`); `base.html` untouched. First thing seen on login.
+**Admin task feed:** Embedded in `dashboard.html` (first thing seen on login); `base.html` untouched.
 
-**Agent admin routes:**
-- `GET /agent/simulator` — intent classification + response preview
-- `GET /agent/digest/preview/<property_id>`, `/briefing/caretaker/<property_id>/preview`, `/briefing/owner/<property_id>/preview`, `/checklist/<property_id>/preview`
-- `POST /agent/trigger/<job_name>` — manually trigger any scheduled job
+**Agent admin routes:** `GET /agent/simulator`, `/agent/digest/preview/<pid>`, `/briefing/caretaker/<pid>/preview`, `/briefing/owner/<pid>/preview`, `/checklist/<pid>/preview`; `POST /agent/trigger/<job_name>`.
 
 ---
 
 ## WhatsApp / Inbound Channel
 
-One WhatsApp number serves all users across all properties. Identity = phone number.
-
-Lookup priority: caretakers → owners → tenants → unknown. Multi-property owners: prompt "Reply 1 for [A], 2 for [B]", cache in `inbound_sessions` for 24h.
+One WhatsApp number serves all users across all properties. Identity = phone number. Lookup priority: caretakers → owners → tenants → unknown. Multi-property owners: prompt "Reply 1 for [A], 2 for [B]", cache in `inbound_sessions` for 24h.
 
 **Inbound flow (async — never block on LLM):**
 ```
@@ -513,7 +365,7 @@ POST /inbound/sms or /inbound/whatsapp
   → Background: classify intent → action handler → send response
 ```
 
-Outbound proactive messages require Meta-approved templates (plain text, `{{1}}` variables). WhatsApp adapter in `router.py` is a stub until credentials are live. SMS is the fallback.
+WhatsApp adapter in `router.py` is a stub until credentials are live. SMS is the fallback. Outbound proactive messages require Meta-approved templates (`{{1}}` variables).
 
 ---
 
@@ -521,66 +373,39 @@ Outbound proactive messages require Meta-approved templates (plain text, `{{1}}`
 
 **Strategic model:** Money-in-transit. Tenants pay via Domi Paybill. Domi holds and disburses net of management fee (default 8%, `properties.management_fee_rate`).
 
-**`src/payments/`:** `daraja.py` (STK Push + B2C), `pesapal.py` (card), `disbursements.py`. Payment modules never import from `src/agent/` or route files — write to DB and return.
+Payment modules (`src/payments/`) never import from `src/agent/` or route files — write to DB and return. `payment_routes.py` routes exempt from admin auth; always write-and-return-200.
 
-**`src/routes/payment_routes.py`** — `url_prefix='/inbound/payment'`. Routes exempt from admin auth. Always write-and-return-200; never block on processing.
-
-**Payout account security model (beneficiary substitution fraud prevention):**
-The threat: a malicious admin or AI agent creates a fake owner, assigns them to a property, and sets their M-Pesa number to redirect disbursements. The defence is separation of control:
+**Payout security model (beneficiary substitution fraud prevention):**
 - `owners.phone` = contact phone (admin-writable)
-- `owners.payout_mpesa` = disbursement destination (owner-write-only, never admin-writable)
-- Owner sets `payout_mpesa` via portal OTP flow: requests OTP → SMS to submitted number (proves SIM ownership) → confirms OTP → 48-hour hold before disbursements activate
-- `_get_confirmed_payout_owner(conn, property_id)` in `disbursements.py` enforces: `payout_confirmed=1` AND `payout_active_at <= now()`. If no owner passes both checks → `ValueError` + critical platform alert → disbursement blocked.
-- On payout number change: SMS warning sent to the previous number so compromised accounts get notified.
-- This model means a fraudulent owner created by a rogue admin cannot receive funds without also controlling the target M-Pesa SIM.
+- `owners.payout_mpesa` = disbursement destination — **owner-write-only, never admin-writable**
+- Owner sets `payout_mpesa` via portal OTP flow: OTP → SMS to submitted number (proves SIM ownership) → confirms → 48-hour hold
+- `_get_confirmed_payout_owner(conn, property_id)` enforces `payout_confirmed=1` AND `payout_active_at <= now()`; if no owner passes → `ValueError` + critical platform alert → disbursement blocked
+- On payout number change: SMS warning sent to previous number
 
-**New tables** (full schema in `.agent/schema.yaml`):
-- `payment_transactions` — raw Daraja/Pesapal callbacks; `external_reference` UNIQUE (dedup key); FK to `payments.id` set when processed
-- `disbursements` — landlord payouts: status lifecycle pending → processing → completed/failed
+**FIFO transparency (required):** Confirmation SMS + portal must show allocation detail. "KES 10,000 confirmed — applied: KES 5,000 to Oct service charge, KES 5,000 to Nov rent." Data in `payment_allocations`.
 
-**FIFO transparency (required, non-negotiable):** Confirmation SMS + portal must show allocation:
-"KES 10,000 confirmed — applied: KES 5,000 to Oct service charge, KES 5,000 to Nov rent."
-Data lives in `payment_allocations`.
-
-Payment flow steps: see `CURSOR_PLAN.md` Phase G. Env vars: see `.agent/env.yaml`.
+Tables: `payment_transactions` (raw callbacks; `external_reference` UNIQUE dedup; FK to `payments.id`), `disbursements` (pending → processing → completed/failed).
 
 ---
 
-## Scaling Architecture
+## Architectural Rules (cheap now, expensive to retrofit)
 
-- **Now (1–5 props):** SQLite + APScheduler in-process + single gunicorn worker
-- **5–15 props:** PostgreSQL + Redis/RQ + second Fly worker
-- **15+ props:** `src/agent/` extracted to separate Fly app + PgBouncer + dedicated inbound processor
-
-**Architectural rules (cheap now, expensive to retrofit):**
 1. Agent logic never imports from routes — communicate via DB only
 2. LLM calls are always async — never block a web request or webhook on inference
 3. Every agent feature is property-scoped — all tables have `property_id`; all jobs parameterized by property
 4. Delivery is abstracted — `src/agent/router.py` is the only place that knows about channels
 5. LLM provider is abstracted — `src/agent/llm.py` is the only file that imports the Anthropic SDK
 
----
-
-## Local Development + Deployment
-
-See `README.md` for all commands and Fly.io first-time setup.
-
-Key gotcha: Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by default. Run `export PATH="$HOME/.fly/bin:$PATH"`. Single gunicorn worker required for SQLite write safety.
+Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by default. Single gunicorn worker required for SQLite write safety.
 
 ---
 
 ## Business Context
 
-- **We are the platform.** Domi is operated by its founders. `/platform/*` is Domi's control room.
 - **First customer:** Mowin Apartments (44 units, Athi River). Used to build and validate the product.
-- **Target market:** 1,000+ properties at Mowin scale (40–120 units) across Kenya. Market is large, fragmented, undigitized.
-- **Revenue:** `platform_fee_rate` (default 1%) deducted from each landlord disbursement. Not a subscription. PMO never sees it — it's silent in the float. Bridge period: informal monthly payment per PMO while payment rail credentials are pending.
-- **Go-to-market:** PMOs are the buyers. Owners are the advocates. Recruit agents who bring PMOs and earn a share of transaction fee revenue.
-- **Bank statements are transitional.** They exist to acquire customers while Daraja/Pesapal credentials are pending. Once the payment rail is live, tenants pay via Domi Paybill and the statement upload workflow becomes legacy-only.
-- Two fees — never confuse them:
-  - `properties.management_fee_rate` — agency's fee, set by PMO, visible to PMO
-  - `properties.platform_fee_rate` — Domi's fee, set by platform only, never appears in org admin routes or templates
-- Tenants pay M-Pesa; bank statements confirm (transitional). Custom tech is a genuine differentiator in the Kenya market.
+- **Two fees — never confuse:** `properties.management_fee_rate` (agency's fee, PMO-visible) vs `properties.platform_fee_rate` (Domi's fee, platform-only, **never** appears in org admin routes or templates)
+- **Data-descriptive language (hard rule):** Every user-facing string reports what the data knows — never what the agency did. "KES 312,000 verified against bank records" not "We collected KES 312,000". Full rule table in `ROADMAP.md`.
+- We are the platform. `/platform/*` is Domi's control room. Bank statements are transitional — once payment rail is live, statement upload workflow becomes legacy-only.
 
 ---
 
@@ -620,18 +445,10 @@ owner phone change, owner removed from property, owner added to property, owner 
 
 ## Agent Coordination Rules
 
-Multiple AI agents may work simultaneously (Claude Code, Cursor, etc.).
-
-**Before starting:** Read canonical docs in the order listed at the top of this file. Don't rebuild what's already marked complete in `ROADMAP.md`.
+**Before starting:** Read canonical docs in the order above. Don't rebuild what's complete in `ROADMAP.md`.
 
 **Before touching shared files** (`app.py`, `db.py`, `schema.sql`, `base_viewer.html`): check for recent changes.
 
-**While working:**
-- Data-descriptive language only — no agency voice anywhere (see `ROADMAP.md` rule table)
-- Additive migrations only — `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN`; never drop/recreate
-- Follow existing patterns: `generate_id()`, `get_connection()`, raw SQL, Blueprint structure
+**While working:** Data-descriptive language only — no agency voice anywhere. Additive migrations only (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN`; never drop/recreate). Follow existing patterns: `generate_id()`, `get_connection()`, raw SQL, Blueprint structure.
 
-**After completing work:**
-- Update `ROADMAP.md` — mark completed items `[x]`, add new items
-- Update `CLAUDE.md` — add new files, routes, tables, blueprints
-- Test locally: `./venv/bin/python app.py`
+**After completing work:** Update `ROADMAP.md` (mark completed items `[x]`) and `CLAUDE.md` (add new files, routes, tables, blueprints). Test: `./venv/bin/python app.py`.

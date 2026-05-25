@@ -599,6 +599,11 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
 - [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
 
+### Session 21: Prod DB push, CLAUDE.md compression (2026-05-25) ✅
+
+- [x] **Prod DB push verified** — dev.db pushed to production via base64+SSH pipe; confirmed 84 tenants, 4 bank statements, 93 payments, 455 bank transactions on prod matching dev
+- [x] **CLAUDE.md compressed** — reduced from 46,436 → 35,458 chars; replaced full ASCII project tree with flat key-files list; condensed Agent System, WhatsApp/Inbound, Scaling Architecture, Business Context, and coordination sections; all critical rules, patterns, migration list, and security architecture preserved verbatim
+
 ### Session 20: Tenant Statement, Quick Verify, Tier 3 Matching (2026-05-25) ✅
 
 - [x] **`src/utils/statement.py`** — shared `get_tenant_statement(conn, tenant_id, property_id)` used by all three roles; `quick_verify_ref(conn, text, unit_id, org_id)` for AJAX check
