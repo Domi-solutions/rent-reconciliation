@@ -86,6 +86,10 @@ src/routes/viewer_routes.py, tenant_routes.py, messaging_routes.py, report_route
 src/routes/caretaker_routes.py, agent_routes.py, payment_routes.py, inbound_routes.py
 ```
 
+Messaging helpers in `messaging_routes.py` (do not duplicate inline):
+- `_next_due_date(rent_due_day)` — returns next rent due date (date object) from `properties.rent_due_day`
+- `_build_variables(conn, tenant, prop, base_url=None)` — single source of truth for broadcast/thread substitution; returns dict with `{tenant_name}`, `{balance}`, `{unit}`, `{due_date}`, `{caretaker_phone}`, `{portal_link}`, `{property_name}`
+
 Templates: `base.html` (admin base), `viewer/base_viewer.html` + `viewer/wallet.html`, `caretaker/`, `tenant/`, `platform/`, `messaging/`, `tenant_statement.html`, `move_out.html`, `owners.html`, `caretakers.html`
 
 ---
@@ -101,17 +105,17 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
-- `bank_statements` is **org-scoped**: statements belong to the org (bank account), not a property. `property_id` is nullable — NULL means org-wide. Always query by `WHERE org_id = ?`. Upload never forces a property tag. Verify/assign always runs org-wide. The statements list shows all org statements with a per-statement coverage badge (which properties have verified payments). `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = image PDF parsed via Claude Haiku vision; balance validation is skipped for scanned statements (vision can't read running totals reliably).
-- `water_uploads` UNIQUE(property_id, charge_period) — prevents duplicate uploads per billing period. `reading_period` = when readings were taken; `charge_period` = reading_period + 1 month (billing in arrears). Rate is snapshotted from `properties.water_rate` at upload time.
-- `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last recorded `current_reading` for that unit. `amount` = units_consumed × rate; written to `rent_charges` as `charge_type='water'`.
+- `bank_statements` is **org-scoped**: always query `WHERE org_id = ?`. `property_id` nullable (NULL = org-wide); upload never forces it. Statements list shows per-statement coverage badge. `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = Haiku vision; balance validation skipped.
+- `water_uploads` UNIQUE(property_id, charge_period). `charge_period` = reading_period + 1 month (billing in arrears). Rate snapshotted from `properties.water_rate` at upload.
+- `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last `current_reading`. `amount` = units_consumed × rate → written to `rent_charges` as `charge_type='water'`.
 - `property_owners.is_primary` — auto-set to 1 on the first owner assigned to a property. Admin cannot remove a primary owner via the UI; must contact platform to transfer. `remove_property_from_owner` route blocks with 400 if `is_primary=1`. Existing rows migrated by `migrate_add_primary_owner` using `MIN(rowid)` per property.
-- `payment_claims.status` values: `pending` | `verified` | `flagged` — never `rejected`. `flagged` is permanent; resolution uses `caretaker_confirmed` + `admin_cleared` columns, not status change. `mpesa_period` (YYYY-MM) is parsed from the M-Pesa timestamp. **At-submission check (caretaker `log_payment`):** three outcomes — (1) ref found in bank + no existing payment → payment created + FIFO allocated + claim verified immediately; (2) ref found in bank + payment already assigned → claim linked to existing payment + verified; (3) ref absent from bank data for that period (or all periods if `mpesa_period` NULL) → flag immediately. Only stays `pending` if no bank data exists yet. **`verify_payments`:** also resolves previously flagged claims — if a flagged ref (`flag_reason='ref_not_found'`) appears in a new statement, status → `verified`, payment created, tenant unflagged (if no other open flags), caretaker + tenant notified.
+- `payment_claims.status`: `pending`|`verified`|`flagged` (never `rejected`). `flagged` is permanent; resolution via `caretaker_confirmed`/`admin_cleared` columns. At-submission outcomes: (1) ref found + no payment → create + verify immediately; (2) ref found + payment exists → link + verify; (3) ref absent → flag. Stays `pending` only if no bank data yet. `verify_payments` also re-checks flagged claims — if a new statement contains the ref: status → `verified`, payment created, tenant unflagged (if no other open flags).
 - `payment_claims` three-layer resolution: `status='flagged'` never changes; `caretaker_confirmed=1` + `caretaker_note` (caretaker POV); `admin_cleared=1` + `admin_note` (admin POV); platform always sees raw flagged state. All changes written to `audit_log` + `platform_shadow_log`.
 - `tenants.flagged=1` — set automatically when a claim is flagged; future claims from this tenant get no pending-state treatment. Admin clears manually only.
 - `payments.notes` — admin annotation on any confirmed payment. `payments.caretaker_note` — caretaker annotation, written via caretaker portal, visible to admin and platform. Both write to `audit_log`; `caretaker_note` also writes to `platform_shadow_log`. Amount mismatch (bank ≠ claimed) writes `payment_amount_mismatch` to both `audit_log` and `platform_alerts`.
 - `bank_transactions.ignored` — `1` means the transaction is skipped in the workflow unassigned count (so Step 4 can go green) but the row is NOT deleted and remains assignable. Set via `POST /payments/ignore/<txn_id>`; cleared via `POST /payments/unignore/<txn_id>`. Visible in the Ignored tab on the review page. Any route that counts unassigned credits MUST add `AND (bt.ignored IS NULL OR bt.ignored = 0)`.
 - `platform_outbox` — every outbound message logged here regardless of channel or delivery status. Written by `log_outbox()` in `src/messaging/outbox.py`. Status values: `sent` | `failed` | `simulated` (simulated = no API configured, code visible for testing). Never used for business logic — audit/debug only. Filters: channel, status. Surfaced at `/platform/outbox`.
-- `statement_parse_errors` — every parse failure is persisted here. columns: id, org_id, statement_id (nullable), filename, file_path, bank_format, error_type (`transaction_row`|`validation`|`format_unknown`|`fatal`), error_message, raw_text, page_number, txn_index, created_at. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card).
+- `statement_parse_errors` — every parse failure persisted here. `error_type`: `transaction_row`|`validation`|`format_unknown`|`fatal`. Surfaced in admin review (Parse Errors tab) and platform dashboard (7-day count card). Full schema in `.agent/schema.yaml`.
 - `platform_shadow_log` — agency-uneditable record of sensitive actions. Written by `src/platform/guardian.py`. Never query or display in any org-admin route. Platform only.
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
 - `platform_alerts` — anomaly alerts raised on sensitive actions (owner removed = critical; rent changed >10% = warning/critical). Platform dismisses; agency cannot see.
@@ -120,9 +124,11 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `tenants.status` values: `active` | `departed` | `inactive`. `departed` = moved out with remaining debt, portal access preserved so tenant can view balance and pay. `inactive` = settled or written-off, access_token cleared. `departed` tenants appear in caretaker log-payment "Departed tenant" mode for post-departure bank matching.
 - `tenants.deposit_paid` — recorded at move-in (via `add_tenant` route). Pre-fills `deposit_held` field on the move-out form. Added by `migrate_add_deposit_paid`.
 - `tenants.move_in_notes` — optional admin notes recorded at move-in. Added by `migrate_add_deposit_paid` (same migration).
+- `tenants.short_code` — 6-char alphanumeric code for short portal links. `GET /t/<code>` redirects to `/tenant/<access_token>`. Generated at move-in; backfilled for existing tenants at migration. Added by `migrate_add_tenant_short_code`. All SMS payment/portal links should use `/t/<short_code>` not the full access_token URL.
+- `payment_claims.source` values: `web`|`caretaker`|`tenant`|`whatsapp`|`sms`. `tenant` = self-reported via tenant portal `/tenant/<token>/report-payment`.
 - `tenant_departures` — one row per move-out. Columns: id, tenant_id, unit_id, property_id, departure_date, balance_at_departure, deposit_held, deposit_applied, deposit_refunded, remaining_debt, debt_status ('none'/'active'/'written_off'), write_off_note, admin_notes, created_at. Added by `migrate_add_tenant_departures`.
 - `payment_claims.departed_tenant_id` — FK to `tenants.id`; set when caretaker submits a claim in "Departed tenant" mode. Used to link post-departure payments to the correct former tenant. Added by `migrate_add_tenant_departures`.
-- `landlord_reports.needs_refresh` / `refresh_reason` / `refreshed_at` — staleness tracking for live/frozen report architecture. Reports < 3 months old regenerate on every view. ≥3 months served from stored JSON. `_flag_stale_reports()` in `app.py` sets `needs_refresh=1` after statement upload and verify_payments. Added by `migrate_add_report_refresh_fields`.
+- `landlord_reports.needs_refresh`/`refresh_reason`/`refreshed_at` — staleness tracking. Reports < 3 months regenerate on every view; ≥3 months served from stored JSON. `_flag_stale_reports()` in `app.py` sets `needs_refresh=1` after upload/verify.
 - `unit_balances` VIEW — charges and payments scoped to current active tenant's `move_in_date` so a new tenant starts with a clean balance (no inherited history from previous tenant).
 - `bank_transactions` — has index `idx_bank_txn_date` on `(txn_date)` added by `migrate_add_bank_txn_date_index` to avoid strftime full-table scans on period queries.
 
@@ -213,11 +219,7 @@ label = bank_display_name('scanned')      # → 'Scanned PDF (AI)'
 # add detection branch in detect_bank_statement_format() in pdf_parser.py
 ```
 
-**Scanned PDF parsing — LLM vision fallback (last resort only):**
-- Triggered automatically when pdfplumber extracts zero text from a PDF
-- Requires `ANTHROPIC_API_KEY`; uses Claude Haiku with 2 pages per chunk
-- Balance validation bypassed for scanned results (vision can't read running totals)
-- Cost: ~$0.05–$0.20 per 7-page statement — factor into per-property pricing
+**Scanned PDF parsing — LLM vision fallback:** Triggered when pdfplumber extracts zero text. Requires `ANTHROPIC_API_KEY`; Claude Haiku, 2 pages/chunk; balance validation bypassed; ~$0.05–$0.20/upload.
 
 **Platform guardian — call from any route that performs a sensitive agency action:**
 ```python
@@ -236,8 +238,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Full migration call order in `app.py` startup (append-only, never reorder):
-`migrate_add_charge_type` → `migrate_add_apartment_size` → `migrate_add_unit_hint` → `migrate_add_status_changed_at` → `migrate_add_tenant_access_token` → `migrate_add_messaging` → `migrate_set_rent_charge_due_dates` → `migrate_add_template_body` → `migrate_add_sms_delivery` → `migrate_add_reminder_schedules` → `migrate_add_owner_messages` → `migrate_add_caretakers` → `migrate_add_balance_snapshots` → `migrate_add_maintenance` → `migrate_add_landlord_reports` → `migrate_add_owners` → `migrate_add_property_owners` → `migrate_add_inbound_messages` → `migrate_add_inbound_sessions` → `migrate_add_checkin_responses` → `migrate_add_payment_allocations` → `migrate_add_payment_transactions` → `migrate_add_org_scoped_statements` → `migrate_add_statement_parse_errors` → `migrate_add_platform_shadow_log` → `migrate_add_tenant_disputes` → `migrate_add_platform_alerts` → `migrate_add_payout_fields` → `migrate_add_language_preference` → `migrate_add_rent_due_day` → `migrate_add_water_readings` → `migrate_add_primary_owner` → `migrate_add_platform_outbox` → `migrate_add_claim_flagging` → `migrate_add_claim_resolution` → `migrate_add_payment_notes` → `migrate_add_bank_txn_ignored` → `migrate_add_bank_txn_date_index` → `migrate_add_report_refresh_fields` → `migrate_add_tenant_departures` → `migrate_add_deposit_paid` → `migrate_rename_office_to_owner_use`
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_rename_office_to_owner_use`.
 
 ---
 
@@ -253,12 +254,11 @@ Full migration call order in `app.py` startup (append-only, never reorder):
 ## Portal-Specific Rules
 
 ### Owner Login (/login + /owner/*)
-- Unified `/login` page handles: org admin (email/password in `organizations`), owner person (email/password in `persons`), and master `ADMIN_PASSWORD`
-- Owner persons login sets `session['person_id']` + `session['person_role']='owner'`; owner routes bridge into existing viewer session by also setting `session['owner_id']`
-- Token link `/owner/l/<token>` uses `owners.access_token` — shows password-only form (no email needed); three states: invalid token, not_activated (links to activation), ready
-- Activation flow: admin sets initial password → email OTP sent via `send_email()` → `verify_email` clears OTP + logs in owner
-- OTP is always logged to `platform_outbox`; if SMTP unconfigured, status='simulated' and code visible in `/platform/outbox`
-- `persons.email` is **immutable** once `password_hash` is set (account activated). Admin can edit name/phone but not email. Enforced in `edit_owner()`.
+- `/login` handles: org admin (`organizations`), owner person (`persons`), and master `ADMIN_PASSWORD`
+- Owner login sets `session['person_id']` + `session['person_role']='owner'`; bridges to viewer via `session['owner_id']`
+- Token link `/owner/l/<token>` (password-only form): three states: invalid, not_activated, ready
+- Activation: admin sets password → email OTP → `verify_email` clears OTP + logs in. OTP logged to `platform_outbox` (status='simulated' if SMTP unconfigured)
+- `persons.email` is **immutable** once `password_hash` is set. Enforced in `edit_owner()`.
 
 ### Owner Viewer (/view/*)
 - Auth: bridged from person session (preferred) or legacy `VIEWER_PASSWORD` → `session['owner_id']`; property list filtered via `property_owners` M:M
@@ -358,14 +358,7 @@ Channel-agnostic and additive. Never modifies existing routes. Writes to existin
 
 One WhatsApp number serves all users across all properties. Identity = phone number. Lookup priority: caretakers → owners → tenants → unknown. Multi-property owners: prompt "Reply 1 for [A], 2 for [B]", cache in `inbound_sessions` for 24h.
 
-**Inbound flow (async — never block on LLM):**
-```
-POST /inbound/sms or /inbound/whatsapp
-  → Write to inbound_messages, return 200 immediately
-  → Background: classify intent → action handler → send response
-```
-
-WhatsApp adapter in `router.py` is a stub until credentials are live. SMS is the fallback. Outbound proactive messages require Meta-approved templates (`{{1}}` variables).
+**Inbound flow (async — never block on LLM):** Write to `inbound_messages`, return 200 immediately; background thread classifies → handles → responds. WhatsApp adapter in `router.py` is a stub; SMS is the fallback. Outbound proactive messages require Meta-approved templates.
 
 ---
 
@@ -432,11 +425,7 @@ Agency admin and property owner are different parties with potentially conflicti
 - **D7**: `manage_owners` query never SELECTs `payout_mpesa`; disbursements log last 4 digits only
 - **D9**: `delete_payment` + `statement_correct_payment` — SMS active tenant on unit when payment reversed
 
-### Planned defenses (Sprint 2+)
-- **D2 (full)**: Lock owner's own password-change route after first login; separate from admin-set path
-- **D5**: Guard on `properties.management_fee_rate` changes (when property settings UI is built)
-- **D6**: Owner activity tab at `/view/<property_id>/activity` (reads platform_shadow_log)
-- **D8**: Cumulative rent drift detection in `src/agent/detector.py` (Phase 5)
+**Planned (Sprint 2+):** D2-full (password-change lock post-activation), D5 (management_fee guard), D6 (`/view/*/activity` from shadow_log), D8 (rent drift in detector.py).
 
 ### Sensitive actions that MUST call platform_log()
 owner phone change, owner removed from property, owner added to property, owner deleted, payment reversed, payment corrected, unit rent/service changed >10%, management_fee_rate changed.

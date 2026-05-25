@@ -599,6 +599,27 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
 - [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
 
+### Session 23: Short portal links, messaging variable helpers, tenant self-report claims, caretaker UX (2026-05-25) ✅
+
+- [x] **`AT_API_KEY_SANDBOX` → `AT_API_KEY`** — env var name in `.env` corrected; `delivery.py` now finds the key in sandbox mode
+- [x] **Messaging dashboard click-through bug fixed** — `tenant_id` was missing from the recent-messages SELECT in `messaging_routes.py`; thread links now work
+- [x] **Broadcast variable substitution fixed** — `_substitute()` was never called in thread compose POST; template variables (`{tenant_name}`, `{balance}` etc.) now expanded before send
+- [x] **Short portal links (`/t/<code>`)** — `migrate_add_tenant_short_code()` adds `short_code TEXT` (6-char alphanumeric, unique index) to `tenants`; `GET /t/<code>` in `app.py` redirects to `/tenant/<access_token>`; reduces SMS link from ~95 chars to ~50 chars
+- [x] **`short_code` generated at move-in** — `add_tenant` route now generates and stores a short_code
+- [x] **All SMS payment links use short_code** — `verify_payments` and flag-resolution SMS blocks updated to use `/t/<short_code>` instead of full access_token URL
+- [x] **`_next_due_date(rent_due_day)`** — new helper in `messaging_routes.py`; calculates next rent due date from `properties.rent_due_day`
+- [x] **`_build_variables(conn, tenant, prop, base_url=None)`** — new single source of truth for broadcast/thread substitution; adds `{due_date}`, `{caretaker_phone}`, `{portal_link}` on top of existing vars
+- [x] **Broadcast SMS per-tenant personalisation** — broadcast POST now sends each tenant a personalised SMS body (was sending one shared body)
+- [x] **`migrate_update_template_wording()`** — `custom_broadcast` default template updated to include `{due_date}`, `{caretaker_phone}`, `{portal_link}`; `broadcast.html` hint text updated with full variable list
+- [x] **`GET /tenant/<token>/pay` repurposed** — now shows self-report form + claim history with allocation breakdowns; PIN/STK push routes preserved but hidden
+- [x] **`POST /tenant/<token>/report-payment`** — new route in `tenant_routes.py`; parses M-Pesa SMS, deduplicates, inserts `payment_claims` with `source='tenant'`; runs full at-submission three-outcome bank check; sends SMS on instant-verify or flag with allocation detail
+- [x] **`pay.html` fully rewritten** — outstanding balance, M-Pesa SMS textarea, claim history with status badges and expandable allocations for verified claims
+- [x] **`payments.html` status badges** — pending = "Payment recorded — awaiting verification."; flagged = "Under review — please contact your caretaker."
+- [x] **Caretaker context processor renamed `inject_caretaker_counts()`** — now also injects `ct_tenant_pending_count` (pending tenant-sourced claims)
+- [x] **Caretaker nav merged** — "Log Payment" + "Payments" tabs merged into single **Payments** tab at `payment_activity`; blue badge shows `ct_tenant_pending_count`; both `log_payment` and `payment_activity` highlight this tab
+- [x] **`payment_activity` shows self-reported claims** — query updated to include `source` and `tenant_short_code`; "Self-reported" grey badge; tenant name is clickable link to tenant portal; "← Log Payment" replaced with primary button
+- [x] **Caretaker contact card on tenant portal** — `portal` and `pay` routes fetch first active caretaker with a phone; both `portal.html` and `pay.html` show "Contact your caretaker" card with name, phone, Call button
+
 ### Session 22: Platform org management, property deletion fix (2026-05-25) ✅
 
 - [x] **Platform org edit modal** — platform team can edit agency name, login email, phone, slug, and platform fee rate from the org dashboard via a single Edit modal; email uniqueness + slug uniqueness enforced; email is required (blank email blocks login); password handled separately via the existing "Change pw" / "Set pw" dropdown

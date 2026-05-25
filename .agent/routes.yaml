@@ -51,7 +51,8 @@ blueprints:
       - "GET /units/<unit_id>/move-out — move-out form: balance summary card, deposit offset calculator, resolution options (settled/pursuing/written-off)"
       - "POST /units/<unit_id>/move-out — process move-out: creates tenant_departures row, updates tenant status, clears unit, writes audit_log, notifies owners"
       - "GET /add-tenant — move-in form: unit selector (vacant only), name, phone, move_in_date, deposit_paid, move_in_notes"
-      - "POST /add-tenant — move-in: creates tenant, auto-generates access_token, sends welcome SMS, notifies owners, writes two audit_log entries"
+      - "POST /add-tenant — move-in: creates tenant, auto-generates access_token + short_code, sends welcome SMS, notifies owners, writes two audit_log entries"
+      - "GET /t/<short_code> — short portal link redirect; looks up tenant by short_code, redirects to /tenant/<access_token>; reduces SMS link length from ~95 to ~50 chars"
 
   viewer:
     file: src/routes/viewer_routes.py
@@ -85,7 +86,8 @@ blueprints:
       - "GET /tenant/<token>/messages"
       - "GET /tenant/<token>/maintenance"
       - "POST /tenant/<token>/maintenance/new"
-      - "GET /tenant/<token>/pay — payment tab (PIN-gated)"
+      - "GET /tenant/<token>/pay — self-report form + claim history with allocation breakdowns; outstanding balance shown; caretaker contact card shown; PIN/STK push routes preserved but hidden"
+      - "POST /tenant/<token>/report-payment — tenant self-reports M-Pesa SMS; parses ref, deduplicates, inserts payment_claims with source='tenant'; runs three-outcome at-submission bank check; SMS on instant-verify (with allocation detail) or flag"
       - "POST /tenant/<token>/pay/pin/create — create 4-digit PIN"
       - "POST /tenant/<token>/pay/pin/verify — verify PIN, set session"
       - "POST /tenant/<token>/pay/stk — initiate STK Push"
@@ -113,7 +115,7 @@ blueprints:
       - "GET /caretaker/<property_id>/water — list of past water reading batches"
       - "GET /caretaker/<property_id>/water/new — meter reading entry form; previous reading auto-populated from last upload"
       - "POST /caretaker/<property_id>/water/new — submit meter readings; validates current >= previous; creates water_upload + water_readings + rent_charges (charge_type='water'); prevents duplicate per charge_period"
-      - "GET /caretaker/<property_id>/payment-activity — full claim history for property: status, unit, tenant, mpesa_ref, flag_reason, mpesa_period, bank_amount, caretaker_note; mismatch cards (bank vs. claimed) with expandable note form; flagged claims show specific period in reason text"
+      - "GET /caretaker/<property_id>/payment-activity — full claim history for property: status, unit, tenant, mpesa_ref, flag_reason, mpesa_period, source, tenant_short_code, bank_amount, caretaker_note; mismatch cards; flagged claims show specific period; self-reported claims show 'Self-reported' badge; tenant name links to tenant portal"
       - "POST /caretaker/<property_id>/payments/<payment_id>/note — caretaker adds/edits note on a verified payment with amount mismatch; writes audit_log (caretaker_payment_note) + platform_shadow_log"
       - "GET /caretaker/<property_id>/flagged-claims — flagged claims for this property: unconfirmed (red), caretaker confirmed (amber); three-state display mirroring admin view"
       - "POST /caretaker/<property_id>/flagged-claims/<claim_id>/confirm — caretaker confirms flagged claim with mandatory note (min 5 chars); sets caretaker_confirmed=1 + caretaker_note; writes audit_log + platform_shadow_log"
@@ -127,14 +129,14 @@ blueprints:
     auth: admin session
     status: live
     key_routes:
-      - "GET /messages — messaging dashboard with Quick Send (inline tenant search → message button)"
-      - "GET/POST /messages/broadcast"
+      - "GET /messages — messaging dashboard with Quick Send (inline tenant search → message button); recent-messages click-through fixed (tenant_id now in SELECT)"
+      - "GET/POST /messages/broadcast — SMS channel sends per-tenant personalised body; uses _build_variables() for substitution"
       - "GET /messages/templates"
       - "GET/POST /messages/templates/<id>/edit"
       - "GET /messages/reminders"
       - "GET /messages/schedules"
       - "GET /messages/thread/<tenant_id> — chat-style message thread (outbound messages + inbound_messages combined by phone, sorted by created_at)"
-      - "POST /messages/thread/<tenant_id> — send message from thread; optional SMS async"
+      - "POST /messages/thread/<tenant_id> — send message from thread; _build_variables() used for substitution; optional SMS async"
 
   reports:
     file: src/routes/report_routes.py

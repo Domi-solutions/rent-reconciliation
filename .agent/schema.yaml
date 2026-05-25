@@ -89,6 +89,7 @@ tables:
       portal_pin_hash: {type: TEXT, nullable: true, added_by: migrate_add_payment_transactions, note: "werkzeug pbkdf2 hash of 4-digit portal PIN for payment tab"}
       deposit_paid: {type: DECIMAL(12,2), default: 0, added_by: migrate_add_deposit_paid, note: "Deposit collected at move-in; pre-fills move-out deposit_held field"}
       move_in_notes: {type: TEXT, nullable: true, added_by: migrate_add_deposit_paid, note: "Optional admin notes recorded at move-in"}
+      short_code: {type: TEXT, unique: true, nullable: true, added_by: migrate_add_tenant_short_code, note: "6-char alphanumeric short code for SMS portal links. /t/<code> redirects to /tenant/<access_token>. Generated at move-in. Existing rows backfilled at migration."}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   bank_statements:
@@ -145,7 +146,7 @@ tables:
       unit_id: {type: TEXT, fk: units.id, required: true}
       claimed_amount: {type: DECIMAL(10,2)}
       raw_message: {type: TEXT}
-      source: {type: TEXT, default: web, values: [web, caretaker, whatsapp, sms]}
+      source: {type: TEXT, default: web, values: [web, caretaker, tenant, whatsapp, sms], note: "tenant = self-reported via /tenant/<token>/report-payment"}
       status: {type: TEXT, default: pending, values: [pending, verified, flagged], note: "flagged is permanent — use caretaker_confirmed/admin_cleared for resolution, never change status back"}
       verified_at: {type: TIMESTAMP}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}

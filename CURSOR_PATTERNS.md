@@ -336,6 +336,50 @@
 
 ---
 
+## Session 9 — 2026-05-25
+
+---
+
+### Broadcast SMS sends one shared body — misses per-tenant variable substitution
+**File(s):** `src/routes/messaging_routes.py` — broadcast POST handler
+**Root cause:** Cursor builds the SMS body once (using any tenant or the first recipient as template context) and sends the same string to all recipients. It treats the broadcast as a bulk message. But the substitution variables like `{tenant_name}` and `{balance}` are per-tenant — each recipient needs a personalised body.
+**What Cursor did:** Built `sms_body = _substitute(template, vars_for_first_tenant)` outside the per-tenant loop, then called `send_sms_async(all_phones, sms_body)` once.
+**What it should do:** Inside the per-tenant loop, call `_build_variables(conn, tenant, prop, base_url)` and `_substitute(template, vars)` per tenant, then `send_sms_async([tenant_phone], personalised_body)`. Each tenant gets their own balance, name, due date, and portal link.
+**Why it matters:** Every tenant receives the first tenant's name and balance. "Hi Grace, you owe KES 45,000" delivered to 44 tenants is a data exposure and trust violation.
+**Spotted:** 2026-05-25 (Session 9)
+
+---
+
+### Inline substitution variable dicts diverge between broadcast and thread compose
+**File(s):** `src/routes/messaging_routes.py` — `broadcast()` and `thread_message()` POST handlers
+**Root cause:** Cursor builds the substitution dict inline in each handler because it seems simpler to read. But when a new variable is added (e.g. `{portal_link}`), it must be added to every inline dict — and Cursor only finds one of them, leaving the others stale.
+**What Cursor did:** Two separate `vars = {'tenant_name': ..., 'balance': ...}` dicts in two different POST handlers.
+**What it should do:** Use `_build_variables(conn, tenant, prop, base_url=None)` — the single canonical function in `messaging_routes.py`. Never build a substitution dict inline in a route handler. Adding a variable means updating one function, not hunting down all call sites.
+**Why it matters:** A variable like `{portal_link}` that works in broadcast but silently outputs `{portal_link}` in thread messages erodes trust. It's the kind of bug that appears "intermittently" (works in broadcast test, fails in thread test) and is hard to trace.
+**Spotted:** 2026-05-25 (Session 9)
+
+---
+
+### `messaging_routes.py` recent-messages query missing `tenant_id` — click-through broken
+**File(s):** `src/routes/messaging_routes.py` — messaging dashboard SELECT
+**Root cause:** Cursor writes the query against the visible template output. The messaging dashboard shows subject, tenant name, body preview, and timestamp — but the click-through to the thread requires `tenant_id` in the row dict. Cursor didn't notice the template also used `tenant_id` for the link `href`, because that part of the template is not visually apparent from the query output.
+**What Cursor did:** `SELECT id, tenant_name, subject, body, created_at FROM messages` — omitting `tenant_id`.
+**What it should do:** When writing any SELECT that feeds a list template with row-level action links, check the template for all fields referenced in `href`, `url_for()`, data attributes, and hidden form fields — not just the visible text columns. For messages, the minimum is `id, tenant_id, tenant_name, subject, body, created_at`.
+**Why it matters:** The template renders without error (Jinja silently returns empty string for missing dict keys) but the href evaluates to `/messages/thread/None`, which 404s when clicked. The bug appears only when the user tries to open a thread.
+**Spotted:** 2026-05-25 (Session 9)
+
+---
+
+### Tenant self-report flow missing deduplication — duplicate claims on resubmit
+**File(s):** `src/routes/tenant_routes.py` — `report_payment()` POST handler
+**Root cause:** Cursor implements the happy path (parse SMS, create claim) without considering what happens when a tenant submits the same M-Pesa reference twice. The `payment_claims` table has a UNIQUE constraint on `(property_id, mpesa_ref)`, but Cursor catches the exception and surfaces a generic error — not the "you already submitted this" message the tenant needs.
+**What Cursor did:** `conn.execute("INSERT INTO payment_claims ...")` — caught `IntegrityError` as a generic failure, returned "Something went wrong."
+**What it should do:** Before INSERT, check `SELECT id, status FROM payment_claims WHERE property_id=? AND mpesa_ref=?`. If a row exists: redirect back with a flash message "You already submitted this reference — status: [pending/verified/flagged]." Never rely on the database unique constraint as the primary deduplication path in a user-facing route.
+**Why it matters:** A tenant who submits twice (e.g. after page refresh) sees "Something went wrong" on the second attempt and may assume neither submission was received. The data-descriptive principle requires showing exactly what happened to their claim.
+**Spotted:** 2026-05-25 (Session 9)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

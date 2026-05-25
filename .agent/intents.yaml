@@ -18,7 +18,8 @@ intents:
     description: "Forwarded M-Pesa SMS confirming a payment made"
     examples:
       - "Confirmed. Ksh15,000 sent to MOWIN on 3/5/24 at 10:23 AM. Transaction cost, Ksh0. New M-PESA balance is Ksh2,340. Transaction ID: QKL2X4RTYE."
-    action: "Create payment_claims record; mark tenant as likely-paid (pending state)"
+    action: "Create payment_claims record with source='tenant'; three-outcome at-submission bank check same as caretaker flow; SMS on instant-verify (with allocation detail: 'Applied: KES X rent YYYY-MM, KES Y service YYYY-MM') or flag"
+    note: "Via inbound channel (SMS/WhatsApp). Also submittable via /tenant/<token>/report-payment portal form."
     extracted_fields: [mpesa_ref, amount, date]
 
   checkin_reply:
