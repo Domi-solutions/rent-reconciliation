@@ -145,21 +145,23 @@ rent-reconciliation/
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── phone.py          # normalize_to_e164(), normalize_to_daraja() — ONLY place phone normalization lives
-│   │   └── metrics.py        # get_property_occupancy(), get_expected_monthly_income(), get_months_behind() — ONLY place these are computed
+│   │   ├── metrics.py        # get_property_occupancy(), get_expected_monthly_income(), get_months_behind() — ONLY place these are computed
+│   │   └── statement.py      # get_tenant_statement(conn, tenant_id, property_id) → (tenant, ledger_rows, open_claims); quick_verify_ref(conn, text, unit_id, org_id) → status dict. Used by all three statement routes.
 │   └── reconciliation/
-│       ├── matcher.py        # enrich_with_suggestions() (shared Tier 1/2 suggestion logic), match_sms_to_bank()
+│       ├── matcher.py        # enrich_with_suggestions() (Tier 1: unit_hint, Tier 2: name_match, Tier 3: sender_history), match_sms_to_bank()
 │       └── state_machine.py  # Payment lifecycle
 ├── templates/
 │   ├── base.html             # Admin base (sidebar, property selector) — never modify for viewer changes
 │   ├── agent/                # Simulator, digest preview, briefing preview
-│   ├── viewer/               # base_viewer.html + dashboard, arrears, payments, reports, maintenance, notifications
+│   ├── viewer/               # base_viewer.html + dashboard, arrears, payments, reports, maintenance, notifications, tenant_statement.html
 │   ├── tenant/               # base_tenant.html + portal, charges, payments, messages, maintenance
-│   ├── messaging/            # broadcast, templates, reminders, schedules
+│   ├── messaging/            # broadcast, templates, reminders, schedules, thread.html (chat-style per-tenant thread)
 │   ├── reports/              # history, preview, caretaker_preview
-│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, payment_activity.html, flagged_claims.html, reports.html, report_detail.html, water.html, water_new.html
+│   ├── caretaker/            # login, base_caretaker, dashboard, arrears, tenants, messages, issues, log_payment, payment_activity.html, flagged_claims.html, reports.html, report_detail.html, water.html, water_new.html, statement.html
 │   ├── owner/                # activate.html, verify_email.html (email OTP step 2), token_login.html (password-only login via access_token link)
-   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
+│   ├── platform/             # base_platform.html, login.html, dashboard.html, errors.html, parse_errors.html, alerts.html, disputes.html, shadow_log.html, trust.html, parsers.html, outbox.html
 │   ├── viewer/               # (also) wallet.html — owner wallet with balance, disbursement history, stub withdraw
+│   ├── tenant_statement.html # Admin: full charge+payment ledger; quick-verify AJAX panel; disputed claim resolve/delete actions
 │   ├── move_out.html         # Move-out form: deposit offset calculator, resolution options, settlement summary
 │   ├── owners.html
 │   └── caretakers.html
@@ -238,7 +240,23 @@ from src.reconciliation.matcher import enrich_with_suggestions
 enrich_with_suggestions(rows, conn, property_id, org_id=None)
 # Modifies dicts in-place. Sets: suggested_unit_id, suggested_unit_number, suggestion_source,
 # suggested_tenant_name (name_match only).
-# Tier 1: unit_hint exact match (org-scoped). Tier 2: sender name token overlap >= 2 tokens.
+# Tier 1: unit_hint exact match (org-scoped).
+# Tier 2: sender name token overlap >= 2 tokens against active tenant names.
+# Tier 3: sender_history — sender has previously paid for a unit (bank_txn→payment link);
+#          tokens overlap >= 2; highest-frequency unit wins. Badge shown as "Past payer".
+```
+
+**Tenant statement builder:**
+```python
+from src.utils.statement import get_tenant_statement, quick_verify_ref
+tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, property_id)
+# tenant: dict with unit_number, monthly_rent; ledger: sorted rows with running_balance;
+# open_claims: pending/flagged claims enriched with source_label, checked_statements list.
+
+result = quick_verify_ref(conn, text, unit_id, org_id)
+# text: M-Pesa SMS or bare ref code. Searches bank_transactions org-scoped.
+# result['status']: 'found'|'already_this_unit'|'already_other_unit'|'not_found'|'parse_error'
+# When 'found': result['txn_id'] is the bank_transactions.id to pass to quick-assign route.
 ```
 
 **ID generation:**

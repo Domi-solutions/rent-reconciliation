@@ -599,6 +599,21 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
 - [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
 
+### Session 20: Tenant Statement, Quick Verify, Tier 3 Matching (2026-05-25) ✅
+
+- [x] **`src/utils/statement.py`** — shared `get_tenant_statement(conn, tenant_id, property_id)` used by all three roles; `quick_verify_ref(conn, text, unit_id, org_id)` for AJAX check
+- [x] **Admin tenant statement** — `GET /tenants/<id>/statement` → `tenant_statement.html`; accessible from arrears, tenants list, units page, search results, messaging thread header
+- [x] **Caretaker tenant statement** — `GET /caretaker/<pid>/tenant/<id>/statement` → `caretaker/statement.html`; mobile card layout
+- [x] **Owner viewer tenant statement** — `GET /view/<pid>/tenant/<id>/statement` → `viewer/tenant_statement.html`; summary stats (total charged, paid, count, outstanding); linked from viewer arrears + payments
+- [x] **ARREARS charge fix** — `WHERE period >= ? OR period = 'ARREARS'` ensures opening arrears rows are always included in ledger
+- [x] **Visual row highlighting** — outstanding (red), partial (amber), arrears (amber + left border) across all three templates
+- [x] **Disputed claim detail** — shows source_label (who submitted: caretaker/admin/WhatsApp/SMS), mpesa_period, flagged_at, list of checked statement filenames
+- [x] **Mark Resolved / Delete Claim** — inline collapse forms on admin statement; both require min 10-char notes; write to audit_log + platform_shadow_log before action; resolved claims hidden from open_claims display (`admin_cleared=1`)
+- [x] **Quick verify panel** (admin + caretaker) — paste M-Pesa SMS or bare ref; AJAX check against bank_transactions org-scoped; four outcomes: not_found / found / already_this_unit / already_other_unit; one-click assign creates payment + FIFO-allocates + reloads statement
+- [x] **Tier 3 sender history matching** — `enrich_with_suggestions()` third tier: past verified payers remembered per unit (bank_txn→payment link); tokens overlap ≥2; highest-frequency unit wins; "Past payer" badge in review.html + statement_detail.html
+- [x] **admin_delete_claim route** — `POST /claims/<claim_id>/delete`; hard-deletes with mandatory note; full audit_log record written before deletion
+- [x] **admin_clear_flag redirect** — accepts `next` form field so statement page can redirect back to itself
+
 ### Phase 8: The Voice (Newsletter)
 - [ ] Apply for WhatsApp Business API via Africa's Talking (do this NOW — long lead time)
 - [ ] Design newsletter brand: "Domi Weekly" or "The Domi Brief"

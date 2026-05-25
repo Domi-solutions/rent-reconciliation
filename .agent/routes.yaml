@@ -33,8 +33,12 @@ blueprints:
       - "POST /claims/submit — submit M-Pesa claim"
       - "POST /payments/verify — verify claims against bank statement; flags unmatched refs whose mpesa_period falls within statement date range; raises platform alert + SMS caretaker/tenant on mismatch"
       - "GET /flagged-claims — admin view of all flagged claims; three-state display (needs action / caretaker confirmed / admin cleared)"
-      - "POST /claims/<claim_id>/clear-flag — admin clears flagged claim with mandatory note (min 10 chars); writes audit_log + platform_shadow_log"
+      - "POST /claims/<claim_id>/clear-flag — admin clears flagged claim with mandatory note (min 10 chars); writes audit_log + platform_shadow_log; accepts 'next' form field for redirect"
+      - "POST /claims/<claim_id>/delete — admin hard-deletes claim with mandatory note; writes full audit_log record BEFORE deletion; writes platform_shadow_log"
       - "POST /payments/<payment_id>/note — admin adds/edits annotation on confirmed payment; writes audit_log + platform_shadow_log"
+      - "GET /tenants/<tenant_id>/statement — full charge+payment ledger for one tenant; uses get_tenant_statement() from src/utils/statement.py"
+      - "POST /tenants/<tenant_id>/quick-verify — AJAX JSON: parse M-Pesa message/ref, search bank_transactions org-scoped; returns status: found|already_this_unit|already_other_unit|not_found|parse_error"
+      - "POST /tenants/<tenant_id>/quick-assign/<txn_id> — assign found bank transaction to this tenant; creates payment, FIFO-allocates, audits; redirects back to statement"
       - "GET /owners — owner management"
       - "GET /caretakers — caretaker management"
       - "GET /login — unified login form for org admin, owner (person), and master ADMIN_PASSWORD"
@@ -66,6 +70,7 @@ blueprints:
       - "GET /view/<property_id>/maintenance"
       - "GET /view/<property_id>/notifications — owner inbox"
       - "POST /view/<property_id>/reports/generate — owner generates report for selected month; derives period_start/period_end; calls generate_landlord_report; no SMS notification"
+      - "GET /view/<property_id>/tenant/<tenant_id>/statement — owner view of tenant statement; ledger + summary stats; no admin notes shown; ownership check enforced"
 
   tenant:
     file: src/routes/tenant_routes.py
@@ -112,6 +117,9 @@ blueprints:
       - "POST /caretaker/<property_id>/payments/<payment_id>/note — caretaker adds/edits note on a verified payment with amount mismatch; writes audit_log (caretaker_payment_note) + platform_shadow_log"
       - "GET /caretaker/<property_id>/flagged-claims — flagged claims for this property: unconfirmed (red), caretaker confirmed (amber); three-state display mirroring admin view"
       - "POST /caretaker/<property_id>/flagged-claims/<claim_id>/confirm — caretaker confirms flagged claim with mandatory note (min 5 chars); sets caretaker_confirmed=1 + caretaker_note; writes audit_log + platform_shadow_log"
+      - "GET /caretaker/<property_id>/tenant/<tenant_id>/statement — caretaker tenant statement; mobile card layout; quick-verify panel"
+      - "POST /caretaker/<property_id>/tenant/<tenant_id>/quick-verify — AJAX JSON: same logic as admin quick-verify but under caretaker auth"
+      - "POST /caretaker/<property_id>/tenant/<tenant_id>/quick-assign/<txn_id> — assign found bank transaction; creates payment, FIFO-allocates, audits with caretaker_name"
 
   messaging:
     file: src/routes/messaging_routes.py
@@ -119,12 +127,14 @@ blueprints:
     auth: admin session
     status: live
     key_routes:
-      - "GET /messages — messaging dashboard"
+      - "GET /messages — messaging dashboard with Quick Send (inline tenant search → message button)"
       - "GET/POST /messages/broadcast"
       - "GET /messages/templates"
       - "GET/POST /messages/templates/<id>/edit"
       - "GET /messages/reminders"
       - "GET /messages/schedules"
+      - "GET /messages/thread/<tenant_id> — chat-style message thread (outbound messages + inbound_messages combined by phone, sorted by created_at)"
+      - "POST /messages/thread/<tenant_id> — send message from thread; optional SMS async"
 
   reports:
     file: src/routes/report_routes.py
