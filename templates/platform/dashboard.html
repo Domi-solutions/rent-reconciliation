@@ -116,31 +116,16 @@
             <form method="POST" action="{{ url_for('platform.impersonate', org_id=org.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm btn-outline-primary">View as org</button>
             </form>
-            <details class="d-inline-block ms-1" style="position:relative;">
-              <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">Email</summary>
-              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;z-index:100;min-width:260px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
-                <div style="font-size:11px;color:#718096;margin-bottom:8px;">Login email for {{ org.name }}</div>
-                <form method="POST" action="{{ url_for('platform.set_org_email', org_id=org.id) }}"
-                      style="display:flex;gap:6px;align-items:center;">
-                  <input type="email" name="email" class="form-control form-control-sm"
-                         placeholder="{{ org.contact_email or 'email@agency.co.ke' }}" required style="flex:1;">
-                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
-                </form>
-              </div>
-            </details>
-            <details class="d-inline-block ms-1" style="position:relative;">
-              <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">
-                {{ 'Change pw' if org.has_password else 'Set pw' }}
-              </summary>
-              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;z-index:100;min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
-                <form method="POST" action="{{ url_for('platform.set_org_password', org_id=org.id) }}"
-                      style="display:flex;gap:6px;align-items:center;">
-                  <input type="password" name="password" class="form-control form-control-sm"
-                         placeholder="New password" required style="flex:1;">
-                  <button type="submit" class="btn btn-sm btn-primary">Set</button>
-                </form>
-              </div>
-            </details>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-1"
+              data-bs-toggle="modal" data-bs-target="#editOrgModal"
+              data-org-id="{{ org.id }}"
+              data-org-name="{{ org.name }}"
+              data-org-email="{{ org.contact_email or '' }}"
+              data-org-phone="{{ org.contact_phone or '' }}"
+              data-org-slug="{{ org.slug or '' }}"
+              data-org-fee="{{ (org.platform_fee_rate * 100) | round(2) }}">
+              Edit
+            </button>
             <form method="POST" action="{{ url_for('platform.toggle_org', org_id=org.id) }}" class="d-inline ms-1">
               <button type="submit" class="btn btn-sm btn-outline-secondary">
                 {{ 'Deactivate' if org.is_active else 'Activate' }}
@@ -159,6 +144,63 @@
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrgModal">Add first organisation</button>
 </div>
 {% endif %}
+
+{# Edit Organisation Modal #}
+<div class="modal fade" id="editOrgModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Organisation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editOrgForm" action="">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Agency name <span class="text-danger">*</span></label>
+            <input type="text" name="name" id="editOrgName" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Login email</label>
+            <input type="email" name="contact_email" id="editOrgEmail" class="form-control" placeholder="admin@agency.co.ke">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Phone</label>
+            <input type="text" name="contact_phone" id="editOrgPhone" class="form-control" placeholder="+254 7xx xxx xxx">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Slug</label>
+            <input type="text" name="slug" id="editOrgSlug" class="form-control" placeholder="e.g. alfa-property">
+            <div class="form-text">URL-safe identifier.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Platform fee rate (%)</label>
+            <input type="number" name="platform_fee_rate" id="editOrgFee" class="form-control" min="0" max="10" step="0.1">
+            <div class="form-text">Domi's transaction fee. Not visible to the org.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">New password <span style="font-weight:400;color:#718096;">(leave blank to keep current)</span></label>
+            <input type="password" name="password" class="form-control" placeholder="Leave blank to keep unchanged">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('editOrgModal').addEventListener('show.bs.modal', function(e) {
+  var btn = e.relatedTarget;
+  document.getElementById('editOrgForm').action = '/platform/orgs/' + btn.dataset.orgId + '/edit';
+  document.getElementById('editOrgName').value  = btn.dataset.orgName;
+  document.getElementById('editOrgEmail').value = btn.dataset.orgEmail;
+  document.getElementById('editOrgPhone').value = btn.dataset.orgPhone;
+  document.getElementById('editOrgSlug').value  = btn.dataset.orgSlug;
+  document.getElementById('editOrgFee').value   = btn.dataset.orgFee;
+});
+</script>
 
 {# Add Organisation Modal #}
 <div class="modal fade" id="newOrgModal" tabindex="-1">

@@ -61,7 +61,7 @@ def logout():
 def dashboard():
     with get_connection() as conn:
         orgs = conn.execute(
-            "SELECT id, name, slug, contact_email, is_active, created_at, platform_fee_rate, admin_password_hash IS NOT NULL AS has_password FROM organizations ORDER BY created_at DESC"
+            "SELECT id, name, slug, contact_email, contact_phone, is_active, created_at, platform_fee_rate, admin_password_hash IS NOT NULL AS has_password FROM organizations ORDER BY created_at DESC"
         ).fetchall()
 
         org_stats = []
@@ -89,6 +89,7 @@ def dashboard():
                     "name": org["name"],
                     "slug": org["slug"],
                     "contact_email": org["contact_email"],
+                    "contact_phone": org["contact_phone"],
                     "is_active": org["is_active"],
                     "has_password": org["has_password"],
                     "created_at": org["created_at"],
@@ -284,6 +285,65 @@ def toggle_org(org_id):
         conn.execute("UPDATE organizations SET is_active = ? WHERE id = ?", (new_state, org_id))
     state_label = "activated" if new_state else "deactivated"
     flash(f"'{org['name']}' {state_label}.", "success")
+    return redirect(url_for("platform.dashboard"))
+
+
+@platform_bp.route("/orgs/<org_id>/edit", methods=["POST"])
+def edit_org(org_id):
+    """Edit org name, email, phone, slug, platform fee rate, and optionally password."""
+    from werkzeug.security import generate_password_hash
+    name = request.form.get("name", "").strip()
+    email = request.form.get("contact_email", "").strip().lower() or None
+    phone = request.form.get("contact_phone", "").strip() or None
+    slug = request.form.get("slug", "").strip().lower().replace(" ", "-") or None
+    password = request.form.get("password", "").strip()
+    try:
+        platform_fee_rate = float(request.form.get("platform_fee_rate", "1").strip()) / 100
+    except (ValueError, AttributeError):
+        platform_fee_rate = None
+    if platform_fee_rate is not None:
+        platform_fee_rate = max(0.0, min(0.10, platform_fee_rate))
+
+    if not name:
+        flash("Organisation name is required.", "danger")
+        return redirect(url_for("platform.dashboard"))
+
+    with get_connection() as conn:
+        org = conn.execute("SELECT id, name FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        if not org:
+            flash("Organisation not found.", "danger")
+            return redirect(url_for("platform.dashboard"))
+
+        if email:
+            conflict = conn.execute(
+                "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
+                (email, org_id),
+            ).fetchone()
+            if conflict:
+                flash(f"Email '{email}' is already used by another organisation.", "danger")
+                return redirect(url_for("platform.dashboard"))
+
+        if slug:
+            slug_conflict = conn.execute(
+                "SELECT id FROM organizations WHERE slug = ? AND id != ?",
+                (slug, org_id),
+            ).fetchone()
+            if slug_conflict:
+                flash(f"Slug '{slug}' is already taken.", "danger")
+                return redirect(url_for("platform.dashboard"))
+
+        fields = "name = ?, contact_email = ?, contact_phone = ?, slug = ?"
+        params = [name, email, phone, slug]
+        if platform_fee_rate is not None:
+            fields += ", platform_fee_rate = ?"
+            params.append(platform_fee_rate)
+        if password:
+            fields += ", admin_password_hash = ?"
+            params.append(generate_password_hash(password))
+        params.append(org_id)
+        conn.execute(f"UPDATE organizations SET {fields} WHERE id = ?", params)
+
+    flash(f"'{name}' updated." + (" Password changed." if password else ""), "success")
     return redirect(url_for("platform.dashboard"))
 
 
