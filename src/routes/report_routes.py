@@ -59,12 +59,25 @@ def generate_for_period():
 
         try:
             report_data = generate_landlord_report(conn, property_id, period_start, period_end)
-            report_id = generate_id('RPT')
-            conn.execute("""
-                INSERT INTO landlord_reports
-                (id, property_id, period_start, period_end, report_type, report_data)
-                VALUES (?, ?, ?, ?, 'manual', ?)
-            """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
+            existing = conn.execute("""
+                SELECT id FROM landlord_reports
+                WHERE property_id = ? AND period_start = ? AND period_end = ?
+            """, (property_id, period_start, period_end)).fetchone()
+            if existing:
+                report_id = existing['id']
+                conn.execute("""
+                    UPDATE landlord_reports
+                    SET report_data=?, report_type='manual', needs_refresh=0,
+                        refresh_reason=NULL, refreshed_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                """, (json.dumps(report_data), report_id))
+            else:
+                report_id = generate_id('RPT')
+                conn.execute("""
+                    INSERT INTO landlord_reports
+                    (id, property_id, period_start, period_end, report_type, report_data)
+                    VALUES (?, ?, ?, ?, 'manual', ?)
+                """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
             conn.execute("""
                 INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)
                 VALUES (?, ?, ?, ?, ?)
@@ -110,13 +123,26 @@ def generate_report():
                 # Generate report
                 report_data = generate_landlord_report(conn, property_id, period_start, period_end)
 
-                # Store report in database
-                report_id = generate_id('RPT')
-                conn.execute("""
-                    INSERT INTO landlord_reports 
-                    (id, property_id, period_start, period_end, report_type, report_data)
-                    VALUES (?, ?, ?, ?, 'manual', ?)
-                """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
+                # Upsert — one report per property per period
+                existing = conn.execute("""
+                    SELECT id FROM landlord_reports
+                    WHERE property_id = ? AND period_start = ? AND period_end = ?
+                """, (property_id, period_start, period_end)).fetchone()
+                if existing:
+                    report_id = existing['id']
+                    conn.execute("""
+                        UPDATE landlord_reports
+                        SET report_data=?, report_type='manual', needs_refresh=0,
+                            refresh_reason=NULL, refreshed_at=CURRENT_TIMESTAMP
+                        WHERE id=?
+                    """, (json.dumps(report_data), report_id))
+                else:
+                    report_id = generate_id('RPT')
+                    conn.execute("""
+                        INSERT INTO landlord_reports
+                        (id, property_id, period_start, period_end, report_type, report_data)
+                        VALUES (?, ?, ?, ?, 'manual', ?)
+                    """, (report_id, property_id, period_start, period_end, json.dumps(report_data)))
 
                 # Log to audit
                 conn.execute("""
@@ -313,17 +339,19 @@ def report_history():
             SELECT id, period_start, period_end, created_at, report_type
             FROM landlord_reports
             WHERE property_id = ?
-            ORDER BY created_at DESC
+            ORDER BY period_end DESC, created_at DESC
         """, (property_id,)).fetchall()
 
         # Load report data for each to get headline numbers
+        today = _date.today()
         reports_with_summary = []
         for r in reports:
-            report_data = json.loads(
-                conn.execute(
-                    "SELECT report_data FROM landlord_reports WHERE id = ?", (r['id'],)
-                ).fetchone()[0]
-            )
+            full_row = conn.execute(
+                "SELECT report_data, needs_refresh FROM landlord_reports WHERE id = ?", (r['id'],)
+            ).fetchone()
+            report_data = json.loads(full_row['report_data'])
+            pe_date = datetime.strptime(r['period_end'], '%Y-%m-%d').date()
+            months_since = (today.year * 12 + today.month) - (pe_date.year * 12 + pe_date.month)
             reports_with_summary.append({
                 'id': r['id'],
                 'period_start': r['period_start'],
@@ -333,6 +361,8 @@ def report_history():
                 'collection_rate': report_data.get('collection_rate', 0),
                 'total_collected': report_data.get('collections', {}).get('total_verified', 0),
                 'total_arrears': report_data.get('arrears', {}).get('total_arrears', 0),
+                'is_live': months_since < 3,
+                'needs_refresh': bool(full_row['needs_refresh']),
             })
 
         return render_template('reports/history.html',

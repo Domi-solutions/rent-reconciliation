@@ -559,6 +559,15 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
 - [x] All outbound SMS and portal notifications logged regardless of delivery status
 
+### Session 19: Report Accuracy, Water Parser, Charge Generation UX (2026-05-25) ✅
+
+- [x] **Water parser: non-numeric charge values** — `parse_water_excel()` now treats `"Vacant"`, `"N/A"`, `"nil"`, `"-"`, blank as a skip-with-warning instead of an error; upload no longer blocked when Excel contains text placeholders for vacant units
+- [x] **Charge generation flash message** — `generate_charges` now shows `"Charges for {period} already exist — nothing new generated"` when `INSERT OR IGNORE` skips all rows (was silently saying "Generated 0 rent and 0 service charges" — misleading)
+- [x] **Report history deduplication** — both report generation routes (`/reports/generate-for-period` and `/reports/generate`) now upsert: if a report already exists for `(property_id, period_start, period_end)` it updates the row instead of inserting a duplicate; eliminates stacking duplicates on repeated generation
+- [x] **Report history ordering** — `ORDER BY period_end DESC, created_at DESC` so latest period always appears first regardless of generation date
+- [x] **Arrears snapshot scoped to period_end** — `generate_landlord_report()` arrears query now filters `rent_charges WHERE period <= period_end_month` and `payments WHERE payment_date <= period_end`; historical reports now show arrears as they stood at close of that period, not today's balance; fixes all reports showing identical arrears
+- [x] **Live/Stale badges on report history list** — history route now computes `is_live` and passes `needs_refresh` per report; template shows green "Live" badge (< 3 months, auto-regenerates) and amber "Stale — refresh needed" badge (frozen period with new bank data); previously only the preview page showed the staleness warning
+
 ### Session 18: Move-in/Move-out Flows, Unit Types, Report Architecture (2026-05-20) ✅
 
 - [x] **Move-out flow** — proper form (`templates/move_out.html`) with deposit offset (deposit_applied, deposit_refunded, remaining_debt), live JS settlement calculator, three resolution states (settled/pursuing/written-off); `tenant_departures` table records snapshot; `tenants.status='departed'` preserves portal access for active-debt tenants; `tenants.status='inactive'` + access_token cleared for settled/written-off

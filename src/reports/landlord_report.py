@@ -98,7 +98,8 @@ def generate_landlord_report(conn, property_id, period_start, period_end):
     }
     report['collections']['expected_income'] = expected_income
 
-    # Section 3: Arrears snapshot (current state at time of report)
+    # Section 3: Arrears snapshot as of period_end — charges and payments up to that date only
+    period_end_month = period_end[:7]  # e.g. '2026-02'
     arrears_rows = conn.execute("""
         SELECT
             u.unit_number,
@@ -110,12 +111,22 @@ def generate_landlord_report(conn, property_id, period_start, period_end):
             u.monthly_rent
         FROM units u
         LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-        LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM rent_charges GROUP BY unit_id) charges ON charges.unit_id = u.id
-        LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM payments GROUP BY unit_id) payments ON payments.unit_id = u.id
+        LEFT JOIN (
+            SELECT unit_id, SUM(amount) as total
+            FROM rent_charges
+            WHERE period <= ?
+            GROUP BY unit_id
+        ) charges ON charges.unit_id = u.id
+        LEFT JOIN (
+            SELECT unit_id, SUM(amount) as total
+            FROM payments
+            WHERE payment_date <= ?
+            GROUP BY unit_id
+        ) payments ON payments.unit_id = u.id
         WHERE u.property_id = ?
           AND COALESCE(charges.total, 0) - COALESCE(payments.total, 0) > 0
         ORDER BY balance DESC
-    """, (property_id,)).fetchall()
+    """, (period_end_month, period_end, property_id)).fetchall()
 
     arrears_list = []
     for row in arrears_rows:

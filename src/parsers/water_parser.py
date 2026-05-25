@@ -87,9 +87,15 @@ def parse_water_excel(file_path: str) -> dict:
         if not unit_number or unit_number == 'nan':
             continue
 
-        water_charge = parse_currency(row.get('water_charge'))
+        raw_charge = row.get('water_charge')
+        raw_str = str(raw_charge).strip().lower() if raw_charge is not None else ''
+        NON_NUMERIC = {'vacant', 'n/a', 'na', '-', 'nil', 'none', ''}
+        if raw_str in NON_NUMERIC:
+            warnings.append(f'Row {row_num}: Skipping unit {unit_number} (no charge: "{raw_charge}")')
+            continue
+        water_charge = parse_currency(raw_charge)
         if water_charge is None:
-            errors.append(f'Row {row_num}: Invalid water charge for unit {unit_number}')
+            errors.append(f'Row {row_num}: Invalid water charge for unit {unit_number} (value: "{raw_charge}")')
             continue
         if water_charge <= 0:
             warnings.append(f'Row {row_num}: Skipping unit {unit_number} (water charge is 0)')

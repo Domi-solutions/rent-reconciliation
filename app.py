@@ -4098,7 +4098,10 @@ def generate_charges():
                 notify_property_owners(conn, property_row['id'], _owner_msg, sent_by='Admin')
             except Exception:
                 pass
-            flash(f'Generated {rent_created} rent and {svc_created} service charges for {period}. Water charges should be uploaded separately.', 'success')
+            if rent_created == 0 and svc_created == 0:
+                flash(f'Charges for {period} already exist — nothing new generated. Water charges are uploaded separately.', 'info')
+            else:
+                flash(f'Generated {rent_created} rent and {svc_created} service charges for {period}. Water charges should be uploaded separately.', 'success')
             return redirect(url_for('tools_index', period=period))
 
         return render_template('generate_charges.html', property=property_row)

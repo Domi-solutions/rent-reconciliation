@@ -113,7 +113,7 @@ rent-reconciliation/
 │   │   ├── pdf_parser.py     # Bank statement parsing (detect_bank_statement_format → 'cooperative'|'tabular_kes'|'unknown'|'scanned'); scanned PDFs use call_llm_vision (Claude Haiku) as last resort
 │   │   ├── sms_parser.py     # M-Pesa SMS parsing (exports parse_mpesa_message)
 │   │   ├── excel_parser.py   # Tenant Excel import (exports parse_currency)
-│   │   ├── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate)
+│   │   ├── water_parser.py   # Water readings Excel parser (reuses parse_currency — do not duplicate); non-numeric charge values ("Vacant", "N/A", "-", "nil", blank) skipped with warning, not error
 │   │   └── banks/
 │   │       ├── __init__.py   # Empty
 │   │       └── registry.py   # BANK_DISPLAY_NAMES, bank_display_name(), SUPPORTED_FORMATS — add new bank here
@@ -384,6 +384,10 @@ Full migration call order in `app.py` startup (append-only, never reorder):
 - Always call `enrich_report_data()` before rendering — back-fills fields on old saved reports
 - Collection metric: `total_verified / expected_monthly_income * 100` — NOT verified ÷ period charges (misleadingly low mid-month)
 - PDF export: `window.print()` — no server-side generation
+- **One report per period** — both generation routes upsert on `(property_id, period_start, period_end)`; regenerating never creates a duplicate row
+- **Report ordering** — history list ordered by `period_end DESC`; most recent period always first
+- **Arrears are period-scoped** — `generate_landlord_report()` arrears query filters `rent_charges WHERE period <= period_end_month` and `payments WHERE payment_date <= period_end`; historical reports show arrears as of that period's close, not today
+- **Live/Stale badges** — history list shows green "Live" badge (< 3 months, auto-regenerates on view) and amber "Stale — refresh needed" (frozen period with new bank data since last generation)
 
 ---
 
