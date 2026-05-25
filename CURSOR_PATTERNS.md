@@ -312,6 +312,30 @@
 
 ---
 
+## Session 8 — 2026-05-25
+
+---
+
+### Calling notify_property_owners() or send_sms() synchronously from a route handler blocks the HTTP request
+**File(s):** `app.py` — `delete_property()` → `src/platform/guardian.py` → `src/messaging/owner_notify.py`
+**Root cause:** Cursor treats `notify_property_owners()` as a fire-and-forget helper that "just sends a notification." It doesn't trace through the call stack to see that `owner_notify.py` calls `send_sms()` (blocking) internally. In a Flask route handler, any blocking I/O holds the HTTP connection open until the call completes. Africa's Talking sandbox is slow (5–30s per SMS). The property deletion route sent SMS to every owner synchronously, so the browser spun indefinitely.
+**What Cursor did:** Called `notify_owner_change(conn, property_id, ...)` inside a POST handler. The chain: `notify_owner_change` → `notify_property_owners` → `send_sms` (blocking). The HTTP response was never returned until all SMS calls finished.
+**What it should do:** `notify_property_owners()` uses `send_sms_async()` internally — this is now the default. Never call `send_sms()` (blocking) from a route handler except for security-critical flows (payout OTP, fraud alert). For everything else — confirmations, notifications, broadcast receipts, deletion alerts — use `send_sms_async()`. If adding a new notification call to a route, check whether the function being called eventually calls `send_sms()` or `send_sms_async()`. Only `send_sms_async()` is safe in a request context.
+**Why it matters:** A hanging POST handler looks like a frozen browser to the user and creates duplicate submission attempts. On Fly.io, gunicorn has a worker timeout — a long-blocking request kills the worker and returns a 502 to the browser, losing the operation entirely.
+**Spotted:** 2026-05-25 (Session 8)
+
+---
+
+### organizations table column names differ from the obvious defaults — check schema.yaml before writing queries
+**File(s):** `src/routes/platform_routes.py`, any route touching the `organizations` table
+**Root cause:** Cursor looks at the table name and guesses column names from convention (`email`, `password_hash`, `status`). The actual `organizations` table uses non-default names that reflect their specific roles.
+**What Cursor did:** Wrote `WHERE email = ?`, `UPDATE organizations SET password_hash = ?`, or `WHERE status = 'active'`.
+**What it should do:** Check `.agent/schema.yaml` for the `organizations` table before writing any query. The actual column names are: `contact_email` (not `email`), `admin_password_hash` (not `password_hash`), `is_active` (not `status`). The login query is `WHERE LOWER(contact_email) = ? AND is_active = 1`. The password check uses `admin_password_hash`.
+**Why it matters:** Wrong column names produce a silent wrong-result query in SQLite (the column evaluates to NULL, so `WHERE email = ?` matches nothing — the user can never log in). This is harder to debug than a crash.
+**Spotted:** 2026-05-25 (Session 8)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.
