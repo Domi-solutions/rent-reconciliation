@@ -18,17 +18,17 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
-    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Payment Activity</div>
-    <div style="font-size: 13px; color: var(--ink-3);">All payment claims you have logged for this property.</div>
+    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Payments</div>
+    <div style="font-size: 13px; color: var(--ink-3);">All payment claims — logged by you or self-reported by tenants.</div>
   </div>
   <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}"
-     style="font-size: 13px; color: var(--ink-3); text-decoration: none; white-space: nowrap;">← Log Payment</a>
+     class="btn btn-sm btn-primary">+ Log Payment</a>
 </div>
 
 {% if not claims %}
 <div style="text-align: center; padding: 48px 0; color: var(--ink-3);">
   <div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">No payments logged yet</div>
-  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" style="font-size: 13px;">Log the first payment →</a>
+  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" class="btn btn-sm btn-primary mt-2">+ Log Payment</a>
 </div>
 {% else %}
 
@@ -40,7 +40,19 @@
   <div class="d-flex justify-content-between align-items-start">
     <div>
       <span style="font-size: 15px; font-weight: 700; color: var(--ink);">{{ c.unit_number }}</span>
-      <span style="font-size: 13px; color: var(--ink-2); margin-left: 8px;">{{ c.tenant_name or '—' }}</span>
+      <span style="font-size: 13px; color: var(--ink-2); margin-left: 8px;">
+        {% if c.tenant_short_code %}
+          <a href="{{ url_for('short_link', code=c.tenant_short_code) }}" target="_blank"
+             style="color:var(--ink-2);text-decoration:none;" title="View tenant portal">
+            {{ c.tenant_name or '—' }} ↗
+          </a>
+        {% else %}
+          {{ c.tenant_name or '—' }}
+        {% endif %}
+      </span>
+      {% if c.source == 'tenant' %}
+      <span class="pa-tag pa-tag-gray" style="margin-left:6px;font-size:10px;">Self-reported</span>
+      {% endif %}
     </div>
     <div>
       {% if has_mismatch %}

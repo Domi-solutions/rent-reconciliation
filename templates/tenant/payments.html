@@ -5,17 +5,37 @@
 <h6 class="text-muted mb-3">Payment activity</h6>
 {% if payments_with_allocations %}
   {% for item in payments_with_allocations %}
+  {% set is_verified = item.status == 'verified' or not item.status %}
   <div class="surface-card mb-3">
-    <div class="surface-card-header d-flex justify-content-between align-items-center"
-         role="button" data-bs-toggle="collapse" data-bs-target="#pay-{{ loop.index }}">
+    <div class="surface-card-header d-flex justify-content-between align-items-center{% if is_verified %}"
+         role="button" data-bs-toggle="collapse" data-bs-target="#pay-{{ loop.index }}"{% else %}"{% endif %}>
       <div>
         <div class="data-row-unit">{{ item.date }}</div>
         <div class="data-row-meta">KES {{ "{:,.0f}".format(item.amount) }}</div>
       </div>
-      <div class="status-paid">
-        {{ item.mpesa_ref }}
+      <div class="text-end">
+        <div class="{{ 'status-paid' if is_verified else 'text-muted' }}" style="font-size:0.8rem;">
+          {{ item.mpesa_ref }}
+        </div>
+        {% if item.status == 'pending' %}
+          <span class="badge bg-secondary" style="font-size:0.7rem;">Pending</span>
+        {% elif item.status == 'flagged' %}
+          <span class="badge bg-warning text-dark" style="font-size:0.7rem;">Under review</span>
+        {% endif %}
       </div>
     </div>
+
+    {% if item.status == 'pending' %}
+    <div class="data-row" style="font-size:0.8rem;color:#6c757d;">
+      Payment recorded — awaiting verification.
+    </div>
+    {% elif item.status == 'flagged' %}
+    <div class="data-row" style="font-size:0.8rem;color:#856404;">
+      Under review — please contact your caretaker.
+    </div>
+    {% endif %}
+
+    {% if is_verified %}
     <div id="pay-{{ loop.index }}" class="collapse">
       <div class="data-row">
         <p class="data-row-meta mb-1">{{ property.name }} — Unit {{ unit.unit_number }} — {{ tenant.name }}</p>
@@ -53,12 +73,13 @@
         {% endif %}
       </div>
     </div>
+    {% endif %}
   </div>
   {% endfor %}
 {% else %}
 <div class="empty-state">
   <div class="empty-state-title">No payment activity</div>
   <div class="empty-state-sub">Payments will appear here once they have been recorded.</div>
-  </div>
+</div>
 {% endif %}
 {% endblock %}

@@ -174,6 +174,12 @@ def portal(token):
             ORDER BY created_at DESC LIMIT 10
         """, (tenant['id'],)).fetchall()
 
+        caretaker = conn.execute("""
+            SELECT name, phone FROM caretakers
+            WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''
+            ORDER BY created_at LIMIT 1
+        """, (prop['id'],)).fetchone()
+
     return render_template(
         'tenant/portal.html',
         token=token,
@@ -181,9 +187,10 @@ def portal(token):
         unit=unit,
         property=prop,
         total_charged=total_charged,
-        total_paid=total_paid_display,   # includes pending claims
-        balance=balance,                 # adjusted for pending claims
+        total_paid=total_paid_display,
+        balance=balance,
         recent_messages=recent_messages,
+        caretaker=caretaker,
     )
 
 
@@ -275,26 +282,28 @@ def payments(token):
                 'mpesa_ref': p['mpesa_ref'] or '-',
                 'sender_name': p['sender_name'] or '-',
                 'allocations': allocs,
+                'status': 'verified',
             })
 
-        # Pending claims — exclude any already verified (matched to a payment)
+        # Unverified claims (pending + flagged) — skip refs already in verified payments
         verified_refs = {p['mpesa_ref'] for p in payment_rows if p['mpesa_ref']}
         claim_rows = conn.execute("""
-            SELECT mpesa_ref, claimed_amount, created_at
+            SELECT mpesa_ref, claimed_amount, status, created_at
             FROM payment_claims
-            WHERE unit_id = ? AND status = 'pending'
+            WHERE unit_id = ? AND status IN ('pending', 'flagged')
             ORDER BY created_at DESC
         """, (unit['id'],)).fetchall()
 
         for c in claim_rows:
             if c['mpesa_ref'] in verified_refs:
-                continue  # Already showing as a verified payment, skip
+                continue
             payments_with_allocations.append({
-                'date': c['created_at'][:10],
-                'amount': float(c['claimed_amount']),
+                'date': c['created_at'][:10] if c['created_at'] else '',
+                'amount': float(c['claimed_amount'] or 0),
                 'mpesa_ref': c['mpesa_ref'] or '-',
                 'sender_name': '-',
                 'allocations': [],
+                'status': c['status'],
             })
 
         # Sort combined list by date descending
@@ -371,24 +380,48 @@ def maintenance(token):
 
 @tenant_bp.route('/<token>/pay', methods=['GET'])
 def pay(token):
-    """Payment tab. PIN-gated: create PIN if none set, verify if set, show form if verified."""
+    """Payment tab — tenant self-reports M-Pesa payment."""
     with get_connection() as conn:
         ctx = _get_tenant_by_token(conn, token)
         if not ctx:
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
-        tenant_row = conn.execute(
-            "SELECT portal_pin_hash FROM tenants WHERE id = ?", (tenant['id'],)
-        ).fetchone()
-        pin_hash = tenant_row['portal_pin_hash'] if tenant_row else None
 
         balance_row = conn.execute(
             "SELECT balance FROM unit_balances WHERE unit_id = ?", (unit['id'],)
         ).fetchone()
         balance = float(balance_row['balance']) if balance_row else 0.0
 
-    pin_verified = session.get(f'pay_auth_{token}', False)
-    pin_exists = bool(pin_hash)
+        claims_raw = conn.execute("""
+            SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
+                   p.amount AS verified_amount, p.id AS payment_id
+            FROM payment_claims pc
+            LEFT JOIN payments p ON p.claim_id = pc.id
+            WHERE pc.unit_id = ?
+            ORDER BY pc.created_at DESC LIMIT 20
+        """, (unit['id'],)).fetchall()
+
+        claims = []
+        for c in claims_raw:
+            allocs = []
+            if c['status'] == 'verified' and c['payment_id']:
+                allocs = conn.execute("""
+                    SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period,
+                           pa.charge_settled
+                    FROM payment_allocations pa
+                    JOIN rent_charges rc ON pa.charge_id = rc.id
+                    WHERE pa.payment_id = ?
+                    ORDER BY rc.period, rc.charge_type
+                """, (c['payment_id'],)).fetchall()
+            claims.append({**dict(c), 'allocations': [dict(a) for a in allocs]})
+
+        caretaker = conn.execute("""
+            SELECT name, phone FROM caretakers
+            WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''
+            ORDER BY created_at LIMIT 1
+        """, (prop['id'],)).fetchone()
+
+    success = request.args.get('success')
     error = request.args.get('error')
 
     return render_template(
@@ -398,11 +431,217 @@ def pay(token):
         unit=unit,
         property=prop,
         active_tab='pay',
-        pin_exists=pin_exists,
-        pin_verified=pin_verified,
         balance=balance,
+        claims=claims,
+        caretaker=caretaker,
+        success=success,
         error=error,
     )
+
+
+@tenant_bp.route('/<token>/report-payment', methods=['POST'])
+def report_payment(token):
+    """Tenant self-reports an M-Pesa payment by pasting their confirmation SMS."""
+    from src.parsers.sms_parser import parse_mpesa_message
+    from src.database.db import allocate_payment
+
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+
+        message = (request.form.get('mpesa_sms') or '').strip()
+        if not message:
+            return redirect(url_for('tenant.pay', token=token, error='Please paste your M-Pesa SMS.'))
+
+        parsed = parse_mpesa_message(message)
+        if not parsed.get('success'):
+            return redirect(url_for('tenant.pay', token=token,
+                                    error='Could not read an M-Pesa reference from that message. Please paste the full SMS.'))
+
+        reference = parsed['reference']
+        try:
+            amount = float(parsed['amount']) if parsed.get('amount') is not None else None
+        except (TypeError, ValueError):
+            amount = None
+
+        # Duplicate check
+        existing = conn.execute(
+            "SELECT id FROM payment_claims WHERE property_id = ? AND mpesa_ref = ?",
+            (prop['id'], reference),
+        ).fetchone()
+        if existing:
+            return redirect(url_for('tenant.pay', token=token,
+                                    error=f'Reference {reference} has already been reported.'))
+
+        _mpesa_ts = parsed.get('timestamp')
+        _has_real_ts = not parsed.get('parse_warnings') or not any(
+            'Timestamp not found' in w for w in parsed.get('parse_warnings', [])
+        )
+        mpesa_date = _mpesa_ts.date().isoformat() if (_mpesa_ts and _has_real_ts) else None
+        mpesa_period = _mpesa_ts.strftime('%Y-%m') if (_mpesa_ts and _has_real_ts) else None
+
+        claim_id = generate_id('CLM')
+        conn.execute("""
+            INSERT INTO payment_claims
+            (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
+            VALUES (?, ?, ?, ?, ?, ?, 'tenant', ?, ?)
+        """, (claim_id, prop['id'], reference, unit['id'], amount, message, mpesa_date, mpesa_period))
+
+        amt_str = f'{amount:,.0f}' if amount is not None else '-'
+        unit_number = unit['unit_number']
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('claim_created', 'claim', claim_id,
+             f'Ref: {reference} | Unit: {unit_number} | Amount: KES {amt_str} | source: tenant', 'tenant'),
+        )
+
+        # At-submission bank check — same logic as caretaker flow
+        _org_id = prop['organization_id'] if prop.get('organization_id') else None
+        property_id = prop['id']
+
+        if mpesa_period:
+            _mp_y, _mp_m = int(mpesa_period[:4]), int(mpesa_period[5:7])
+            _mp_start = f"{mpesa_period}-01"
+            _mp_end = f"{_mp_y + 1}-01-01" if _mp_m == 12 else f"{_mp_y}-{_mp_m + 1:02d}-01"
+            if _org_id:
+                _has_bank_data = bool(conn.execute("""
+                    SELECT 1 FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    WHERE bs.org_id = ? AND bt.txn_date >= ? AND bt.txn_date < ?
+                      AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                """, (_org_id, _mp_start, _mp_end)).fetchone())
+            else:
+                _has_bank_data = bool(conn.execute("""
+                    SELECT 1 FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    JOIN properties p ON p.id = bs.property_id
+                    WHERE p.id = ? AND bt.txn_date >= ? AND bt.txn_date < ?
+                      AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                """, (property_id, _mp_start, _mp_end)).fetchone())
+        else:
+            if _org_id:
+                _has_bank_data = bool(conn.execute("""
+                    SELECT 1 FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    WHERE bs.org_id = ? AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                """, (_org_id,)).fetchone())
+            else:
+                _has_bank_data = bool(conn.execute("""
+                    SELECT 1 FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    JOIN properties p ON p.id = bs.property_id
+                    WHERE p.id = ? AND bt.txn_type = 'PAYBILL_CREDIT' LIMIT 1
+                """, (property_id,)).fetchone())
+
+        _notify = None  # ('verified'|'flagged', sms_body) — sent after commit
+
+        if _has_bank_data:
+            if _org_id:
+                _bank_txn = conn.execute("""
+                    SELECT bt.* FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    WHERE bs.org_id = ? AND bt.mpesa_ref = ? LIMIT 1
+                """, (_org_id, reference)).fetchone()
+            else:
+                _bank_txn = conn.execute("""
+                    SELECT bt.* FROM bank_transactions bt
+                    JOIN bank_statements bs ON bs.id = bt.statement_id
+                    JOIN properties p ON p.id = bs.property_id
+                    WHERE p.id = ? AND bt.mpesa_ref = ? LIMIT 1
+                """, (property_id, reference)).fetchone()
+
+            if _bank_txn:
+                _existing_pay = conn.execute(
+                    "SELECT id, claim_id FROM payments WHERE bank_txn_id = ?",
+                    (_bank_txn['id'],)
+                ).fetchone()
+                if _existing_pay:
+                    if not _existing_pay['claim_id']:
+                        conn.execute("UPDATE payments SET claim_id = ? WHERE id = ?",
+                                     (claim_id, _existing_pay['id']))
+                    conn.execute(
+                        "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (claim_id,)
+                    )
+                    _pay_id_for_sms = _existing_pay['id']
+                else:
+                    payment_id = generate_id('PAY')
+                    conn.execute("""
+                        INSERT INTO payments
+                        (id, property_id, unit_id, claim_id, bank_txn_id, statement_id, amount, payment_date, assignment_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto')
+                    """, (payment_id, property_id, unit['id'], claim_id,
+                          _bank_txn['id'], _bank_txn['statement_id'],
+                          _bank_txn['amount'], _bank_txn['txn_date'] or ''))
+                    allocate_payment(conn, payment_id, unit['id'], _bank_txn['amount'])
+                    conn.execute(
+                        "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (claim_id,)
+                    )
+                    conn.execute(
+                        "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                        ('payment_verified', 'payment', payment_id,
+                         f'Ref: {reference} | Unit: {unit_number} | KES {amt_str} | auto-verified at tenant submission',
+                         'system'),
+                    )
+                    _pay_id_for_sms = payment_id
+                if _bank_txn['ignored']:
+                    conn.execute(
+                        "UPDATE bank_transactions SET ignored=0, ignored_at=NULL, ignored_reason=NULL WHERE id=?",
+                        (_bank_txn['id'],)
+                    )
+
+                # Build allocation summary for SMS
+                _allocs = conn.execute("""
+                    SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
+                    FROM payment_allocations pa
+                    JOIN rent_charges rc ON pa.charge_id = rc.id
+                    WHERE pa.payment_id = ?
+                    ORDER BY rc.period, rc.charge_type
+                """, (_pay_id_for_sms,)).fetchall()
+                _alloc_lines = ', '.join(
+                    f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
+                    for a in _allocs
+                ) if _allocs else f"KES {float(_bank_txn['amount']):,.0f}"
+
+                _base = (os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
+                _sc = tenant['short_code'] if 'short_code' in tenant.keys() and tenant['short_code'] else None
+                _link = f" View: {_base}/t/{_sc}" if _sc else ''
+                _notify = ('verified',
+                    f"Hi {tenant['name']}, your payment ref {reference} has been confirmed.\n"
+                    f"Applied: {_alloc_lines}.{_link}")
+            else:
+                # Ref absent — flag claim and flag tenant
+                conn.execute("""
+                    UPDATE payment_claims
+                    SET status = 'flagged', flag_reason = 'ref_not_found', flagged_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (claim_id,))
+                conn.execute("UPDATE tenants SET flagged = 1 WHERE id = ?", (tenant['id'],))
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('claim_flagged', 'claim', claim_id,
+                     f'Ref: {reference} | Unit: {unit_number} | ref not in bank data | source: tenant', 'system'),
+                )
+                _notify = ('flagged',
+                    f"Hi {tenant['name']}, we could not verify payment ref {reference} in bank records. "
+                    "Please contact your caretaker to resolve this.")
+
+    # Send notifications outside the DB transaction
+    if _notify and tenant.get('phone'):
+        try:
+            from src.messaging.delivery import send_sms_async
+            send_sms_async([{'phone': tenant['phone']}], _notify[1])
+        except Exception:
+            pass
+
+    if _notify and _notify[0] == 'verified':
+        return redirect(url_for('tenant.pay', token=token,
+                                success=f'Payment {reference} confirmed and allocated to your charges.'))
+    return redirect(url_for('tenant.pay', token=token,
+                            success=f'Payment reference {reference} recorded. We will verify it against bank records within 1–5 days.'))
 
 
 @tenant_bp.route('/<token>/pay/pin/create', methods=['POST'])

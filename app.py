@@ -116,6 +116,8 @@ from src.database.db import (
     migrate_add_tenant_departures,
     migrate_add_deposit_paid,
     migrate_rename_office_to_owner_use,
+    migrate_add_tenant_short_code,
+    migrate_add_owner_org_id,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -168,6 +170,8 @@ migrate_add_report_refresh_fields()
 migrate_add_tenant_departures()
 migrate_add_deposit_paid()
 migrate_rename_office_to_owner_use()
+migrate_add_tenant_short_code()
+migrate_add_owner_org_id()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -185,6 +189,19 @@ app.register_blueprint(payment_bp)
 app.register_blueprint(inbound_bp)
 app.register_blueprint(platform_bp)
 app.register_blueprint(owner_bp)
+
+
+@app.route('/t/<code>')
+def short_link(code):
+    """Short portal link redirect — /t/<short_code> → /tenant/<access_token>."""
+    from src.database.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT access_token FROM tenants WHERE short_code = ?", (code,)
+        ).fetchone()
+    if not row or not row['access_token']:
+        abort(404)
+    return redirect(url_for('tenant.portal', token=row['access_token']))
 
 
 scheduler = BackgroundScheduler(daemon=True)
@@ -1340,14 +1357,16 @@ def add_tenant():
                         person_id = existing_person['id']
 
             access_token = secrets.token_urlsafe(32)
+            import string as _string
+            short_code = ''.join(secrets.choice(_string.ascii_uppercase + _string.digits) for _ in range(6))
             tenant_id = generate_id('TENANT')
             conn.execute(
                 "INSERT INTO tenants (id, property_id, unit_id, name, phone, move_in_date, "
-                "deposit_paid, move_in_notes, access_token, person_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "deposit_paid, move_in_notes, access_token, short_code, person_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (tenant_id, property_row['id'], unit_id, name,
                  phone_norm or phone or None,
-                 move_in_date, deposit_paid, move_in_notes or None, access_token, person_id),
+                 move_in_date, deposit_paid, move_in_notes or None, access_token, short_code, person_id),
             )
             conn.execute(
                 "UPDATE units SET status = 'occupied', status_changed_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1765,6 +1784,7 @@ def move_out_tenant(unit_id):
 @app.route('/owners')
 def manage_owners():
     """List all property owners, their property count and access status."""
+    _org_id = session.get('org_id')
     with get_connection() as conn:
         owners = conn.execute("""
             SELECT o.id, o.name, o.phone, o.email, o.access_token,
@@ -1778,9 +1798,10 @@ def manage_owners():
             LEFT JOIN property_owners po ON po.owner_id = o.id
             LEFT JOIN properties p ON p.id = po.property_id AND p.status = 'active'
             LEFT JOIN persons per ON per.id = o.person_id
+            WHERE o.org_id = ?
             GROUP BY o.id
             ORDER BY o.name
-        """).fetchall()
+        """, (_org_id,)).fetchall()
         owner_properties = {}
         for o in owners:
             props = conn.execute("""
@@ -1790,7 +1811,8 @@ def manage_owners():
             """, (o['id'],)).fetchall()
             owner_properties[o['id']] = props
         all_properties = conn.execute(
-            "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
+            "SELECT id, name FROM properties WHERE status = 'active' AND organization_id = ? ORDER BY name",
+            (_org_id,)
         ).fetchall()
     return render_template('owners.html', owners=owners, all_properties=all_properties, owner_properties=owner_properties)
 
@@ -1825,9 +1847,10 @@ def create_owner():
                     (person_id, name, phone_norm, email, activation_token),
                 )
 
+        _new_owner_org_id = session.get('org_id')
         conn.execute(
-            "INSERT INTO owners (id, name, phone, email, person_id) VALUES (?, ?, ?, ?, ?)",
-            (owner_id, name, phone_norm or phone or None, email, person_id),
+            "INSERT INTO owners (id, name, phone, email, person_id, org_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (owner_id, name, phone_norm or phone or None, email, person_id, _new_owner_org_id),
         )
         if property_id:
             jid = generate_id('POWN')
@@ -2104,6 +2127,7 @@ def delete_owner(owner_id):
                      f"If unexpected, contact Domi support immediately.")
         conn.execute("DELETE FROM property_owners WHERE owner_id = ?", (owner_id,))
         conn.execute("UPDATE properties SET owner_id = NULL WHERE owner_id = ?", (owner_id,))
+        conn.execute("DELETE FROM owner_messages WHERE owner_id = ?", (owner_id,))
         conn.execute("DELETE FROM owners WHERE id = ?", (owner_id,))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -2472,6 +2496,13 @@ def upload_statement():
             return redirect(url_for('upload_statement'))
         if not file.filename.lower().endswith('.pdf'):
             flash('Please upload a PDF file', 'error')
+            return redirect(url_for('upload_statement'))
+
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > 20 * 1024 * 1024:
+            flash('File too large — bank statements must be under 20 MB.', 'error')
             return redirect(url_for('upload_statement'))
 
         filename = secure_filename(file.filename)
@@ -2851,6 +2882,11 @@ def verify_payments(statement_id):
         verified_count = 0
         verified_claim_ids = set()
 
+        _caretakers_for_alert = conn.execute(
+            "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
+            (property_row['id'],)
+        ).fetchall()
+
         for claim in pending_claims:
             ref = claim['mpesa_ref']
             if ref not in bank_by_ref:
@@ -2931,22 +2967,28 @@ def verify_payments(statement_id):
 
             try:
                 _tenant = conn.execute(
-                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
+                    "SELECT name, phone, short_code FROM tenants WHERE unit_id = ? AND status = 'active'",
                     (claim['unit_id'],),
                 ).fetchone()
                 if _tenant and _tenant['phone']:
-                    _token = _tenant['access_token']
-                    if not _token:
-                        _token = secrets.token_urlsafe(32)
-                        conn.execute(
-                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                            (_token, claim['unit_id']),
-                        )
-                    _base = request.host_url.rstrip('/')
-                    _link = f"{_base}/tenant/{_token}"
+                    _base = os.environ.get('APP_BASE_URL', request.host_url).rstrip('/')
+                    _sc = _tenant['short_code']
+                    _link = f" View: {_base}/t/{_sc}" if _sc else ''
+                    # Build allocation summary
+                    _allocs = conn.execute("""
+                        SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
+                        FROM payment_allocations pa
+                        JOIN rent_charges rc ON pa.charge_id = rc.id
+                        WHERE pa.payment_id = ?
+                        ORDER BY rc.period, rc.charge_type
+                    """, (payment_id,)).fetchall()
+                    _alloc_lines = ', '.join(
+                        f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
+                        for a in _allocs
+                    ) if _allocs else f"KES {float(bank_txn['amount']):,.0f}"
                     _sms = (
-                        f"Hi {_tenant['name']}, KES {float(bank_txn['amount']):,.0f} payment confirmed.\n"
-                        f"View your account: {_link}"
+                        f"Hi {_tenant['name']}, payment ref {ref} confirmed.\n"
+                        f"Applied: {_alloc_lines}.{_link}"
                     )
                     from src.messaging.delivery import send_sms_async
                     send_sms_async([{'phone': _tenant['phone']}], _sms)
@@ -3030,7 +3072,7 @@ def verify_payments(statement_id):
                 )
 
             _res_info = conn.execute(
-                "SELECT u.unit_number, t.name AS tenant_name, t.phone, t.access_token "
+                "SELECT u.unit_number, t.name AS tenant_name, t.phone, t.short_code "
                 "FROM units u LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' WHERE u.id = ?",
                 (claim['unit_id'],),
             ).fetchone()
@@ -3070,19 +3112,24 @@ def verify_payments(statement_id):
 
             if _res_info and _res_info['phone']:
                 try:
-                    _token = _res_info['access_token']
-                    if not _token:
-                        _token = secrets.token_urlsafe(32)
-                        conn.execute(
-                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                            (_token, claim['unit_id']),
-                        )
-                    _base = request.host_url.rstrip('/')
-                    _link = f"{_base}/tenant/{_token}"
+                    _base = os.environ.get('APP_BASE_URL', request.host_url).rstrip('/')
+                    _sc = _res_info['short_code']
+                    _link = f" View: {_base}/t/{_sc}" if _sc else ''
+                    _allocs_res = conn.execute("""
+                        SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
+                        FROM payment_allocations pa
+                        JOIN rent_charges rc ON pa.charge_id = rc.id
+                        WHERE pa.payment_id = ?
+                        ORDER BY rc.period, rc.charge_type
+                    """, (payment_id,)).fetchall()
+                    _alloc_lines_res = ', '.join(
+                        f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
+                        for a in _allocs_res
+                    ) if _allocs_res else f"KES {float(bank_txn['amount']):,.0f}"
                     from src.messaging.delivery import send_sms_async
                     send_sms_async([{'phone': _res_info['phone']}],
-                        f"Hi {_res_info['tenant_name'] or 'Tenant'}, your KES {float(bank_txn['amount']):,.0f} "
-                        f"payment has been confirmed. View your account: {_link}")
+                        f"Hi {_res_info['tenant_name'] or 'Tenant'}, payment ref {ref} confirmed.\n"
+                        f"Applied: {_alloc_lines_res}.{_link}")
                 except Exception:
                     pass
 
@@ -3097,11 +3144,6 @@ def verify_payments(statement_id):
         """, (statement_id,)).fetchone()
         _stmt_min_period = _stmt_period_row['min_period'] if _stmt_period_row else None
         _stmt_max_period = _stmt_period_row['max_period'] if _stmt_period_row else None
-
-        _caretakers_for_alert = conn.execute(
-            "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
-            (property_row['id'],)
-        ).fetchall()
 
         flagged_count = 0
         for claim in pending_claims:
@@ -4048,18 +4090,29 @@ def assign_group():
         property_row = get_current_property(conn)
         if not property_row:
             return redirect(url_for('property_list'))
-        property_id = property_row['id']
+        _org_id = property_row['organization_id'] or session.get('org_id')
 
-        unit = conn.execute(
-            "SELECT id, unit_number FROM units WHERE id = ? AND property_id = ?",
-            (unit_id, property_id),
-        ).fetchone()
+        # Unit dropdown is org-scoped, so validate against org (not just selected property)
+        if _org_id:
+            unit = conn.execute(
+                """
+                SELECT u.id, u.unit_number, u.property_id
+                FROM units u JOIN properties p ON u.property_id = p.id
+                WHERE u.id = ? AND p.organization_id = ?
+                """,
+                (unit_id, _org_id),
+            ).fetchone()
+        else:
+            unit = conn.execute(
+                "SELECT id, unit_number, property_id FROM units WHERE id = ? AND property_id = ?",
+                (unit_id, property_row['id']),
+            ).fetchone()
         if not unit:
             flash('Selected unit not found for this property.', 'error')
             return redirect(url_for('review', tab='unreported'))
 
         unit_number = unit['unit_number']
-        _org_id = property_row['organization_id'] or session.get('org_id')
+        property_id = unit['property_id']  # use the unit's own property, not the session property
         _stmt_col = "bs.org_id" if _org_id else "bs.property_id"
         _stmt_val = _org_id if _org_id else property_id
 

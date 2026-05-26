@@ -2,7 +2,7 @@
 {% block title %}Send broadcast — {{ property.name }}{% endblock %}
 {% block content %}
 <h1 class="mb-2">Send broadcast</h1>
-<p class="text-muted mb-4">Select recipients and compose a message. Variables: {tenant_name}, {unit_number}, {balance}, {month}, {amount}, {due_date}.</p>
+<p class="text-muted mb-4">Select recipients and compose a message. Variables: {tenant_name}, {unit_number}, {balance}, {monthly_rent}, {total_paid}, {due_date}, {caretaker_phone}, {portal_link}.</p>
 <form method="post" action="{{ url_for('messaging.broadcast') }}">
   <div class="card mb-3">
     <div class="card-header">Recipients</div>

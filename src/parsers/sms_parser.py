@@ -69,8 +69,9 @@ def extract_reference_code(text: str) -> Optional[str]:
 
 def extract_amount_multiformat(text: str) -> Optional[Decimal]:
     """Extract amount from text handling multiple formats."""
-    # Pattern 1: "KES" or "Ksh" followed by amount with optional comma
-    pattern1 = re.compile(r'(?:KES|Ksh)\s*(\d{1,3}(?:,\d{3})*\.\d{2})', re.IGNORECASE)
+    # Pattern 1: "KES" or "Ksh" (optional dot) followed by amount with optional commas
+    # Handles: "KES 13,300.00", "Ksh 13300.00", "Ksh. 13300.00"
+    pattern1 = re.compile(r'(?:KES|Ksh)\.?\s*(\d{1,3}(?:,\d{3})*\.\d{2})', re.IGNORECASE)
     match1 = pattern1.search(text)
     if match1:
         try:
@@ -78,23 +79,13 @@ def extract_amount_multiformat(text: str) -> Optional[Decimal]:
             return Decimal(amount_str)
         except:
             pass
-    
-    # Pattern 2: "KES" or "Ksh" followed by amount without comma
-    pattern2 = re.compile(r'(?:KES|Ksh)\s*(\d+\.\d{2})', re.IGNORECASE)
+
+    # Pattern 2: "KES" or "Ksh" (optional dot) followed by plain decimal
+    pattern2 = re.compile(r'(?:KES|Ksh)\.?\s*(\d+\.\d{2})', re.IGNORECASE)
     match2 = pattern2.search(text)
     if match2:
         try:
             return Decimal(match2.group(1))
-        except:
-            pass
-    
-    # Pattern 3: Amount with currency prefix (no space)
-    pattern3 = re.compile(r'(?:KES|Ksh)(\d{1,3}(?:,\d{3})*\.\d{2})', re.IGNORECASE)
-    match3 = pattern3.search(text)
-    if match3:
-        try:
-            amount_str = match3.group(1).replace(',', '')
-            return Decimal(amount_str)
         except:
             pass
     
@@ -125,6 +116,18 @@ def extract_timestamp_multiformat(text: str) -> Optional[datetime]:
             day, month, yr, hour, minute, am_pm = m0.groups()
             year = 2000 + int(yr)
             return datetime(year, int(month), int(day), _apply_ampm(int(hour), am_pm), int(minute), 0)
+        except (ValueError, TypeError):
+            pass
+
+    # Pattern 0b: National Bank "DD/MM/YY HH:MM:SS" (24-hour, no AM/PM, no "at")
+    # e.g. "28/08/25 10:58:21"
+    p0b = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})(?!\s*(AM|PM))', re.IGNORECASE)
+    m0b = p0b.search(text)
+    if m0b:
+        try:
+            day, month, yr, hour, minute, second = m0b.groups()[:6]
+            year = 2000 + int(yr)
+            return datetime(year, int(month), int(day), int(hour), int(minute), int(second))
         except (ValueError, TypeError):
             pass
 

@@ -49,6 +49,19 @@
       <span class="stmt-badge badge-current">Current</span>
       {% endif %}
     </div>
+    {% if tenant.arrears_remaining > 0 %}
+    <div style="margin-top:10px; background:#fff8e7; border:1px solid #fde68a; border-radius:6px; padding:10px 14px; font-size:13px;">
+      <div style="font-weight:700; color:#854d0e; margin-bottom:4px;">Balance breakdown</div>
+      <div style="color:#92400e;">
+        Old arrears still owed: <strong>KES {{ "{:,.0f}".format(tenant.arrears_remaining) }}</strong>
+      </div>
+      {% if tenant.monthly_overdue > 0 %}
+      <div style="color:#92400e; margin-top:2px;">
+        Monthly charges unpaid: <strong>KES {{ "{:,.0f}".format(tenant.monthly_overdue) }}</strong>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
   <div class="d-flex gap-2 no-print">
     <a href="{{ url_for('messaging.thread', tenant_id=tenant.id) }}" class="btn btn-outline-secondary btn-sm">Message</a>
@@ -174,7 +187,7 @@
       {% else %}
       <div style="color:#6c757d; font-size:11px; margin-top:5px;">No bank statement uploaded for period {{ c.mpesa_period or '—' }} yet</div>
       {% endif %}
-      <div style="color:#6c757d; font-size:11px; margin-top:3px;">Submitted {{ c.created_at[:10] if c.created_at else '—' }}</div>
+      <div style="color:#6c757d; font-size:11px; margin-top:3px;">{% if c.mpesa_date %}M-Pesa date {{ c.mpesa_date[:10] }}{% else %}Submitted {{ c.created_at[:10] if c.created_at else '—' }}{% endif %}</div>
 
       {# ── Admin actions ── #}
       <div class="mt-2 no-print">
@@ -223,7 +236,7 @@
         {% if c.mpesa_period %} · Period {{ c.mpesa_period }}{% endif %}
       </div>
       <div style="color:#1e40af; font-size:12px; margin-top:4px;">Awaiting bank statement verification</div>
-      <div style="color:#6c757d; font-size:11px; margin-top:3px;">Submitted {{ c.created_at[:10] if c.created_at else '—' }}</div>
+      <div style="color:#6c757d; font-size:11px; margin-top:3px;">{% if c.mpesa_date %}M-Pesa date {{ c.mpesa_date[:10] }}{% else %}Submitted {{ c.created_at[:10] if c.created_at else '—' }}{% endif %}</div>
     </div>
     {% endif %}
   {% endfor %}

@@ -79,7 +79,7 @@
     </thead>
     <tbody>
       {% for m in recent_messages %}
-      <tr>
+      <tr style="cursor:pointer" onclick="window.location='{{ url_for('messaging.thread', tenant_id=m.tenant_id) }}'">
         <td>{{ m.created_at }}</td>
         <td>{{ m.subject[:50] }}{% if m.subject|length > 50 %}…{% endif %}</td>
         <td>{{ m.message_type }}</td>

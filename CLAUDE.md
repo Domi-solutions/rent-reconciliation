@@ -175,6 +175,10 @@ result = quick_verify_ref(conn, text, unit_id, org_id)
 # text: M-Pesa SMS or bare ref code. Searches bank_transactions org-scoped.
 # result['status']: 'found'|'already_this_unit'|'already_other_unit'|'not_found'|'parse_error'
 # When 'found': result['txn_id'] is the bank_transactions.id to pass to quick-assign route.
+# tenant dict is enriched with:
+#   tenant['arrears_remaining'] — sum of remaining on ARREARS-period charges
+#   tenant['monthly_overdue']   — sum of remaining on non-ARREARS charges
+#   tenant['pending_total']     — sum of claimed_amount for status='pending' open claims only
 ```
 
 **ID generation:**
@@ -229,6 +233,14 @@ raise_alert(conn, 'alert_type', 'details', org_id=org_id, property_id=pid, sever
 notify_owner_change(conn, property_id, 'Subject line', 'Body text')
 ```
 Sensitive actions that must call guardian: unit field edit (rent/service change >10%), owner removed from property, tenant moved out, payment reversed.
+
+**`assign_group` — unit validation is org-scoped, not property-scoped:** The group-units dropdown in the statement review page is org-wide (spans all properties). Validating `WHERE id=? AND property_id=<session_property>` silently rejects units in sibling properties. Always validate via org join: `SELECT u.id, u.unit_number, u.property_id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? AND p.organization_id = ?`. Use `unit['property_id']` (not session property) for the payment insert.
+
+**SMS parser — supported M-Pesa message formats** (`src/parsers/sms_parser.py`):
+- Full Kenya M-Pesa: `"on DD/MM/YY at H:MM AM/PM"` — pattern `p0`
+- National Bank confirmation: `"DD/MM/YY HH:MM:SS"` (24-hour, no AM/PM) — pattern `p0b`
+- Legacy formats: `"MM/DD/YYYY HH:MM:SS AM/PM"` (p1) and `"MM/DD/YYYY HH:MM AM/PM"` (p2)
+- Amount: `KES` or `Ksh` followed by optional period (`\.?`), then decimal — handles `Ksh. 13300.00` and `Ksh 13,300.00`
 
 **`detect_bank_statement_format` returns `'unknown'` for unrecognised PDFs** — never silently falls back to `'cooperative'`. An `'unknown'` format is logged as a `format_unknown` parse error and the upload is marked `parse_failed`.
 

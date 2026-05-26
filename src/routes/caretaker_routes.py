@@ -16,21 +16,24 @@ caretaker_bp = Blueprint('caretaker', __name__, url_prefix='/caretaker')
 
 
 @caretaker_bp.context_processor
-def inject_flagged_count():
-    """Inject uncleared flagged claims count into all caretaker templates."""
-    from flask import g
+def inject_caretaker_counts():
+    """Inject flagged claims count and pending tenant claim count into all caretaker templates."""
     property_id = request.view_args.get('property_id') if request.view_args else None
     if not property_id:
-        return {'ct_flagged_count': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0}
     try:
         with get_connection() as conn:
-            count = conn.execute(
+            flagged = conn.execute(
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'flagged' AND caretaker_confirmed = 0 AND admin_cleared = 0",
                 (property_id,)
             ).fetchone()[0]
-        return {'ct_flagged_count': count}
+            tenant_pending = conn.execute(
+                "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND source = 'tenant' AND status = 'pending'",
+                (property_id,)
+            ).fetchone()[0]
+        return {'ct_flagged_count': flagged, 'ct_tenant_pending_count': tenant_pending}
     except Exception:
-        return {'ct_flagged_count': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0}
 
 
 def _has_db_caretakers():
@@ -822,8 +825,8 @@ def payment_activity(property_id):
 
         claims = conn.execute("""
             SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
-                   pc.flag_reason, pc.mpesa_period,
-                   u.unit_number, t.name AS tenant_name,
+                   pc.flag_reason, pc.mpesa_period, pc.source,
+                   u.unit_number, t.name AS tenant_name, t.short_code AS tenant_short_code,
                    p.id AS payment_id, p.amount AS bank_amount,
                    p.caretaker_note, p.caretaker_note_at
             FROM payment_claims pc
@@ -837,7 +840,7 @@ def payment_activity(property_id):
     return render_template('caretaker/payment_activity.html',
                            property=prop,
                            claims=claims,
-                           active_tab='log_payment')
+                           active_tab='payment_activity')
 
 
 @caretaker_bp.route('/<property_id>/issues')
@@ -1321,12 +1324,13 @@ def tenant_statement(property_id, tenant_id):
         tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, property_id)
         if not tenant:
             abort(404)
+    from_page = request.args.get('from', 'tenants')
     return render_template('caretaker/statement.html',
                            property=prop,
                            tenant=tenant,
                            ledger=ledger,
                            open_claims=open_claims,
-                           active_tab='tenants')
+                           active_tab='arrears' if from_page == 'arrears' else 'tenants')
 
 
 @caretaker_bp.route('/<property_id>/tenant/<tenant_id>/quick-verify', methods=['POST'])

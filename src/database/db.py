@@ -536,11 +536,11 @@ def migrate_update_template_wording():
             (
                 'custom_broadcast',
                 'Notice — {unit_number}',
-                'Hi {tenant_name},\n\n'
+                'Hi {tenant_name}, rent of KES {balance} for unit {unit_number} is due on {due_date}.\n\n'
                 'Monthly rent: KES {monthly_rent}\n'
-                'Paid to date: KES {total_paid}\n'
-                'Outstanding: KES {balance}\n\n'
-                'Kind regards.'
+                'Paid to date: KES {total_paid}\n\n'
+                'For queries: {caretaker_phone}\n'
+                'View your account: {portal_link}'
             ),
         ]
         for key, subject, body in updates:
@@ -1522,3 +1522,47 @@ def migrate_rename_office_to_owner_use():
     with get_connection() as conn:
         conn.execute("UPDATE units SET status = 'owner_use' WHERE status = 'office'")
         print("Migration complete: unit status 'office' renamed to 'owner_use'.")
+
+
+def migrate_add_tenant_short_code():
+    """Add short_code to tenants for short portal links (/t/<code>). Backfills existing rows. Idempotent."""
+    import secrets
+    import string
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
+        if 'short_code' not in cols:
+            conn.execute("ALTER TABLE tenants ADD COLUMN short_code TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_short_code ON tenants(short_code)")
+        # Backfill any tenants that don't have a code yet
+        missing = conn.execute("SELECT id FROM tenants WHERE short_code IS NULL").fetchall()
+        alphabet = string.ascii_uppercase + string.digits
+        for row in missing:
+            for _ in range(20):  # retry on collision
+                code = ''.join(secrets.choice(alphabet) for _ in range(6))
+                try:
+                    conn.execute("UPDATE tenants SET short_code = ? WHERE id = ?", (code, row['id']))
+                    break
+                except Exception:
+                    continue
+        print("Migration complete: tenants.short_code ready.")
+
+
+def migrate_add_owner_org_id():
+    """Add org_id to owners table and backfill from property assignments. Idempotent."""
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(owners)").fetchall()]
+        if 'org_id' not in cols:
+            conn.execute("ALTER TABLE owners ADD COLUMN org_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_owners_org ON owners(org_id)")
+        # Backfill org_id from property_owners → properties for owners that don't have one yet
+        conn.execute("""
+            UPDATE owners SET org_id = (
+                SELECT p.organization_id
+                FROM property_owners po
+                JOIN properties p ON p.id = po.property_id
+                WHERE po.owner_id = owners.id AND p.organization_id IS NOT NULL
+                LIMIT 1
+            )
+            WHERE org_id IS NULL
+        """)
+        print("Migration complete: owners.org_id ready.")

@@ -144,6 +144,16 @@
     <small class="text-muted">
       {{ report.collections.payment_count or 0 }} payment{{ 's' if (report.collections.payment_count or 0) != 1 }} received in period
     </small>
+    {% set ab = report.collections.allocation_breakdown if report.collections.allocation_breakdown is defined else {} %}
+    {% set to_current = ab.to_current_period_charges if ab else 0 %}
+    {% set to_arrears = ab.to_past_period_charges if ab else 0 %}
+    {% if to_arrears > 0 %}
+    <div style="margin-top:10px;font-size:12px;color:var(--ink-3);background:var(--surface-2);border-radius:6px;padding:8px 12px;">
+      Of KES {{ "{:,.0f}".format(verified) }} received:
+      <strong style="color:var(--ink-2);">KES {{ "{:,.0f}".format(to_current) }}</strong> applied to this period's charges
+      · <strong style="color:#92400e;">KES {{ "{:,.0f}".format(to_arrears) }}</strong> cleared prior outstanding balances
+    </div>
+    {% endif %}
   </div>
 </div>
 
@@ -271,7 +281,7 @@
 {# CHARGES BREAKDOWN #}
 {% if report.charges.by_type %}
 <div class="rpt-section">
-  <div class="rpt-section-header">Monthly Charges</div>
+  <div class="rpt-section-header">Monthly Charges <span style="font-size:11px;font-weight:400;color:var(--ink-3);">— "Collected" = amount allocated to these charges (FIFO clears oldest debt first)</span></div>
   {% set collected_map = report.charges.collected_by_type if report.charges.collected_by_type is defined else {} %}
   {% set collected_total = report.charges.total_collected_on_period_charges if report.charges.total_collected_on_period_charges is defined else 0 %}
   <div class="rpt-section-body" style="padding:0;">

@@ -145,6 +145,18 @@ def get_tenant_statement(conn, tenant_id, property_id):
         ORDER BY p.payment_date
     """, (unit_id, move_in)).fetchall()
 
+    # Fetch allocation breakdown for each payment
+    payment_allocations_map = {}
+    for p in payments:
+        allocs = conn.execute("""
+            SELECT pa.amount, rc.charge_type, rc.period
+            FROM payment_allocations pa
+            JOIN rent_charges rc ON pa.charge_id = rc.id
+            WHERE pa.payment_id = ?
+            ORDER BY CASE WHEN rc.period = 'ARREARS' THEN '0000-00' ELSE rc.period END, rc.charge_type
+        """, (p['id'],)).fetchall()
+        payment_allocations_map[p['id']] = [dict(a) for a in allocs]
+
     # ── Open claims (no matching payment yet) ─────────────────
     raw_claims = conn.execute("""
         SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status,
@@ -212,11 +224,13 @@ def get_tenant_statement(conn, tenant_id, property_id):
         description = f"Opening arrears — {label}" if is_arrears else f"{label} — {c['period']}"
         rows.append({
             'row_type':    'charge',
-            'row_date':    c['row_date'],
+            'row_date':    (tenant.get('move_in_date') or c['row_date']) if is_arrears else c['row_date'],
             'period':      c['period'],
             'description': description,
             'is_arrears':  is_arrears,
             'debit':       amount,
+            'allocated':   allocated,
+            'remaining':   round(amount - allocated, 2),
             'credit':      None,
             'ref':         None,
             'sender':      None,
@@ -238,6 +252,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
             'sender':      p['sender_name'],
             'status':      'Verified',
             'notes':       p['notes'],
+            'allocations': payment_allocations_map.get(p['id'], []),
         })
 
     # Sort: ARREARS first, then by date asc; on same date charges before payments
@@ -255,5 +270,16 @@ def get_tenant_statement(conn, tenant_id, property_id):
         else:
             balance -= r['credit']
         r['running_balance'] = round(balance, 2)
+
+    tenant['arrears_remaining'] = sum(
+        r['remaining'] for r in rows if r['row_type'] == 'charge' and r['is_arrears']
+    )
+    tenant['monthly_overdue'] = sum(
+        r['remaining'] for r in rows if r['row_type'] == 'charge' and not r['is_arrears']
+    )
+    tenant['pending_total'] = sum(
+        float(c['claimed_amount'] or 0)
+        for c in open_claims if c['status'] == 'pending'
+    )
 
     return tenant, rows, open_claims

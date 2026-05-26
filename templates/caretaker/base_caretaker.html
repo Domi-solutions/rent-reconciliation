@@ -51,8 +51,14 @@
          href="{{ url_for('caretaker.tenants', property_id=property.id) }}">Tenants</a>
       <a class="ct-nav-tab {% if active_tab == 'water' %}active{% endif %}"
          href="{{ url_for('caretaker.water_list', property_id=property.id) }}">Water</a>
-      <a class="ct-nav-tab {% if active_tab == 'log_payment' %}active{% endif %}"
-         href="{{ url_for('caretaker.log_payment', property_id=property.id) }}">Log Payment</a>
+      <a class="ct-nav-tab {% if active_tab in ('payment_activity', 'log_payment') %}active{% endif %}"
+         href="{{ url_for('caretaker.payment_activity', property_id=property.id) }}"
+         style="position:relative;">
+        Payments
+        {% if ct_tenant_pending_count > 0 %}
+        <span style="background:#2563eb;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;">{{ ct_tenant_pending_count }}</span>
+        {% endif %}
+      </a>
       <a class="ct-nav-tab {% if active_tab == 'issues' %}active{% endif %}"
          href="{{ url_for('caretaker.issues', property_id=property.id) }}">Issues</a>
       <a class="ct-nav-tab {% if active_tab == 'messages' %}active{% endif %}"

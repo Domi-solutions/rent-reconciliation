@@ -599,6 +599,20 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **org-scoped statement bug** — `auto_assign_payment` and bulk-assign routes were querying `bs.property_id = ?` (fails for org-scoped statements with `property_id = NULL`); both now use `bs.org_id` when org exists
 - [x] **`bank_transactions.ignored`** — new flag (`migrate_add_bank_txn_ignored`): `ignored=1` excludes a transaction from the unassigned count without deleting it; row remains assignable; `POST /payments/ignore/<txn_id>` + `POST /payments/unignore/<txn_id>` routes; "Ignored" tab on review page with Assign + Restore buttons; CLAUDE.md rule: always add `AND (bt.ignored IS NULL OR bt.ignored = 0)` to unassigned-credit queries
 
+### Session 24: SMS parser fixes, pending-adjusted balance, caretaker mobile statement, assign_group fix (2026-05-26) ✅
+
+- [x] **Test claim deleted from prod** — CLM-974CA6A0 (KES 54,000, ref UBGRN6ZBGS) hard-deleted via SSH Python heredoc; tenant flag cleared; validated via prod DB query
+- [x] **ARREARS row date** — `get_tenant_statement()` now uses `tenant.get('move_in_date') or c['row_date']` for ARREARS rows; previously showed upload date (May 19) instead of move-in date
+- [x] **Balance breakdown widget** — `tenant['arrears_remaining']`, `tenant['monthly_overdue']`, `tenant['pending_total']` computed in `get_tenant_statement()` before return; amber callout box added to `tenant_statement.html` (admin) and `viewer/tenant_statement.html` when arrears remain; shows split between old arrears vs monthly charges unpaid
+- [x] **Caretaker statement mobile redesign** — `caretaker/statement.html` fully rewritten; `l-row`, `l-amount`, `l-alloc`, `s-pill` CSS classes; `@media (max-width: 576px)` tighter padding; `word-break: break-all` on ref codes; Verify button `btn-primary w-100` with 10px padding; allocation breakdown at 12px with green left border
+- [x] **Pending-adjusted balance in caretaker statement** — balance header shows `final_balance - tenant.pending_total`; blue breakdown box shows actual vs pending vs if-verified; avoids caretakers chasing tenants who have submitted unverified claims
+- [x] **M-Pesa date on pending claims** — all three statement templates now show `c.mpesa_date[:10]` when available (extracted from message text) instead of `c.created_at` (submission date); helps identify which bank statement period to check
+- [x] **SMS parser — National Bank `Ksh.` amount fix** — `extract_amount_multiformat()` patterns 1 and 2 now include `\.?` optional period after `Ksh`; was silently returning `None` for National Bank format (`Ksh. 13300.00`), leaving claimed_amount as 0 on all National Bank claims
+- [x] **SMS parser — National Bank timestamp fix** — `extract_timestamp_multiformat()` gained `p0b` pattern (`DD/MM/YY HH:MM:SS` 24-hour, no AM/PM, no "at") between `p0` and `p1`; was skipping all National Bank timestamps, leaving `mpesa_date` NULL and mpesa_period unset (blocked period-scoped bank matching)
+- [x] **Backfill run on prod** — after deploy, SSH script re-ran parser on all pending/flagged National Bank claims and patched `claimed_amount` + `mpesa_date` + `mpesa_period` in-place; 14 claims updated
+- [x] **Pre-2026 pending claims deleted** — all `status='pending'` claims with T-series refs (2025) deleted from prod via SSH; avoids false "awaiting verification" display for refs that predate any uploaded statements
+- [x] **`assign_group` org-scoped fix** — unit validation in `assign_group()` in `app.py` was scoped to session's selected property (`WHERE id=? AND property_id=?`); since the group-units dropdown is org-scoped, cross-property assigns returned "Selected unit not found"; fixed by validating via org join when `_org_id` exists; `property_id` for payment now derived from `unit['property_id']` not session property
+
 ### Session 23: Short portal links, messaging variable helpers, tenant self-report claims, caretaker UX (2026-05-25) ✅
 
 - [x] **`AT_API_KEY_SANDBOX` → `AT_API_KEY`** — env var name in `.env` corrected; `delivery.py` now finds the key in sandbox mode
@@ -619,6 +633,16 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] **Caretaker nav merged** — "Log Payment" + "Payments" tabs merged into single **Payments** tab at `payment_activity`; blue badge shows `ct_tenant_pending_count`; both `log_payment` and `payment_activity` highlight this tab
 - [x] **`payment_activity` shows self-reported claims** — query updated to include `source` and `tenant_short_code`; "Self-reported" grey badge; tenant name is clickable link to tenant portal; "← Log Payment" replaced with primary button
 - [x] **Caretaker contact card on tenant portal** — `portal` and `pay` routes fetch first active caretaker with a phone; both `portal.html` and `pay.html` show "Contact your caretaker" card with name, phone, Call button
+
+### Session 24: Bug fixes, multi-tenant owner isolation, allocation transparency (2026-05-26) ✅
+
+- [x] **Owner deletion FK fix** — `DELETE FROM owners` was blocked by `PRAGMA foreign_keys = ON` because `owner_messages.owner_id` references `owners(id)`; fixed by adding `DELETE FROM owner_messages WHERE owner_id = ?` before `DELETE FROM owners` in `delete_owner` route
+- [x] **owners.org_id isolation** — owners table had no `org_id`; all orgs were seeing each other's owners; added `org_id` column via `migrate_add_owner_org_id`, backfilled from `property_owners → properties`; `manage_owners` and `create_owner` now scoped to `WHERE o.org_id = ?`; index `idx_owners_org` added
+- [x] **Platform modal backdrop fix** — Bootstrap modal backdrop persisted via browser bfcache on back-navigation, freezing the platform page; fixed with `pageshow` cleanup script in `base_platform.html`; `editOrgModal` null guard prevents programmatic show error
+- [x] **Bank statement OOM fix** — pdfplumber OOM-killing 256MB Fly.io VM on real bank statements; VM scaled to 512MB; 20MB file size guard added to `upload_statement` route
+- [x] **`_caretakers_for_alert` UnboundLocalError** — variable was defined inside the flagging loop in `verify_payments()` but referenced earlier in the pending-claims loop on amount mismatch; fixed by moving the query before the `for claim in pending_claims:` loop
+- [x] **Collection report transparency** — ARREARS charges (created 2026-05-19, before all monthly charges) absorbed payments via FIFO before monthly charges, causing April report to show low "collected" figures; existing `allocation_breakdown` in report JSON now surfaced in `viewer/report_detail.html`; monthly charges header now shows FIFO note; hero KPI was already correct (payment-date based)
+- [x] **Caretaker statement allocation breakdown** — `get_tenant_statement()` now returns per-payment allocation detail (`payment_allocations_map`) and per-charge `allocated`/`remaining` fields; caretaker `statement.html` shows payment-to-charge breakdown and charge settlement status; `?from=arrears` context-aware back link; `tenant.arrears_remaining`, `tenant.monthly_overdue`, `tenant.pending_total` computed and returned
 
 ### Session 22: Platform org management, property deletion fix (2026-05-25) ✅
 

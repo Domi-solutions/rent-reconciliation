@@ -1,5 +1,9 @@
 """Admin messaging: broadcasts, templates, and reminder settings. Scoped to current property."""
 
+import os
+from datetime import date, timedelta
+import calendar
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from src.database.db import get_connection, generate_id
 
@@ -35,6 +39,67 @@ def _substitute(text, variables):
     return out
 
 
+def _next_due_date(rent_due_day):
+    """Return next due date string given property.rent_due_day (0 = last day of month)."""
+    today = date.today()
+    if rent_due_day == 0:
+        last = calendar.monthrange(today.year, today.month)[1]
+        d = date(today.year, today.month, last)
+        if d < today:
+            if today.month == 12:
+                d = date(today.year + 1, 1, 31)
+            else:
+                nm = today.month + 1
+                d = date(today.year, nm, calendar.monthrange(today.year, nm)[1])
+    else:
+        d = date(today.year, today.month, min(rent_due_day, calendar.monthrange(today.year, today.month)[1]))
+        if d < today:
+            if today.month == 12:
+                d = date(today.year + 1, 1, min(rent_due_day, 31))
+            else:
+                nm = today.month + 1
+                d = date(today.year, nm, min(rent_due_day, calendar.monthrange(today.year, nm)[1]))
+    return d.strftime('%-d %b %Y')
+
+
+def _build_variables(conn, tenant, prop, base_url=None):
+    """Build substitution variables for a single tenant."""
+    unit_info = conn.execute(
+        "SELECT monthly_rent, service_charge FROM units WHERE id = ?",
+        (tenant['unit_id'],)
+    ).fetchone() if tenant['unit_id'] else None
+
+    bal_row = conn.execute(
+        "SELECT balance, total_paid FROM unit_balances WHERE unit_id = ?",
+        (tenant['unit_id'],)
+    ).fetchone() if tenant['unit_id'] else None
+
+    caretaker = conn.execute(
+        "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL ORDER BY created_at LIMIT 1",
+        (prop['id'],)
+    ).fetchone()
+
+    base = (base_url or os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
+    short_code = tenant['short_code'] if 'short_code' in tenant.keys() else None
+    portal_link = f"{base}/t/{short_code}" if short_code else ''
+
+    rent_due_day = prop['rent_due_day'] if prop and 'rent_due_day' in prop.keys() else 1
+
+    return {
+        'tenant_name': tenant['name'] or '',
+        'unit_number': tenant['unit_number'] or '',
+        'balance': f"{float(bal_row['balance'] or 0):,.0f}" if bal_row else '0',
+        'monthly_rent': f"{float(unit_info['monthly_rent'] or 0):,.0f}" if unit_info else '0',
+        'service_charge': f"{float(unit_info['service_charge'] or 0):,.0f}" if unit_info else '0',
+        'total_paid': f"{float(bal_row['total_paid'] or 0):,.0f}" if bal_row else '0',
+        'due_date': _next_due_date(rent_due_day),
+        'caretaker_phone': caretaker['phone'] if caretaker else '',
+        'portal_link': portal_link,
+        'month': '',
+        'amount': '',
+    }
+
+
 @messaging_bp.route('/')
 def dashboard():
     """Messaging dashboard: counts, recent activity, and quick-send search."""
@@ -54,7 +119,7 @@ def dashboard():
             (pid,),
         ).fetchone()[0]
         recent = conn.execute("""
-            SELECT m.id, m.subject, m.message_type, m.created_at, t.name AS tenant_name
+            SELECT m.id, m.tenant_id, m.subject, m.message_type, m.created_at, t.name AS tenant_name
             FROM messages m
             JOIN tenants t ON m.tenant_id = t.id
             WHERE m.property_id = ?
@@ -112,16 +177,19 @@ def thread(tenant_id):
             body = request.form.get('body', '').strip()
             channel = request.form.get('channel', 'portal')
             if subject:
+                variables = _build_variables(conn, tenant, prop)
+                subj = _substitute(subject, variables)
+                b = _substitute(body, variables)
                 msg_id = generate_id('MSG')
                 conn.execute("""
                     INSERT INTO messages
                         (id, property_id, tenant_id, subject, body, template_body,
                          message_type, delivery_channel, delivery_status)
                     VALUES (?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
-                """, (msg_id, pid, tenant_id, subject, body, body, channel))
+                """, (msg_id, pid, tenant_id, subj, b, body, channel))
                 if channel == 'sms' and tenant['phone']:
                     from src.messaging.delivery import send_sms_async
-                    sms_text = f"{subject}\n\n{body}" if body else subject
+                    sms_text = f"{subj}\n\n{b}" if b else subj
                     send_sms_async([{'phone': tenant['phone']}], sms_text)
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)"
@@ -184,7 +252,7 @@ def broadcast():
         pid = prop['id']
 
         tenants = conn.execute("""
-            SELECT t.id, t.name, t.phone, t.unit_id, u.unit_number
+            SELECT t.id, t.name, t.phone, t.unit_id, t.short_code, u.unit_number
             FROM tenants t
             LEFT JOIN units u ON t.unit_id = u.id
             WHERE t.property_id = ?
@@ -232,22 +300,7 @@ def broadcast():
                 if not t:
                     continue
                 selected_tenants.append(t)
-                unit_info = rent_by_unit.get(t['unit_id'])
-                monthly_rent = float(unit_info['monthly_rent']) if unit_info and unit_info['monthly_rent'] is not None else 0.0
-                service_charge = float(unit_info['service_charge']) if unit_info and unit_info['service_charge'] is not None else 0.0
-                bal_val = balance_by_unit.get(t['unit_id'], 0.0)
-                total_paid = paid_by_unit.get(t['unit_id'], 0.0)
-                variables = {
-                    'tenant_name': t['name'] or '',
-                    'unit_number': t['unit_number'] or '',
-                    'balance': f"{bal_val:,.0f}",
-                    'monthly_rent': f"{monthly_rent:,.0f}",
-                    'service_charge': f"{service_charge:,.0f}",
-                    'total_paid': f"{total_paid:,.0f}",
-                    'month': '',
-                    'amount': '',
-                    'due_date': '',
-                }
+                variables = _build_variables(conn, t, prop)
                 subj = _substitute(subject, variables)
                 b = _substitute(body, variables)
                 msg_id = generate_id('MSG')
@@ -256,19 +309,14 @@ def broadcast():
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
                 """, (msg_id, pid, tenant_id, batch_id, subj, b, body, delivery_channel))
 
-                if delivery_channel == 'portal' and t['phone']:
-                    _token_row = conn.execute(
-                        "SELECT access_token FROM tenants WHERE id = ?", (tenant_id,)
-                    ).fetchone()
-                    if _token_row and _token_row['access_token']:
-                        try:
-                            from src.messaging.delivery import send_sms
-                            _base = request.host_url.rstrip('/')
-                            _link = f"{_base}/tenant/{_token_row['access_token']}"
-                            _ping = f"Hi {t['name']}, you have a new message. View: {_link}"
-                            send_sms([{'phone': t['phone']}], _ping)
-                        except Exception:
-                            pass
+                if delivery_channel == 'portal' and t['phone'] and t['short_code']:
+                    try:
+                        from src.messaging.delivery import send_sms
+                        _base = (os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
+                        _ping = f"Hi {t['name']}, you have a new message. View: {_base}/t/{t['short_code']}"
+                        send_sms([{'phone': t['phone']}], _ping)
+                    except Exception:
+                        pass
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -299,8 +347,18 @@ def broadcast():
 
             if channel == 'sms':
                 from src.messaging.delivery import send_sms
-                sms_text = f"{subject}\n\n{body}"
-                sent, failed, errors = send_sms([dict(t) for t in selected_tenants], sms_text)
+                # Send per-tenant so each gets their own substituted body
+                sent, failed, errors = 0, 0, []
+                for t in selected_tenants:
+                    if not t['phone']:
+                        failed += 1
+                        continue
+                    v = _build_variables(conn, t, prop)
+                    sms_text = _substitute(f"{subject}\n\n{body}", v)
+                    s, f, e = send_sms([{'phone': t['phone']}], sms_text)
+                    sent += s
+                    failed += f
+                    errors += e
                 if failed == 0:
                     flash(f'SMS sent to {sent} tenant(s).', 'success')
                 elif sent > 0:

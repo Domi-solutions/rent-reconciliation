@@ -380,6 +380,30 @@
 
 ---
 
+## Session 24 — 2026-05-26
+
+---
+
+### `assign_group` validates units against session property instead of org — cross-property assigns silently fail
+**File(s):** `app.py` — `assign_group()` route
+**Root cause:** The group-units `<select>` in the statement review page is populated org-wide (all properties in the org). Cursor wrote the server-side validation as `WHERE id = ? AND property_id = ?`, using the session's selected property. Any unit that belongs to a sibling property passes the dropdown but fails the validation, returning "Selected unit not found for this property." Cursor assumed the dropdown scope matched the session scope.
+**What Cursor did:** `unit = conn.execute("SELECT id, unit_number FROM units WHERE id = ? AND property_id = ?", (unit_id, property_row['id'])).fetchone()` — always scoped to session property.
+**What it should do:** When an `org_id` is available, validate via org join: `SELECT u.id, u.unit_number, u.property_id FROM units u JOIN properties p ON u.property_id = p.id WHERE u.id = ? AND p.organization_id = ?`. Use `unit['property_id']` (the unit's actual property) for the payment INSERT — never `property_row['id']` (the session's selected property).
+**Why it matters:** In multi-property orgs the caretaker or admin regularly assigns credits from an org-wide bank statement to units on any property. The mismatched scope silently blocks every cross-property assign.
+**Spotted:** 2026-05-26 (Session 24)
+
+---
+
+### SMS parser silently fails on National Bank message format — amount and date return None
+**File(s):** `src/parsers/sms_parser.py` — `extract_amount_multiformat()`, `extract_timestamp_multiformat()`
+**Root cause:** National Bank confirmation SMS uses two non-standard formats: (1) `Ksh. 13300.00` — with a period after `Ksh`; (2) `28/08/25 10:58:21` — 24-hour timestamp with no AM/PM and no "at" keyword. Cursor modelled patterns on the standard Kenya M-Pesa format (`Ksh 13,300.00` and `on DD/MM/YY at H:MM AM/PM`). The patterns didn't include the literal dot or the 24-hour no-AM/PM case, so both returned `None` silently — leaving `claimed_amount=0` and `mpesa_period=NULL` on all National Bank claims.
+**What Cursor did:** `r'(?:KES|Ksh)\s*(\d+\.\d{2})'` — no `\.?` for optional period. No pattern for `DD/MM/YY HH:MM:SS` without AM/PM.
+**What it should do:** Pattern 1 and 2 in `extract_amount_multiformat()` must include `\.?` after `Ksh` to handle the period: `r'(?:KES|Ksh)\.?\s*...'`. In `extract_timestamp_multiformat()`, add a `p0b` pattern between `p0` and `p1`: `r'(\d{1,2})/(\d{1,2})/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})(?!\s*(AM|PM))'` with a negative lookahead to avoid matching the AM/PM-bearing patterns. Parse `day/month/yr` (not month/day).
+**Why it matters:** Claims submitted from National Bank messages all showed `KES 0 · no date` in the statement view. The `mpesa_period=NULL` also prevented period-scoped bank matching, meaning every National Bank claim was left permanently pending even after the correct statement was uploaded.
+**Spotted:** 2026-05-26 (Session 24)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

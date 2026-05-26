@@ -3,37 +3,67 @@
 
 {% block extra_css %}
 <style>
-  .ct-stmt-header { margin-bottom: 20px; }
-  .ct-stmt-name   { font-size: 18px; font-weight: 700; color: var(--ink); }
-  .ct-stmt-sub    { font-size: 13px; color: var(--ink-3); margin-top: 2px; }
-  .ct-balance     { display:inline-block; padding:4px 12px; border-radius:12px; font-size:13px; font-weight:700; margin-top:8px; }
+  /* ── Header ── */
+  .ct-stmt-name { font-size:18px; font-weight:700; color:var(--ink); }
+  .ct-stmt-sub  { font-size:13px; color:var(--ink-3); margin-top:3px; line-height:1.6; }
+  .ct-stmt-sub a { color:var(--ink-3); text-decoration:none; }
+  .ct-balance   { display:inline-block; padding:5px 14px; border-radius:20px; font-size:14px; font-weight:700; margin-top:10px; }
   .ct-bal-arrears { background:#f8d7da; color:#842029; }
   .ct-bal-current { background:#d1fae5; color:#065f46; }
 
-  .ct-claim { border-radius:8px; padding:12px 14px; margin-bottom:10px; font-size:13px; }
+  /* ── Claims ── */
+  .ct-claim         { border-radius:10px; padding:14px 16px; margin-bottom:10px; font-size:13px; }
   .ct-claim-flagged { background:#fff5f5; border:1px solid #f1aeb5; }
   .ct-claim-pending { background:#eff6ff; border:1px solid #bfdbfe; }
-  .ct-ref { font-family:monospace; font-size:13px; font-weight:700; background:#f1f5f9; padding:3px 8px; border-radius:4px; letter-spacing:.5px; }
+  .ct-ref { font-family:monospace; font-size:13px; font-weight:700; background:#f1f5f9;
+            padding:3px 8px; border-radius:4px; letter-spacing:.5px;
+            word-break:break-all; display:inline-block; max-width:100%; }
 
-  .ledger-row { border-bottom:1px solid var(--border); padding:10px 0; }
-  .ledger-row:last-child { border-bottom:none; }
-  .ledger-row-outstanding { background:#fff5f5; margin:0 -16px; padding:10px 16px; }
-  .ledger-row-partial     { background:#fffbeb; margin:0 -16px; padding:10px 16px; }
-  .ledger-row-arrears     { background:#fff8e7; margin:0 -16px; padding:10px 16px; border-left:3px solid #d97706; padding-left:13px; }
-  .ledger-date   { font-size:11px; color:var(--ink-3); }
-  .ledger-desc   { font-size:13px; font-weight:600; color:var(--ink); }
-  .ledger-amount { font-size:14px; font-weight:700; }
-  .ledger-bal    { font-size:11px; color:var(--ink-3); }
-  .amount-charge  { color:#dc3545; }
-  .amount-payment { color:#16a34a; }
-  .status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  /* ── Ledger rows ── */
+  .l-row { border-bottom:1px solid var(--border); padding:14px 16px; }
+  .l-row:last-child { border-bottom:none; }
+  .l-row-outstanding { background:#fff5f5; border-left:3px solid #dc3545; padding-left:13px; }
+  .l-row-partial     { background:#fffbeb; border-left:3px solid #d97706; padding-left:13px; }
+  .l-row-arrears     { background:#fff8e7; border-left:3px solid #d97706; padding-left:13px; }
+  .l-row-payment     { background:#f0fdf4; }
+
+  .l-date  { font-size:11px; color:var(--ink-3); margin-bottom:2px; }
+  .l-desc  { font-size:14px; font-weight:600; color:var(--ink); line-height:1.3; }
+  .l-meta  { font-size:12px; color:var(--ink-3); margin-top:3px; }
+  .l-alloc { margin-top:8px; padding-left:10px; border-left:2px solid #bbf7d0; }
+  .l-alloc-line { font-size:12px; color:var(--ink-3); line-height:1.8; }
+
+  .l-right { text-align:right; flex-shrink:0; margin-left:14px; min-width:80px; }
+  .l-amount { font-size:16px; font-weight:700; line-height:1.2; }
+  .l-amount-charge  { color:#dc3545; }
+  .l-amount-payment { color:#16a34a; }
+  .l-bal   { font-size:11px; color:var(--ink-3); margin-top:3px; }
+  .l-status-note { font-size:12px; margin-top:4px; }
+
+  .s-pill { display:inline-block; padding:3px 9px; border-radius:10px; font-size:11px; font-weight:600; margin-top:4px; }
   .pill-paid        { background:#d1fae5; color:#065f46; }
   .pill-outstanding { background:#f8d7da; color:#842029; }
   .pill-partial     { background:#fef9c3; color:#854d0e; }
   .pill-verified    { background:#dbeafe; color:#1e40af; }
 
+  /* ── Verify box ── */
+  .ct-verify-box { background:var(--surface); border:1px solid var(--border);
+                   border-radius:var(--r-card); padding:16px; margin-bottom:16px; }
+
+  /* ── Mobile ── */
+  @media (max-width:576px) {
+    .l-row   { padding:12px 12px; }
+    .l-desc  { font-size:13px; }
+    .l-amount { font-size:15px; }
+    .l-right { min-width:72px; margin-left:10px; }
+    .ct-verify-box { padding:14px 12px; }
+    .ct-claim { padding:12px 14px; }
+  }
+
   @media print {
     .ct-no-print { display:none !important; }
+    body { font-size:12px; }
+    .l-row { padding:8px 0; }
   }
 </style>
 {% endblock %}
@@ -41,42 +71,95 @@
 {% block content %}
 {% set final_balance = ledger[-1].running_balance if ledger else 0 %}
 
-{# ── Header ── #}
-<div class="ct-stmt-header ct-no-print">
+{# ── Back link ── #}
+<div class="mb-3 ct-no-print">
+  {% set from_page = request.args.get('from', 'tenants') %}
+  {% if from_page == 'arrears' %}
+  <a href="{{ url_for('caretaker.arrears', property_id=property.id) }}"
+     style="font-size:13px; color:var(--ink-3); text-decoration:none;">← Arrears</a>
+  {% else %}
   <a href="{{ url_for('caretaker.tenants', property_id=property.id) }}"
      style="font-size:13px; color:var(--ink-3); text-decoration:none;">← Tenants</a>
+  {% endif %}
 </div>
-<div class="ct-stmt-header">
+
+{# ── Tenant header ── #}
+<div style="margin-bottom:20px;">
   <div class="ct-stmt-name">{{ tenant.name }}</div>
   <div class="ct-stmt-sub">
     Unit {{ tenant.unit_number or '—' }}
     {% if tenant.phone %}
-      · <a href="tel:{{ tenant.phone }}" style="color:var(--ink-3); text-decoration:none;">{{ tenant.phone }}</a>
+      · <a href="tel:{{ tenant.phone }}">{{ tenant.phone }}</a>
     {% endif %}
     {% if tenant.move_in_date %} · Since {{ tenant.move_in_date }}{% endif %}
   </div>
+
+  {% set adjusted_balance = final_balance - tenant.pending_total %}
   <div>
-    {% if final_balance > 0 %}
+    {% if tenant.pending_total > 0 %}
+      {% if adjusted_balance <= 0 %}
+      <span class="ct-balance ct-bal-current">On track — pending verification</span>
+      {% else %}
+      <span class="ct-balance ct-bal-arrears">KES {{ "{:,.0f}".format(adjusted_balance) }} owed</span>
+      {% endif %}
+    {% elif final_balance > 0 %}
     <span class="ct-balance ct-bal-arrears">KES {{ "{:,.0f}".format(final_balance) }} owed</span>
     {% else %}
     <span class="ct-balance ct-bal-current">All paid up</span>
     {% endif %}
   </div>
-  <div class="mt-2 ct-no-print">
+
+  {% if tenant.pending_total > 0 %}
+  <div style="margin-top:10px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px; font-size:13px;">
+    <div style="font-weight:700; color:#1e40af; margin-bottom:6px;">Pending bank verification</div>
+    <div style="display:flex; justify-content:space-between; color:#1e40af; margin-bottom:3px;">
+      <span>Actual balance</span>
+      <strong>KES {{ "{:,.0f}".format(final_balance) }}</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between; color:#1e40af; margin-bottom:3px;">
+      <span>Pending claims</span>
+      <strong>− KES {{ "{:,.0f}".format(tenant.pending_total) }}</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between; color:#1e40af; border-top:1px solid #bfdbfe; padding-top:6px; margin-top:3px;">
+      <span>Balance if verified</span>
+      <strong>{% if adjusted_balance <= 0 %}KES {{ "{:,.0f}".format(-adjusted_balance) }} credit{% else %}KES {{ "{:,.0f}".format(adjusted_balance) }} owed{% endif %}</strong>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if tenant.arrears_remaining > 0 %}
+  <div style="margin-top:12px; background:#fff8e7; border:1px solid #fde68a; border-radius:8px; padding:12px 14px; font-size:13px;">
+    <div style="font-weight:700; color:#854d0e; margin-bottom:6px;">Balance breakdown</div>
+    <div style="display:flex; justify-content:space-between; color:#92400e; margin-bottom:3px;">
+      <span>Old arrears remaining</span>
+      <strong>KES {{ "{:,.0f}".format(tenant.arrears_remaining) }}</strong>
+    </div>
+    {% if tenant.monthly_overdue > 0 %}
+    <div style="display:flex; justify-content:space-between; color:#92400e;">
+      <span>Monthly charges unpaid</span>
+      <strong>KES {{ "{:,.0f}".format(tenant.monthly_overdue) }}</strong>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="mt-3 ct-no-print">
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">Print / Save PDF</button>
   </div>
 </div>
 
 {# ── Quick Verify ── #}
-<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:14px 16px;margin-bottom:16px;" class="ct-no-print">
-  <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">Verify a payment</div>
-  <div style="font-size:12px;color:var(--ink-3);margin-bottom:8px;">
-    Paste M-Pesa message or enter reference code
+<div class="ct-verify-box ct-no-print">
+  <div style="font-size:13px; font-weight:700; color:var(--ink); margin-bottom:6px;">Verify a payment</div>
+  <div style="font-size:12px; color:var(--ink-3); margin-bottom:10px;">
+    Paste M-Pesa confirmation or enter a reference code
   </div>
-  <textarea id="ct-qv-input" class="form-control form-control-sm" rows="2"
-            placeholder="e.g. QJC5EFAXCQ or full M-Pesa SMS"
-            style="font-size:12px;resize:none;margin-bottom:8px;"></textarea>
-  <button id="ct-qv-btn" class="btn btn-sm btn-primary w-100">Check against bank records</button>
+  <textarea id="ct-qv-input" class="form-control" rows="3"
+            placeholder="e.g. QJC5EFAXCQ  or  Confirmed. KES 10,000 sent to MOWIN…"
+            style="font-size:13px; resize:none; margin-bottom:10px;"></textarea>
+  <button id="ct-qv-btn" class="btn btn-primary w-100" style="font-size:14px; padding:10px;">
+    Check against bank records
+  </button>
   <div id="ct-qv-result" class="mt-3" style="display:none;"></div>
 </div>
 
@@ -112,36 +195,40 @@
     if (d.status === 'parse_error') {
       html = `<div class="ct-claim ct-claim-flagged">
         <strong style="color:#842029;">Could not read reference</strong>
-        <div style="font-size:12px;margin-top:4px;">${d.message || ''}</div>
+        <div style="font-size:13px; margin-top:6px;">${d.message || ''}</div>
       </div>`;
     } else if (d.status === 'not_found') {
       html = `<div class="ct-claim ct-claim-flagged">
-        <strong style="color:#842029;">Ref <span class="ct-ref">${d.ref}</span> — not in bank records</strong>
-        <div style="font-size:12px;margin-top:4px;">${d.parsed_amount ? fmt(d.parsed_amount) + ' ' : ''}${d.parsed_sender || ''}</div>
-        <div style="font-size:11px;color:#6c757d;margin-top:4px;">
-          Not yet in any uploaded bank statement. Ask admin to upload the latest statement.
+        <strong style="color:#842029;">Not found in bank records</strong>
+        <div style="margin-top:6px;"><span class="ct-ref">${d.ref}</span></div>
+        <div style="font-size:13px; margin-top:6px;">${d.parsed_amount ? fmt(d.parsed_amount) + ' · ' : ''}${d.parsed_sender || ''}</div>
+        <div style="font-size:12px; color:#6c757d; margin-top:6px;">
+          Ask admin to upload the latest bank statement.
         </div>
       </div>`;
     } else if (d.status === 'already_this_unit') {
-      html = `<div class="ct-claim" style="background:#d1fae5;border:1px solid #6ee7b7;">
+      html = `<div class="ct-claim" style="background:#d1fae5; border:1px solid #6ee7b7;">
         <strong style="color:#065f46;">✓ Already recorded for this tenant</strong>
-        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
-        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span></div>
+        <div style="margin-top:6px;">${fmt(d.amount)}</div>
+        <div style="font-size:13px; color:#6c757d; margin-top:3px;">${d.sender || ''} · ${d.date || ''}</div>
+        <div style="margin-top:6px;"><span class="ct-ref">${d.ref}</span></div>
       </div>`;
     } else if (d.status === 'already_other_unit') {
-      html = `<div class="ct-claim" style="background:#fff8e7;border:1px solid #fde68a;">
+      html = `<div class="ct-claim" style="background:#fff8e7; border:1px solid #fde68a;">
         <strong style="color:#92400e;">⚠ Already assigned to unit ${d.assigned_unit}</strong>
-        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
-        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span></div>
+        <div style="margin-top:6px;">${fmt(d.amount)}</div>
+        <div style="font-size:13px; color:#6c757d; margin-top:3px;">${d.sender || ''} · ${d.date || ''}</div>
+        <div style="margin-top:6px;"><span class="ct-ref">${d.ref}</span></div>
       </div>`;
     } else if (d.status === 'found') {
       const assignUrl = assignBase.replace('__TXN__', d.txn_id);
       html = `<div class="ct-claim ct-claim-pending">
-        <strong style="color:#1e40af;">Found — not yet assigned to this tenant</strong>
-        <div style="margin-top:4px;">${fmt(d.amount)} · ${d.sender || ''} · ${d.date || ''}</div>
-        <div style="font-size:11px;margin-top:3px;"><span class="ct-ref">${d.ref}</span> · ${d.statement_filename || ''}</div>
-        <form method="post" action="${assignUrl}" style="margin-top:10px;">
-          <button type="submit" class="btn btn-sm btn-primary w-100" style="font-size:13px;">
+        <strong style="color:#1e40af;">Found — not yet assigned</strong>
+        <div style="margin-top:6px; font-size:15px; font-weight:700;">${fmt(d.amount)}</div>
+        <div style="font-size:13px; color:#6c757d; margin-top:3px;">${d.sender || ''} · ${d.date || ''}</div>
+        <div style="margin-top:6px;"><span class="ct-ref">${d.ref}</span></div>
+        <form method="post" action="${assignUrl}" style="margin-top:12px;">
+          <button type="submit" class="btn btn-primary w-100" style="font-size:14px; padding:10px;">
             Assign ${fmt(d.amount)} to this tenant
           </button>
         </form>
@@ -155,42 +242,45 @@
 {# ── Open claims ── #}
 {% if open_claims %}
 <div class="mb-3">
-  <div style="font-size:12px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px;">Unresolved Claims</div>
+  <div style="font-size:11px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px;">Unresolved Claims</div>
   {% for c in open_claims %}
     {% if c.status == 'flagged' %}
     <div class="ct-claim ct-claim-flagged">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div style="font-weight:700; color:#842029;">⚠ Disputed — ref not found</div>
-        <div style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+        <strong style="color:#842029;">⚠ Disputed — ref not found</strong>
+        <span style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</span>
       </div>
-      <div style="margin-top:4px;">
+      <div style="font-size:15px; font-weight:700; margin-top:6px;">
         KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
-        {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:400;"> · {{ c.mpesa_period }}</span>{% endif %}
       </div>
-      <div style="margin-top:4px;">Ref <span class="ct-ref">{{ c.mpesa_ref }}</span></div>
+      <div style="margin-top:8px;"><span class="ct-ref">{{ c.mpesa_ref }}</span></div>
       {% if c.checked_statements %}
-      <div style="font-size:11px; color:#6c757d; margin-top:5px;">
+      <div style="font-size:12px; color:#6c757d; margin-top:8px;">
         Checked against:
         {% for s in c.checked_statements %}
-          <div style="font-size:11px;">{{ s.filename }}</div>
+          <div>{{ s.filename }}</div>
         {% endfor %}
       </div>
       {% else %}
-      <div style="font-size:11px; color:#6c757d; margin-top:4px;">No bank statement uploaded for this period yet</div>
+      <div style="font-size:12px; color:#6c757d; margin-top:8px;">No bank statement for period {{ c.mpesa_period or '—' }} yet</div>
       {% endif %}
-      <div style="font-size:11px; color:#6c757d; margin-top:5px;">Ask tenant for a valid M-Pesa confirmation. Do not accept new claims until admin clears this.</div>
+      <div style="font-size:12px; color:#6c757d; margin-top:6px;">Ask tenant for a valid M-Pesa confirmation. Do not accept new claims until admin clears this.</div>
     </div>
     {% else %}
     <div class="ct-claim ct-claim-pending">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div style="font-weight:700; color:#1e40af;">Pending — awaiting bank verification</div>
-        <div style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+        <strong style="color:#1e40af;">Pending — awaiting bank verification</strong>
+        <span style="font-size:11px; color:#6c757d;">via {{ c.source_label }}</span>
       </div>
-      <div style="margin-top:4px;">
+      <div style="font-size:15px; font-weight:700; margin-top:6px;">
         KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
-        {% if c.mpesa_period %} · {{ c.mpesa_period }}{% endif %}
+        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:400;"> · {{ c.mpesa_period }}</span>{% endif %}
       </div>
-      <div style="margin-top:4px;">Ref <span class="ct-ref">{{ c.mpesa_ref }}</span></div>
+      <div style="margin-top:8px;"><span class="ct-ref">{{ c.mpesa_ref }}</span></div>
+      <div style="font-size:12px; color:#6c757d; margin-top:6px;">
+        {% if c.mpesa_date %}M-Pesa date: {{ c.mpesa_date[:10] }}{% else %}Submitted {{ c.created_at[:10] if c.created_at else '—' }}{% endif %}
+      </div>
     </div>
     {% endif %}
   {% endfor %}
@@ -200,46 +290,79 @@
 {# ── Ledger ── #}
 <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden;">
   {% if ledger %}
-  <div style="padding:0 16px;">
     {% for r in ledger %}
-    <div class="ledger-row{% if r.is_arrears %} ledger-row-arrears{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} ledger-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} ledger-row-partial{% endif %}">
+    <div class="l-row{% if r.is_arrears %} l-row-arrears{% elif r.row_type == 'payment' %} l-row-payment{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} l-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} l-row-partial{% endif %}">
       <div class="d-flex justify-content-between align-items-start">
+
+        {# Left: date, description, ref, allocations #}
         <div style="flex:1; min-width:0;">
-          <div class="ledger-date">{{ r.row_date[:10] if r.row_date else '—' }}</div>
-          <div class="ledger-desc">{{ r.description }}</div>
+          <div class="l-date">{{ r.row_date[:10] if r.row_date else '—' }}</div>
+          <div class="l-desc">{{ r.description }}</div>
+
           {% if r.ref %}
-          <div style="margin-top:3px;">
+          <div style="margin-top:5px; overflow:hidden;">
             <span class="ct-ref">{{ r.ref }}</span>
           </div>
           {% endif %}
+
           {% if r.sender %}
-          <div style="font-size:11px; color:var(--ink-3);">{{ r.sender }}</div>
+          <div class="l-meta">{{ r.sender }}</div>
+          {% endif %}
+
+          {# Allocation breakdown under payments #}
+          {% if r.row_type == 'payment' and r.allocations %}
+          <div class="l-alloc">
+            {% for a in r.allocations %}
+            <div class="l-alloc-line">
+              {% if a.period == 'ARREARS' %}Opening arrears
+              {% else %}{{ a.charge_type|capitalize }} {{ a.period }}{% endif %}
+              — <strong style="color:var(--ink-2);">KES {{ "{:,.0f}".format(a.amount) }}</strong>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          {# Partial / outstanding note #}
+          {% if r.row_type == 'charge' and r.status == 'Partial' %}
+          <div class="l-status-note" style="color:#92400e;">
+            KES {{ "{:,.0f}".format(r.allocated) }} paid ·
+            <strong>KES {{ "{:,.0f}".format(r.remaining) }} still owed</strong>
+          </div>
+          {% elif r.row_type == 'charge' and r.status == 'Outstanding' %}
+          <div class="l-status-note" style="color:#842029;">Nothing paid toward this charge</div>
           {% endif %}
         </div>
-        <div class="text-end" style="flex-shrink:0; margin-left:12px;">
+
+        {# Right: amount, status pill, running balance #}
+        <div class="l-right">
           {% if r.row_type == 'charge' %}
-            <div class="ledger-amount amount-charge">−{{ "{:,.0f}".format(r.debit) }}</div>
-            <span class="status-pill {% if r.status == 'Paid' %}pill-paid{% elif r.status == 'Partial' %}pill-partial{% else %}pill-outstanding{% endif %}">
-              {{ r.status }}
-            </span>
+            <div class="l-amount l-amount-charge">−{{ "{:,.0f}".format(r.debit) }}</div>
+            <div>
+              <span class="s-pill {% if r.status == 'Paid' %}pill-paid{% elif r.status == 'Partial' %}pill-partial{% else %}pill-outstanding{% endif %}">
+                {{ r.status }}
+              </span>
+            </div>
           {% else %}
-            <div class="ledger-amount amount-payment">+{{ "{:,.0f}".format(r.credit) }}</div>
-            <span class="status-pill pill-verified">✓ Verified</span>
+            <div class="l-amount l-amount-payment">+{{ "{:,.0f}".format(r.credit) }}</div>
+            <div><span class="s-pill pill-verified">✓ Verified</span></div>
           {% endif %}
-          <div class="ledger-bal">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
+          <div class="l-bal">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
         </div>
+
       </div>
     </div>
     {% endfor %}
-  </div>
-  <div style="padding:12px 16px; background:#f8f9fa; border-top:2px solid var(--border); display:flex; justify-content:space-between; font-weight:700;">
-    <span>Current balance</span>
-    <span class="{{ 'amount-charge' if final_balance > 0 else 'amount-payment' }}">
-      KES {{ "{:,.0f}".format(final_balance) }}
-    </span>
-  </div>
+
+    <div style="padding:14px 16px; background:#f8f9fa; border-top:2px solid var(--border);
+                display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:15px;">
+      <span>Current balance</span>
+      <span class="{{ 'l-amount-charge' if final_balance > 0 else 'l-amount-payment' }}">
+        KES {{ "{:,.0f}".format(final_balance) }}
+      </span>
+    </div>
+
   {% else %}
-  <div style="padding:32px 16px; text-align:center; color:var(--ink-3); font-size:13px;">
+  <div style="padding:40px 16px; text-align:center; color:var(--ink-3); font-size:13px;">
     No charges or payments recorded yet.
   </div>
   {% endif %}

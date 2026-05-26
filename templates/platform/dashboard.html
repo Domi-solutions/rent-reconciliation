@@ -203,6 +203,7 @@
 <script>
 document.getElementById('editOrgModal').addEventListener('show.bs.modal', function(e) {
   var btn = e.relatedTarget;
+  if (!btn) return;
   document.getElementById('editOrgForm').action = '/platform/orgs/' + btn.dataset.orgId + '/edit';
   document.getElementById('editOrgName').value  = btn.dataset.orgName;
   document.getElementById('editOrgEmail').value = btn.dataset.orgEmail;
