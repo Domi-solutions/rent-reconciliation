@@ -101,7 +101,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `rent_charges` UNIQUE(unit_id, period, charge_type) — always specify `charge_type` ('rent'|'service'|'water'); a unit can have all three per period
 - `payment_allocations` — ON DELETE CASCADE on `payment_id`; never delete allocations manually
 - `messages` requires `tenant_id NOT NULL` — owner inbox uses `owner_messages` (separate table)
-- `owner_messages` query must SELECT all columns — omitting any silently hides data in the viewer
+- `owner_messages` query must SELECT all columns — omitting any silently hides data in the viewer. **FK constraint (PRAGMA foreign_keys = ON):** `DELETE FROM owners` is blocked because `owner_messages.owner_id → owners.id`. Always `DELETE FROM owner_messages WHERE owner_id = ?` before `DELETE FROM owners`.
 - `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
@@ -120,6 +120,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `tenant_disputes` — concerns submitted by tenants directly to Domi. Written via `POST /tenant/<token>/dispute`. Platform resolves; agency cannot see.
 - `platform_alerts` — anomaly alerts raised on sensitive actions (owner removed = critical; rent changed >10% = warning/critical). Platform dismisses; agency cannot see.
 - `owners.payout_mpesa` — **admin has zero write path to this field**. It is set exclusively by the owner via portal OTP flow (`POST /view/<property_id>/payout/request-otp` → `confirm-otp`). Disbursements are hard-blocked until `payout_confirmed=1` AND `payout_active_at <= now()` (48-hour hold after OTP confirmation). See `_get_confirmed_payout_owner()` in `disbursements.py`.
+- `owners.org_id` — multi-tenant isolation added by `migrate_add_owner_org_id`. All `manage_owners` queries must be scoped `WHERE o.org_id = ?`; `create_owner` INSERT must include `org_id`. Backfilled from `property_owners → properties → organization_id` at migration. Without this column, all orgs see each other's owners.
 - `units.status` values: `occupied` | `vacant` | `owner_use` | `short_term`. `office` was renamed to `owner_use` via `migrate_rename_office_to_owner_use`. `occupied` is **only** set by the move-in flow (`add_tenant` route) — never via direct field edit or `set_unit_status`. `owner_use` and `short_term` are excluded from rentable count and charge generation. Status cannot be changed via UI when an active tenant exists.
 - `tenants.status` values: `active` | `departed` | `inactive`. `departed` = moved out with remaining debt, portal access preserved so tenant can view balance and pay. `inactive` = settled or written-off, access_token cleared. `departed` tenants appear in caretaker log-payment "Departed tenant" mode for post-departure bank matching.
 - `tenants.deposit_paid` — recorded at move-in (via `add_tenant` route). Pre-fills `deposit_held` field on the move-out form. Added by `migrate_add_deposit_paid`.
@@ -250,7 +251,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_rename_office_to_owner_use`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_owner_org_id`.
 
 ---
 

@@ -404,6 +404,26 @@
 
 ---
 
+### Variable referenced before assignment inside conditional branch (UnboundLocalError)
+**File(s):** `app.py` — `verify_payments()`
+**Root cause:** Cursor defined `_caretakers_for_alert` inside the flagging loop (where it was used to SMS caretakers when a claim was flagged). It was also needed earlier in the pending-claims loop on amount mismatch. Cursor didn't trace the full execution path — defined the variable where it was "obviously" first used in source order, without noticing an earlier consumer.
+**What Cursor did:** Defined `_caretakers_for_alert = conn.execute(...)` inside the `for claim in flagged_claims:` loop body, after the `for claim in pending_claims:` loop that already referenced it on amount-mismatch paths.
+**What it should do:** Define shared query results once, at the top of the function scope before any loop that consumes them. In `verify_payments()`, `_caretakers_for_alert` must be defined before the first `for claim in pending_claims:` loop. The query is cheap and safe to run once per verification pass.
+**Why it matters:** Only triggers when a real bank statement produces an amount mismatch — a condition that doesn't occur in dev with synthetic test data. In production it crashes the verification run with a 502, leaving claims permanently pending.
+**Spotted:** 2026-05-26 (Session 24)
+
+---
+
+### DELETE FROM owners blocked by FK constraint — must clear owner_messages first
+**File(s):** `app.py` — `delete_owner()`
+**Root cause:** Cursor writes the delete without checking whether any referencing table has rows. `owner_messages.owner_id → owners.id` is a FK, and `PRAGMA foreign_keys = ON` (set in `get_connection()`) enforces it at runtime.
+**What Cursor did:** `conn.execute("DELETE FROM owners WHERE id = ?", (owner_id,))` — no cascade cleanup of dependent rows.
+**What it should do:** Before deleting any row from a table with FK dependents, delete or null-out dependent rows first. For owner deletion: `DELETE FROM owner_messages WHERE owner_id = ?`, then `DELETE FROM property_owners WHERE owner_id = ?`, then `DELETE FROM owners WHERE id = ?`. Check `.agent/schema.yaml` for FK references to the target table before writing any delete.
+**Why it matters:** Fails silently in dev where test owners have no messages. In production, every owner has at least one notification in `owner_messages`, so every delete attempt fails with `IntegrityError`.
+**Spotted:** 2026-05-26 (Session 24)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.
