@@ -11,6 +11,7 @@ from src.agent.briefings import (
 from src.agent.coordinator import (
     anomaly_check_job,
     daily_snapshot_job,
+    maintainer_digest_job,
     monthly_checkins_job,
     morning_briefings_job,
     process_payment_queue,
@@ -117,6 +118,7 @@ def trigger_job(job_name):
         "weekly_digest_job": weekly_digest_job,
         "monthly_checkins_job": monthly_checkins_job,
         "process_payment_queue": process_payment_queue,
+        "maintainer_digest_job": maintainer_digest_job,
     }
     fn = jobs.get(job_name)
     if not fn:

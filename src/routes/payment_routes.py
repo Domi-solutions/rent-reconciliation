@@ -45,6 +45,7 @@ def mpesa_callback():
                         UPDATE payment_transactions
                         SET raw_callback = ?, amount = ?, processing_status = 'pending'
                         WHERE external_reference = ?
+                          AND processing_status != 'completed'
                         """,
                         (raw, parsed["amount"], checkout_request_id),
                     )

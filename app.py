@@ -19,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session, send_file
 from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -48,6 +48,7 @@ from src.agent.coordinator import (
     anomaly_check_job,
     monthly_checkins_job,
     process_payment_queue,
+    maintainer_digest_job,
 )
 from src.payments.disbursements import scheduled_disbursement_job
 
@@ -204,6 +205,74 @@ def short_link(code):
     return redirect(url_for('tenant.portal', token=row['access_token']))
 
 
+@app.route('/health')
+def health_check():
+    """Public health endpoint — returns JSON; used by uptime monitors (e.g. UptimeRobot)."""
+    data = {
+        'status': 'ok',
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'db': False,
+        'scheduler_running': scheduler.running,
+        'scheduler_jobs': [],
+        'services': {
+            'smtp_email':    bool(os.environ.get('SMTP_HOST')),
+            'sms_at':        bool(os.environ.get('AT_API_KEY')),
+            'anthropic_llm': bool(os.environ.get('ANTHROPIC_API_KEY')),
+            'daraja_mpesa':  bool(os.environ.get('DARAJA_CONSUMER_KEY')),
+            'maintainer_email': bool(os.environ.get('MAINTAINER_EMAIL')),
+        },
+    }
+    try:
+        with get_connection() as conn:
+            props = conn.execute("SELECT COUNT(*) FROM properties WHERE status='active'").fetchone()[0]
+            tenants = conn.execute("SELECT COUNT(*) FROM tenants WHERE status='active'").fetchone()[0]
+            data['db'] = True
+            data['active_properties'] = props
+            data['active_tenants'] = tenants
+    except Exception as exc:
+        data['status'] = 'degraded'
+        data['db_error'] = str(exc)
+
+    try:
+        data['scheduler_jobs'] = [
+            {
+                'id': j.id,
+                'next_run_utc': j.next_run_time.isoformat() if j.next_run_time else None,
+            }
+            for j in scheduler.get_jobs()
+        ]
+    except Exception:
+        pass
+
+    http_status = 200 if data['status'] == 'ok' else 503
+    return jsonify(data), http_status
+
+
+@app.errorhandler(Exception)
+def handle_unhandled_exception(exc):
+    """Email the maintainer on any unhandled 500-class error, then return a generic 500."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(exc, HTTPException):
+        return exc  # Let 404, 403, etc. pass through normally
+
+    import traceback as _tb
+    tb_text = _tb.format_exc()
+    app.logger.error("Unhandled exception: %s\n%s", exc, tb_text)
+
+    try:
+        from src.agent.maintainer import send_error_alert
+        send_error_alert(
+            error_summary=str(exc),
+            path=request.path,
+            method=request.method,
+            tb=tb_text,
+        )
+    except Exception:
+        pass  # Never let the error handler itself crash the response
+
+    return jsonify({'error': 'Internal server error'}), 500
+
+
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(func=daily_snapshot_job, trigger='cron', hour=1, minute=0, id='daily_snapshot_job', replace_existing=True)
 scheduler.add_job(func=morning_briefings_job, trigger='cron', hour=7, minute=0, id='morning_briefings_job', replace_existing=True)
@@ -212,6 +281,8 @@ scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='
 scheduler.add_job(func=monthly_checkins_job, trigger='cron', day=1, hour=9, minute=0, id='monthly_checkins_job', replace_existing=True)
 scheduler.add_job(func=process_payment_queue, trigger='interval', seconds=60, id='process_payment_queue', replace_existing=True)
 scheduler.add_job(func=scheduled_disbursement_job, trigger='cron', day=10, hour=9, minute=0, id='disbursement_job', replace_existing=True)
+# Maintainer health digest — Monday 08:00 EAT (05:00 UTC)
+scheduler.add_job(func=maintainer_digest_job, trigger='cron', day_of_week='mon', hour=5, minute=0, id='maintainer_digest_job', replace_existing=True)
 
 _running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 _is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
@@ -229,7 +300,7 @@ def require_admin_auth():
     """Require admin login for all org admin routes."""
     if request.endpoint is None:
         return None
-    exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome')
+    exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome', 'health_check')
     if request.endpoint in exempt:
         return None
     if request.path.startswith('/view'):

@@ -8,6 +8,7 @@ from src.database.db import generate_id, get_connection, allocate_payment
 from src.agent.detector import check_pending_tasks, detect_anomalies, detect_followups, detect_stale_claims
 from src.agent.briefings import generate_weekly_digest
 from src.agent.router import route_message
+from src.agent.maintainer import send_maintainer_digest
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,11 @@ def _format_allocations(allocations: list) -> str:
     return "applied: " + ", ".join(parts)
 
 
+def maintainer_digest_job():
+    """Email the maintainer a weekly system health summary."""
+    send_maintainer_digest()
+
+
 def process_payment_queue():
     """
     Background worker: process pending payment_transactions.
@@ -199,6 +205,7 @@ def process_payment_queue():
                    external_reference, phone, amount, raw_callback
             FROM payment_transactions
             WHERE processing_status = 'pending'
+              AND raw_callback IS NOT NULL
             ORDER BY received_at ASC
             LIMIT 50
             """,
