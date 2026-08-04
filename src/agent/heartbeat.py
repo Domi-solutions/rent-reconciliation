@@ -34,6 +34,7 @@ PING_URLS = {
     "disbursement_job": "https://hc-ping.com/a3f3c16e-8af7-4a6f-b958-7c5b46e23b82",
     "monthly_checkins_job": "https://hc-ping.com/375d73e2-cf6d-4ba4-afb0-b2d369d3bf3b",
     "process_payment_queue": "https://hc-ping.com/0444dd0b-d456-40cf-aba9-5dcc78e27979",
+    "backup_job": "https://hc-ping.com/17f14e82-7540-4f88-9aa9-d560241c4a15",
 }
 
 

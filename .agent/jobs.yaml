@@ -37,6 +37,15 @@ jobs:
     description: "For each active unit across all properties: snapshot current balance from unit_balances VIEW."
     prerequisite_for: weekly_digest_job (arrears comparison requires snapshots)
 
+  backup_job:
+    status: live
+    function: src/agent/coordinator.py::backup_job (delegates to src/agent/backup.py::run_backup)
+    trigger: "cron, hour=2, minute=0 — actually runs 02:00 UTC (see the CAUTION note above), after daily_snapshot_job"
+    owns: "Reads live DB via sqlite3 backup API (no writes). Uploads snapshot to R2 bucket (see .agent/env.yaml R2_* vars)."
+    description: "Transactionally-consistent DB snapshot uploaded to Cloudflare R2, off the Fly server. 30-day rolling
+      retention — objects older than 30 days deleted after each successful upload. Raises on failure (does not swallow
+      errors) so the scheduler's heartbeat/alert listener catches it like any other job."
+
   anomaly_check_job:
     status: live
     function: src/agent/coordinator.py::anomaly_check_job

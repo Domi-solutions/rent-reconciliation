@@ -50,6 +50,7 @@ from src.agent.coordinator import (
     monthly_checkins_job,
     process_payment_queue,
     maintainer_digest_job,
+    backup_job,
 )
 from src.payments.disbursements import scheduled_disbursement_job
 
@@ -276,6 +277,8 @@ def handle_unhandled_exception(exc):
 
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(func=daily_snapshot_job, trigger='cron', hour=1, minute=0, id='daily_snapshot_job', replace_existing=True)
+# Daily off-server DB backup — 02:00 UTC, after daily_snapshot_job so the backup includes that day's snapshot rows
+scheduler.add_job(func=backup_job, trigger='cron', hour=2, minute=0, id='backup_job', replace_existing=True)
 scheduler.add_job(func=morning_briefings_job, trigger='cron', hour=7, minute=0, id='morning_briefings_job', replace_existing=True)
 scheduler.add_job(func=weekly_digest_job, trigger='cron', day_of_week='mon', hour=8, minute=0, id='weekly_digest_job', replace_existing=True)
 scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='anomaly_check_job', replace_existing=True)

@@ -187,6 +187,12 @@ def maintainer_digest_job():
     send_maintainer_digest()
 
 
+def backup_job():
+    """Snapshot the live DB and upload it to off-server storage (R2)."""
+    from src.agent.backup import run_backup
+    run_backup()
+
+
 def process_payment_queue():
     """
     Background worker: process pending payment_transactions.

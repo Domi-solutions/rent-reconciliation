@@ -8,3 +8,4 @@ openpyxl>=3.1.0
 africastalking>=1.2.7
 apscheduler>=3.10.4
 anthropic>=0.39.0
+boto3>=1.34.0
