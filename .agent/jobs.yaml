@@ -10,6 +10,13 @@ scheduler:
   job_store: memory (default — missed jobs not recovered on restart)
   note: "Known limitation — missed jobs are silently lost if process restarts. SQLAlchemyJobStore is the planned upgrade for persistence."
   timezone: UTC (note: EAT = UTC+3; schedule times below are EAT-intended, set as UTC offsets)
+  heartbeat: "Every job pings healthchecks.io (src/agent/heartbeat.py) on success/failure via a scheduler-level
+    EVENT_JOB_EXECUTED/EVENT_JOB_ERROR listener in app.py. This is what surfaces a process restart dropping
+    a job silently — healthchecks.io alerts MAINTAINER_EMAIL when an expected ping doesn't arrive. Job-level
+    exceptions also trigger an immediate email via src/agent/maintainer.py::send_error_alert, independent of
+    the heartbeat's grace-period delay. Requires HEALTHCHECKS_PING_KEY (see .agent/env.yaml); each job's check
+    is auto-created in the healthchecks.io dashboard on first ping, but the expected schedule per check must
+    be set manually once (Settings → cron expression matching the trigger below)."
 
 jobs:
 

@@ -18,6 +18,7 @@ import atexit
 from datetime import datetime
 from decimal import Decimal
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session, send_file
 from werkzeug.utils import secure_filename
@@ -283,6 +284,30 @@ scheduler.add_job(func=process_payment_queue, trigger='interval', seconds=60, id
 scheduler.add_job(func=scheduled_disbursement_job, trigger='cron', day=10, hour=9, minute=0, id='disbursement_job', replace_existing=True)
 # Maintainer health digest — Monday 08:00 EAT (05:00 UTC)
 scheduler.add_job(func=maintainer_digest_job, trigger='cron', day_of_week='mon', hour=5, minute=0, id='maintainer_digest_job', replace_existing=True)
+
+
+def _job_heartbeat_listener(event):
+    """Dead-man's-switch: ping healthchecks.io on every job run, success or
+    failure. Also emails the maintainer immediately on failure — job errors
+    otherwise only go to APScheduler's own logger, which nobody reads."""
+    from src.agent.heartbeat import ping
+    job_id = event.job_id
+
+    if event.exception:
+        ping(job_id, success=False)
+        try:
+            from src.agent.maintainer import send_error_alert
+            send_error_alert(
+                error_summary=f"Scheduled job '{job_id}' raised an exception",
+                tb=str(event.traceback) if event.traceback else repr(event.exception),
+            )
+        except Exception:
+            pass
+    else:
+        ping(job_id, success=True)
+
+
+scheduler.add_listener(_job_heartbeat_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
 _running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 _is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
