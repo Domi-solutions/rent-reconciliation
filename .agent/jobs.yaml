@@ -2,21 +2,30 @@
 # Ground truth for all APScheduler jobs.
 # Agents: check this before adding any job to avoid duplicates or schedule conflicts.
 # When adding a job: update this file AND register in app.py in the same commit.
-# All times are EAT (East Africa Time = UTC+3).
+# CAUTION: the hour= values in app.py's scheduler.add_job() calls are read as UTC by
+# APScheduler (no tzinfo passed) — despite the "EAT" labels in this file's comments and
+# in app.py's inline comments, they are NOT converted to EAT. e.g. hour=1 for
+# daily_snapshot_job actually runs at 01:00 UTC (04:00 EAT), not 01:00 EAT as documented
+# below. Discovered 2026-08 while wiring heartbeat monitoring (real next_run_utc values
+# were pulled from /health to set correct healthchecks.io schedules). Not yet fixed in
+# code — the "(Xam EAT)" annotations per job below are the intended/documented time, not
+# the actual one; treat all hour= values in app.py as UTC until this is corrected.
 # status: live = running in production | planned = not yet built
 
 scheduler:
   type: APScheduler BackgroundScheduler
   job_store: memory (default — missed jobs not recovered on restart)
   note: "Known limitation — missed jobs are silently lost if process restarts. SQLAlchemyJobStore is the planned upgrade for persistence."
-  timezone: UTC (note: EAT = UTC+3; schedule times below are EAT-intended, set as UTC offsets)
-  heartbeat: "Every job pings healthchecks.io (src/agent/heartbeat.py) on success/failure via a scheduler-level
-    EVENT_JOB_EXECUTED/EVENT_JOB_ERROR listener in app.py. This is what surfaces a process restart dropping
-    a job silently — healthchecks.io alerts MAINTAINER_EMAIL when an expected ping doesn't arrive. Job-level
-    exceptions also trigger an immediate email via src/agent/maintainer.py::send_error_alert, independent of
-    the heartbeat's grace-period delay. Requires HEALTHCHECKS_PING_KEY (see .agent/env.yaml); each job's check
-    is auto-created in the healthchecks.io dashboard on first ping, but the expected schedule per check must
-    be set manually once (Settings → cron expression matching the trigger below)."
+  timezone: "UTC in practice — see the caution note at the top of this file"
+  heartbeat: "Every job pings a fixed per-job healthchecks.io URL (PING_URLS dict in
+    src/agent/heartbeat.py) on success/failure via a scheduler-level
+    EVENT_JOB_EXECUTED/EVENT_JOB_ERROR listener in app.py. This is what surfaces a process
+    restart dropping a job silently — healthchecks.io alerts MAINTAINER_EMAIL when an
+    expected ping doesn't arrive. Job-level exceptions also trigger an immediate email via
+    src/agent/maintainer.py::send_error_alert, independent of the heartbeat's grace-period
+    delay. Checks were provisioned via the Healthchecks API with schedules matching the
+    real UTC next-run times (not the misleading EAT labels below). To add a job: create
+    its check and add the ping_url to PING_URLS — no env var involved."
 
 jobs:
 
