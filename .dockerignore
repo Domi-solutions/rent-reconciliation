@@ -5,3 +5,5 @@ data/rent.db
 data/statements/*
 .git/
 *.md
+.env
+backups/
