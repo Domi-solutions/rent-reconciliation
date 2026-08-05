@@ -26,68 +26,105 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude Code (payout security, sidebar restructure, onboarding UX, codebase cleanup)
-**Date:** 2026-05-17
+**Who:** Claude Code (dormancy-readiness audit + hardening — Lincks leaving for a 15-month masters in Arizona, Domi needs to run unattended)
+**Date:** 2026-08-05
+
+### Context: why this session happened
+
+Lincks ran a full audit against a "Domi must survive 15 months unattended, one paying landlord
+client (Mowin Apartments), problems must reach Lincks proactively" spec. Audit found: zero working
+alert channel (SMTP unconfigured despite code existing for it), no dead-man's-switch for scheduled
+jobs, backups manual/ad hoc/stale, restart behavior never actually tested, secrets baked into the
+Docker image, no runbook. This session closed most of the 🔴 items. Full audit findings live in
+this conversation's history, not repeated here — this section is the "what changed" record.
 
 ### What was completed this session
 
-**Payout account security (beneficiary fraud prevention):**
-- `migrate_add_payout_fields` — 5 new columns on `owners`: `payout_mpesa`, `payout_confirmed`, `payout_active_at`, `payout_otp`, `payout_otp_expires_at`
-- `payout_mpesa` is owner-write-only via portal OTP flow — admin has zero write path
-- `POST /view/<property_id>/payout/request-otp` + `confirm-otp` — OTP via SMS → 48h hold before disbursements activate
-- `_get_confirmed_payout_owner()` in `disbursements.py` — hard-blocks disbursements until confirmed + hold passed; raises ValueError + critical platform alert if none found
-- `templates/viewer/wallet.html` — full payout account UI (4 states: unset/pending_otp/hold/active)
+**Alerting foundation (was: half-built, uncommitted, undeployed — found and shipped):**
+- Discovered `/health` endpoint, global exception handler, `maintainer_digest_job`, and
+  `src/messaging/email.py` already existed in the working tree but were never committed or
+  deployed (5+ weeks stale on the laptop). Committed, configured Gmail SMTP as a real Fly secret,
+  deployed, verified with a real test email delivered.
+- `MAINTAINER_EMAIL` = `lincksmorara@gmail.com` — this is where every alert below lands.
 
-**Admin sidebar restructure:**
-- New order: Overview → Units → Payments → Messages → Bank Statements → Water Charges → Reports → Activity → (Monthly) Monthly Workflow → (Setup) Caretakers → Owners
-- Water Charges added as dedicated sidebar item
-- Monthly Workflow elevated from Tools footer into labeled Monthly section
+**Dead-man's-switch for scheduled jobs (`src/agent/heartbeat.py`, new):**
+- Every APScheduler job pings a fixed healthchecks.io URL on success/failure via a scheduler-level
+  `EVENT_JOB_EXECUTED`/`EVENT_JOB_ERROR` listener in `app.py` — covers all jobs generically, no
+  per-job wiring needed for new jobs beyond adding to `PING_URLS`.
+- Job exceptions also trigger an immediate email independent of the heartbeat grace period.
+- healthchecks.io project: `lincksmorara@gmail.com`. 9 checks total (8 original jobs +
+  `backup_job` added later this session). Verified end-to-end with a real fail/success cycle —
+  confirmed alert email received, not just assumed.
+- **Known bug found while wiring this, not yet fixed:** the `hour=` values in `app.py`'s
+  `scheduler.add_job()` calls run as UTC, not EAT, despite comments (in `app.py` and
+  `.agent/jobs.yaml`) claiming EAT. See the CAUTION note at the top of `.agent/jobs.yaml`.
 
-**Monthly Workflow status indicators:**
-- `tools_index()` route now queries DB per-step completion timestamps
-- Each of 5 steps shows green (done this month) or red (needs doing); Step 4 Verify Payments was missing and is now added
-- Unassigned credit count shown on Step 4 with direct link
+**Automated off-server backups (`src/agent/backup.py`, new):**
+- Daily (02:00 UTC) snapshot via `sqlite3`'s own backup API (not a raw file copy — DB is in WAL
+  mode under live writes), uploaded to Cloudflare R2 (`domi-backups` bucket), 30-day rolling
+  retention. Wired into the same heartbeat system.
+- Restore actually tested end-to-end: downloaded a real backup, ran `PRAGMA integrity_check`
+  (passed) and verified row counts — not assumed from a successful upload.
+- `boto3` added to `requirements.txt` for R2's S3-compatible API.
 
-**New user onboarding:**
-- Setup checklist card on dashboard (3 steps: add owners, add caretaker, run workflow); auto-dismisses when all done
-- Actionable empty states on: Payments confirmed tab, Bank Statements page, Unreported credits tab
+**Restart/reboot verified with real numbers (not assumed):**
+- SIGKILL to gunicorn master: full recovery (new PIDs, all migrations re-run) in ~10s.
+- Full `fly machine restart`: VM relaunch → volume remount → gunicorn listening in ~3s, fully
+  ready by ~10s. Both fully automatic, no intervention needed.
 
-**Codebase cleanup:**
-- `src/utils/phone.py` created — `normalize_to_e164()` + `normalize_to_daraja()`, single source of truth
-- Removed 4 duplicate `_normalize_phone` definitions from viewer_routes, tenant_routes, owner_routes, delivery.py
-- `daraja.py` now imports `normalize_to_daraja` from utils instead of defining its own
-- Deleted `src/validation/` (orphaned module — `validate_balance_checksum` was already in pdf_parser.py)
-- `test_routes.py` CRUD routes gated behind `ENVIRONMENT != production` in app.py
-- Moved screenshots to `docs/screenshots/`, bank PDF to `data/input/`, DB backups to `backups/`
-- Archived `scripts/start_tunnel.sh` to `scripts/archived/` (replaced by Fly.io)
-- `src/routes/owner_routes.py` documented in `.agent/routes.yaml`
+**Security fix: `.env` was baked into the production Docker image:**
+- `.dockerignore` didn't exclude `.env` (or `backups/`) — every image pushed to
+  `registry.fly.io/rent-reconciliation` contained all 12 secret keys in plaintext, a wider and
+  longer-lived exposure than live env vars (persists in old image layers, not just current state).
+- `ANTHROPIC_API_KEY` was the one var that existed *only* in the baked `.env` with no
+  corresponding Fly secret — migrated it to a real Fly secret first so this fix didn't silently
+  break LLM features, then excluded `.env`/`backups/` and redeployed. Verified `.env` is now
+  genuinely absent from the running container.
+
+**`RUNBOOK.md` (new, top-level):**
+- What alerts you and how, a safe hotfix deploy procedure (backup-before-deploy is now a documented
+  step, not folklore), the verified recovery timings above, and an honest monthly ~20-minute
+  checklist that flags what's *not* built yet (reconciliation-mismatch detection, receipt resend,
+  landlord troubleshooting guide) instead of implying completeness.
+
+**Git/ops hygiene:**
+- Repo had 20 unpushed commits + 5 uncommitted files sitting on the laptop at session start — all
+  committed and pushed. Remote moved from `LincksMorara/rent-reconciliation` to the
+  `Domi-solutions` org; local remote URL updated to match.
 
 ### Pick up next
 
-1. **Full end-to-end test run:** fresh property → bank statement workflow → SMS sandbox → M-Pesa STK Push sandbox → disbursement sandbox
-2. **Phase 4 (The Conversation):** LLM intent classifier, tenant/caretaker/owner inbound handlers, bilingual responses — see `ROADMAP.md`
-3. **Phase 5 (The Coordinator):** admin task feed, anomaly detection, caretaker morning briefing
-4. **Phase H:** WhatsApp live channel (gated on Meta approval — apply now)
-5. When ready to flip AT_USERNAME to live: read `memory/project_go_live_messaging_checklist.md` first
+From the dormancy-readiness audit, still open:
+
+1. **3.4 — Daraja/Safaricom account ownership documentation.** Needs information from Lincks
+   (which account, who controls the tied phone/SIM, cert/passkey expiry), not code work.
+2. **5.1 — Receipt generation/resend.** No "receipt" concept exists anywhere in the codebase yet —
+   owners can see payment status/arrears but can't download or resend a receipt.
+3. **5.3 — Landlord-facing "something looks wrong" guide.** The tenant portal already has an
+   equivalent pattern (dispute form, dynamic caretaker phone) — the owner/viewer portal doesn't.
+4. **Informational-only, no code needed:** 3.1 (Fly billing/domain/SSL renewal dates — needs a
+   direct answer, not derivable from the repo), 3.6 (password manager for secrets — currently only
+   in Fly's store + the laptop's `.env`), 2.2 (the audit's premise of "two previously discovered
+   STK push race conditions" could not be substantiated anywhere in this repo's history — needs
+   clarification on what that refers to before writing a regression test).
+5. **Deferred (🟡/🟢) from the audit, not urgent:** structured/retained logging (1.7), decimal-safe
+   money types + timezone audit (2.7), `KNOWN_ISSUES.md` (6.3), PII redaction in error alerts/logs
+   (7.1 — a WhatsApp stub in `src/agent/router.py:68` prints tenant phone numbers to stdout).
 
 ### Key files changed this session
-- `src/utils/phone.py` — new canonical phone normalizer (normalize_to_e164, normalize_to_daraja)
-- `src/routes/viewer_routes.py`, `tenant_routes.py`, `owner_routes.py` — removed local normalizers, import from utils
-- `src/messaging/delivery.py` — removed local normalizer, import from utils
-- `src/payments/daraja.py` — removed local normalize_phone, import from utils
-- `src/database/db.py` — migrate_add_payout_fields
-- `src/routes/viewer_routes.py` — payout OTP routes, property_wallet updated
-- `src/payments/disbursements.py` — _get_confirmed_payout_owner guard
-- `app.py` — tools_index() rewritten; test_bp gated; dashboard setup checklist
-- `templates/viewer/wallet.html` — payout account management UI
-- `templates/base.html` — sidebar restructure + active_nav update
-- `templates/tools_index.html` — 5-step workflow with green/red status
-- `templates/dashboard.html` — setup checklist card
-- `templates/review.html`, `statements.html` — actionable empty states
-- `.agent/schema.yaml` — payout columns on owners table
-- `.agent/routes.yaml` — owner blueprint added, payout routes added
-- `ROADMAP.md` — payout security + admin UX sections marked complete
-- `CURSOR_PATTERNS.md` — Session 4 entries (COUNT None, payout ownership, workflow status pattern)
+- `src/agent/heartbeat.py` — new, dead-man's-switch pings
+- `src/agent/backup.py` — new, R2 backup logic
+- `src/agent/coordinator.py` — `backup_job()` wrapper added
+- `app.py` — `/health`, exception handler, `maintainer_digest_job` + `backup_job` scheduled,
+  heartbeat listener registered
+- `src/agent/maintainer.py` — already existed uncommitted, now live (digest + error alert emails)
+- `.dockerignore` — excludes `.env`, `backups/`
+- `.agent/env.yaml`, `.agent/jobs.yaml` — documented all of the above, including the UTC/EAT bug
+- `requirements.txt` — added `boto3`
+- `RUNBOOK.md` — new
+- Fly secrets added/changed: `SMTP_HOST/PORT/USER/PASSWORD/FROM`, `MAINTAINER_EMAIL`,
+  `R2_ENDPOINT_URL/ACCESS_KEY_ID/SECRET_ACCESS_KEY/BUCKET_NAME`, `ANTHROPIC_API_KEY` (properly
+  migrated from the baked `.env`)
 
 ---
 
