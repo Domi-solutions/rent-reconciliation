@@ -18,6 +18,12 @@ from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 
 
+# A unit code always mixes digits with a letter ("5D", "1C", "12B"). Demanding
+# both is what stops the account number in "MOWIN 014000050518" from being read
+# as unit "0140" — which it was for 94% of credits.
+UNIT_HINT_RE = re.compile(r'MOWIN\s*([A-Z]{0,2}\d{1,3}[A-Z]{1,2})\b')
+
+
 @dataclass
 class Transaction:
     """Structured representation of a bank transaction."""
@@ -35,6 +41,9 @@ class Transaction:
     raw_text: str = ""
     page_number: int = 0
     parse_warnings: List[str] = field(default_factory=list)
+    # Classification survives an unreadable amount so the balance-delta pass
+    # can restore the real type once it recovers the figure.
+    classified_type: Optional[str] = None
 
 
 def extract_raw_text(pdf_path: str) -> tuple[str, List[int]]:
@@ -817,17 +826,35 @@ def extract_sender_and_narration(lines: List[str], txn_type: str) -> tuple[Optio
                     if sender_text and not sender_text.isdigit():
                         sender = sender_text.rstrip(',').strip()
 
-                # If not found on same line, check next line
+                # If not on the same line, gather the lines that follow. A sender
+                # name wraps across them and ends at a comma or the "Narration:"
+                # label:  "MIKE MUTHAMA" / "MUNGUTI MUSYOKI ,"
+                # Reading only the first line truncated most names to two tokens,
+                # which starved the >=2-token match in enrich_with_suggestions.
                 if not sender and i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
-                    # Remove trailing comma and clean up
-                    sender = next_line.rstrip(',').strip()
-                    # Remove phone number prefix if present (254...)
-                    sender = re.sub(r'^254\d+\s+', '', sender)
-                    if sender and not sender.isdigit():
+                    parts: List[str] = []
+                    for raw_line in lines[i + 1:i + 5]:
+                        chunk = raw_line.strip()
+                        if not chunk:
+                            break
+                        stop = False
+                        label = re.search(r',?\s*Narration\s*:', chunk, re.IGNORECASE)
+                        if label:
+                            chunk = chunk[:label.start()]
+                            stop = True
+                        elif chunk.endswith(','):
+                            stop = True
+                        chunk = chunk.rstrip(',').strip()
+                        # Drop a phone prefix and any trailing amount continuation
+                        chunk = re.sub(r'^254\d+\s+', '', chunk)
+                        chunk = re.sub(r'\s+\d+$', '', chunk).strip()
+                        if chunk and not chunk.isdigit():
+                            parts.append(chunk)
+                        if stop:
+                            break
+                    sender = ' '.join(parts) if parts else None
+                    if sender:
                         break
-                    else:
-                        sender = None
 
         # Extract narration (unit codes like "MOWIN 5D", "MOWIN 1C")
         for line in lines:
@@ -846,14 +873,13 @@ def extract_sender_and_narration(lines: List[str], txn_type: str) -> tuple[Optio
 
         # Extract unit hint from narration (e.g., "MOWIN 5D" → "5D", "MOWIN 1C" → "1C")
         if narration:
-            unit_match = re.search(r'MOWIN\s*([A-Z0-9]{1,4})', narration.upper())
+            unit_match = UNIT_HINT_RE.search(narration.upper())
             if unit_match:
                 unit_hint = unit_match.group(1)
 
         # Also search full text for unit hint if not found in narration
         if not unit_hint:
-            full_text = ' '.join(lines).upper()
-            unit_match = re.search(r'MOWIN\s*([A-Z0-9]{1,4})', full_text)
+            unit_match = UNIT_HINT_RE.search(' '.join(lines).upper())
             if unit_match:
                 unit_hint = unit_match.group(1)
 
@@ -1026,11 +1052,21 @@ def parse_transaction(block: dict, page_num: int) -> Transaction:
     # Extract amount
     amount = extract_amount(block)
     if amount is None:
+        # Hold on to everything that IS readable — above all the running balance,
+        # which lets reconcile_amounts_from_balances() recover the figure from the
+        # bank's own arithmetic instead of discarding the transaction.
+        lost_sender, lost_narration, lost_hint = extract_sender_and_narration(lines, txn_type)
         return Transaction(
             transaction_date=transaction_date,
             clearing_date=clearing_date,
             txn_code=txn_code,
             txn_type='PARSE_ERROR',
+            classified_type=txn_type,
+            reference=extract_reference(full_text) if txn_type == 'PAYBILL_CREDIT' else None,
+            sender=lost_sender,
+            narration=lost_narration,
+            unit_hint=lost_hint,
+            running_balance=extract_running_balance(lines) or Decimal('0.00'),
             raw_text=full_text,
             page_number=page_num,
             parse_warnings=['Could not extract amount']
@@ -1116,7 +1152,11 @@ def extract_balances(raw_text: str) -> tuple[Optional[Decimal], Optional[Decimal
         r'Closing Balance[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
         r'Balance C/F[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
         r'Balance Carried Forward[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
-        r'Clear Balance[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',  # Co-op Bank format
+        # VALUE BALANCE is what the ledger's running-balance column counts up to;
+        # CLEAR BALANCE excludes uncleared items and sits below it (by 390.00 on
+        # the Mowin statements), which made every upload fail the checksum.
+        r'Value Balance[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
+        r'Clear Balance[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',  # fallback only
     ]
     
     for pattern in closing_patterns:
@@ -1238,6 +1278,66 @@ def detect_bank_statement_format(raw_text: str, page_numbers: List[int]) -> str:
     return 'unknown'
 
 
+def reconcile_amounts_from_balances(
+    transactions: List[Transaction],
+    opening_balance: Optional[Decimal],
+) -> List[Transaction]:
+    """
+    Correct amounts against the statement's own running-balance column.
+
+    The balance column is the bank's arithmetic, so the movement between two
+    consecutive balances IS the amount. Where a parsed amount disagrees with that
+    movement — or could not be read at all — the movement wins and a warning
+    records the correction.
+
+    This is what catches amounts the regexes cannot see, such as a credit small
+    enough to print on one line ("Paybill Credit From Paybill: 100.00 643,235.18")
+    rather than wrapping like every four-figure amount does.
+
+    A transaction with no readable balance breaks the chain; its neighbours are
+    left alone rather than reconciled against a stale balance.
+    """
+    if opening_balance is None:
+        return transactions
+
+    previous: Optional[Decimal] = opening_balance
+    for txn in transactions:
+        balance = txn.running_balance
+        if balance is None or balance == Decimal('0.00'):
+            previous = None
+            continue
+        if previous is None:
+            previous = balance
+            continue
+
+        movement = balance - previous
+        previous = balance
+
+        signed = txn.amount if txn.direction == 'credit' else -txn.amount
+        if signed == movement:
+            continue
+
+        derived = abs(movement)
+        if derived == 0:
+            continue
+        direction = 'credit' if movement > 0 else 'debit'
+
+        if txn.txn_type == 'PARSE_ERROR':
+            txn.txn_type = txn.classified_type or 'OTHER'
+            txn.parse_warnings.append(
+                f'Amount {derived:,.2f} recovered from balance movement'
+            )
+        else:
+            txn.parse_warnings.append(
+                f'Amount corrected from {txn.amount:,.2f} {txn.direction} to '
+                f'{derived:,.2f} {direction} by balance movement'
+            )
+        txn.amount = derived
+        txn.direction = direction
+
+    return transactions
+
+
 def _finalize_bank_statement_result(
     opening_balance: Optional[Decimal],
     closing_balance: Optional[Decimal],
@@ -1329,6 +1429,8 @@ def _parse_cooperative_from_raw(raw_text: str, page_numbers: List[int]) -> dict:
                 page_number=page_num,
                 parse_warnings=[f'Parse exception: {str(e)}']
             ))
+
+    transactions = reconcile_amounts_from_balances(transactions, opening_balance)
 
     return _finalize_bank_statement_result(
         opening_balance, closing_balance, transactions, errors, 'cooperative'
