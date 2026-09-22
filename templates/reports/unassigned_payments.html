@@ -3,40 +3,43 @@
 
 {% block extra_css %}
 <style>
-  .up { max-width: 940px; margin: 0 auto; }
-  .up-head { border-bottom: 2px solid var(--ink); padding-bottom: 12px; margin-bottom: 16px; }
-  .up-title { font-size: 22px; font-weight: 700; color: var(--ink); }
-  .up-meta { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
-  .up-tot { background: var(--ink); color: #fff; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;
-            display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-  .up-tot-v { font-size: 28px; font-weight: 700; line-height: 1.1; }
-  .up-tot-l { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; opacity: .7; }
-  .up-how { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-            padding: 12px 15px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 16px; line-height: 1.6; }
-  table.up-t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.up-t th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .05em;
-      text-transform: uppercase; color: var(--ink-3); padding: 8px 9px; border-bottom: 1.5px solid var(--ink-3); background: var(--bg); }
-  table.up-t td { padding: 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .mono { font-family: ui-monospace, monospace; font-size: 11px; }
-  .payer { font-size: 14px; font-weight: 700; color: var(--ink); }
-  .sug { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px;
-         font-weight: 700; background: #E8F1FD; color: #0B4A9B; }
-  .writein { border: 1.5px dashed var(--ink-4); border-radius: 6px; height: 30px; min-width: 120px; }
-  .grp { background: #FAFAFB; }
-  .sub { font-size: 11px; color: var(--ink-3); }
+  .w { max-width: 780px; margin: 0 auto; }
+  .w-h { display: flex; justify-content: space-between; align-items: flex-end;
+         border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+  .w-t { font-size: 17px; font-weight: 700; color: #000; }
+  .w-s { font-size: 11px; color: #555; }
+  .w-note { font-size: 11.5px; color: #333; margin-bottom: 10px; }
+
+  table.w-t2 { width: 100%; border-collapse: collapse; }
+  table.w-t2 th { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+                  color: #555; text-align: left; padding: 4px 6px; border-bottom: 1.5px solid #000; }
+  table.w-t2 td { padding: 5px 6px; border-bottom: 1px solid #d5d5d8; vertical-align: middle; }
+  .c-no   { width: 26px; font-size: 11px; color: #777; text-align: right; font-variant-numeric: tabular-nums; }
+  .c-name { font-size: 14px; font-weight: 700; color: #000; line-height: 1.25; }
+  .c-sub  { font-size: 10px; color: #777; font-weight: 400; }
+  .c-amt  { width: 82px; text-align: right; font-size: 14px; font-weight: 700;
+            white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .c-box  { width: 108px; }
+  .box    { border: 1.5px solid #000; border-radius: 4px; height: 30px; }
+  .hint   { font-size: 10px; color: #0B4A9B; font-weight: 700; }
+
+  .w-tot { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;
+           border-top: 2px solid #000; padding-top: 6px; margin-top: 4px; }
   .tools { display: flex; gap: 8px; }
+
   @media print {
     .no-print { display: none !important; }
-    table.up-t tr { break-inside: avoid; }
-    .up-tot { background: #fff !important; color: #000 !important; border: 2px solid #000; }
-    .up-tot-l { opacity: 1; }
+    @page { margin: 12mm; }
+    body { background: #fff !important; }
+    .w { max-width: 100%; }
+    table.w-t2 tr { break-inside: avoid; }
+    .box { border-color: #000 !important; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="up">
+<div class="w">
 
   <div class="no-print d-flex justify-content-between align-items-center mb-3">
     <div class="tools">
@@ -44,6 +47,8 @@
          class="btn btn-sm {{ 'btn-dark' if grouped else 'btn-outline-secondary' }}">By payer</a>
       <a href="{{ url_for('reports.unassigned_payments', view='date') }}"
          class="btn btn-sm {{ 'btn-outline-secondary' if grouped else 'btn-dark' }}">By date</a>
+      <a href="{{ url_for('reports.unassigned_payments', view='sender', units=1) }}"
+         class="btn btn-sm btn-outline-secondary">+ unit list</a>
     </div>
     <div class="tools">
       <a href="{{ url_for('reports.arrears_report') }}" class="btn btn-sm btn-outline-secondary">← Arrears</a>
@@ -51,119 +56,109 @@
     </div>
   </div>
 
-  <div class="up-head">
-    <div class="up-title">Unassigned payments — worksheet</div>
-    <div class="up-meta">{{ property.name }} · printed {{ now }}</div>
-  </div>
-
-  <div class="up-tot">
+  <div class="w-h">
     <div>
-      <div class="up-tot-l">Received but not credited to any unit</div>
-      <div class="up-tot-v">KES {{ '{:,.0f}'.format(total) }}</div>
+      <div class="w-t">Payments received — which house?</div>
+      <div class="w-s">{{ property.name }} · {{ now }}</div>
     </div>
-    <div style="text-align: right;">
-      <div class="up-tot-l">Payments</div>
-      <div class="up-tot-v">{{ unassigned|length }}</div>
-      {% if grouped %}<div class="sub" style="color:#fff; opacity:.7;">from {{ groups|length }} payer{{ 's' if groups|length != 1 }}</div>{% endif %}
+    <div style="text-align:right;">
+      <div class="w-s">TOTAL</div>
+      <div class="w-t">KES {{ '{:,.0f}'.format(total) }}</div>
     </div>
   </div>
 
-  <div class="up-how">
-    <strong>How to fill this in:</strong> for each payer below, write the unit number in the
-    right-hand column. Where the system has guessed a unit it is shown — tick it if right,
-    cross it out and write the correct one if not. Every one of these tenants currently
-    shows as owing money they have already paid.
+  <div class="w-note">
+    Write the house number in the box. These people have paid — until a house is written
+    against each, they still show as owing the money.
   </div>
 
   {% if grouped %}
-  <table class="up-t">
+  <table class="w-t2">
     <thead>
       <tr>
-        <th style="width: 26%;">Payer (as the bank recorded it)</th>
-        <th class="n" style="width: 11%;">Total</th>
-        <th style="width: 37%;">Payments</th>
-        <th style="width: 12%;">System guess</th>
-        <th style="width: 14%;">UNIT →</th>
+        <th class="c-no">#</th>
+        <th>Name</th>
+        <th class="c-amt">Total</th>
+        <th class="c-box">House</th>
       </tr>
     </thead>
     <tbody>
       {% for g in groups %}
-      <tr class="grp">
+      <tr>
+        <td class="c-no">{{ loop.index }}</td>
         <td>
-          <div class="payer">{{ g.sender_name }}</div>
-          <div class="sub">{{ g.payments|length }} payment{{ 's' if g.payments|length != 1 }}</div>
+          <div class="c-name">{{ g.sender_name }}</div>
+          <div class="c-sub">
+            {{ g.payments|length }} payment{{ 's' if g.payments|length != 1 }}
+            {%- if g.suggested_unit_number %} · <span class="hint">maybe {{ g.suggested_unit_number }}</span>{% endif %}
+          </div>
         </td>
-        <td class="n"><strong>{{ '{:,.0f}'.format(g.total) }}</strong></td>
-        <td>
-          {% for p in g.payments %}
-          <div class="mono">{{ p.txn_date or '—' }} · {{ '{:,.0f}'.format(p.amount or 0) }}{% if p.mpesa_ref %} · {{ p.mpesa_ref }}{% endif %}</div>
-          {% endfor %}
-        </td>
-        <td>
-          {% if g.suggested_unit_number %}
-            <span class="sug">{{ g.suggested_unit_number }}</span>
-            {% if g.suggested_tenant_name %}<div class="sub">{{ g.suggested_tenant_name }}</div>{% endif %}
-          {% else %}<span class="sub">—</span>{% endif %}
-        </td>
-        <td><div class="writein"></div></td>
+        <td class="c-amt">{{ '{:,.0f}'.format(g.total) }}</td>
+        <td class="c-box"><div class="box"></div></td>
       </tr>
       {% endfor %}
       {% if not groups %}
-      <tr><td colspan="5" class="sub">Every payment received is credited to a unit. Nothing to assign.</td></tr>
+      <tr><td colspan="4" class="c-sub">Every payment is already matched to a house.</td></tr>
       {% endif %}
     </tbody>
   </table>
+  <div class="w-tot">
+    <span>{{ groups|length }} name{{ 's' if groups|length != 1 }} · {{ unassigned|length }} payment{{ 's' if unassigned|length != 1 }}</span>
+    <span>KES {{ '{:,.0f}'.format(total) }}</span>
+  </div>
 
   {% else %}
-  <table class="up-t">
+  <table class="w-t2">
     <thead>
       <tr>
-        <th style="width: 11%;">Date</th>
-        <th style="width: 28%;">Payer</th>
-        <th class="n" style="width: 11%;">Amount</th>
-        <th style="width: 18%;">Reference</th>
-        <th style="width: 12%;">System guess</th>
-        <th style="width: 20%;">UNIT →</th>
+        <th class="c-no">#</th>
+        <th>Date &amp; name</th>
+        <th class="c-amt">Amount</th>
+        <th class="c-box">House</th>
       </tr>
     </thead>
     <tbody>
       {% for p in unassigned %}
       <tr>
-        <td class="mono">{{ p.txn_date or '—' }}</td>
-        <td>{{ p.sender_name or 'Unknown sender' }}</td>
-        <td class="n">{{ '{:,.0f}'.format(p.amount or 0) }}</td>
-        <td class="mono">{{ p.mpesa_ref or '—' }}</td>
-        <td>{% if p.suggested_unit_number %}<span class="sug">{{ p.suggested_unit_number }}</span>{% else %}<span class="sub">—</span>{% endif %}</td>
-        <td><div class="writein"></div></td>
+        <td class="c-no">{{ loop.index }}</td>
+        <td>
+          <div class="c-name">{{ p.sender_name or 'Unknown sender' }}</div>
+          <div class="c-sub">{{ p.txn_date or '—' }}{% if p.mpesa_ref %} · {{ p.mpesa_ref }}{% endif %}</div>
+        </td>
+        <td class="c-amt">{{ '{:,.0f}'.format(p.amount or 0) }}</td>
+        <td class="c-box"><div class="box"></div></td>
       </tr>
       {% endfor %}
-      {% if not unassigned %}
-      <tr><td colspan="6" class="sub">Every payment received is credited to a unit.</td></tr>
-      {% endif %}
+    </tbody>
+  </table>
+  <div class="w-tot">
+    <span>{{ unassigned|length }} payment{{ 's' if unassigned|length != 1 }}</span>
+    <span>KES {{ '{:,.0f}'.format(total) }}</span>
+  </div>
+  {% endif %}
+
+  {% if show_units %}
+  <div style="page-break-before: always;"></div>
+  <div class="w-h" style="margin-top: 18px;">
+    <div><div class="w-t">Houses</div><div class="w-s">who the system has in each</div></div>
+  </div>
+  <table class="w-t2">
+    <tbody>
+      {% for i in range(0, units|length, 3) %}
+      <tr>
+        {% for j in range(3) %}
+          {% if units[i+j] is defined %}
+          <td style="width:33%;">
+            <span style="font-weight:700;">{{ units[i+j].unit_number }}</span>
+            <span class="c-sub"> {{ units[i+j].tenant_name or '(vacant)' }}</span>
+          </td>
+          {% else %}<td></td>{% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
     </tbody>
   </table>
   {% endif %}
-
-  <div style="page-break-before: always;"></div>
-  <div class="up-head" style="margin-top: 24px;">
-    <div class="up-title">Unit reference</div>
-    <div class="up-meta">Who the system currently has in each unit</div>
-  </div>
-  <table class="up-t">
-    <thead><tr><th style="width:15%;">Unit</th><th>Tenant</th><th style="width:15%;">Unit</th><th>Tenant</th></tr></thead>
-    <tbody>
-      {% for i in range(0, units|length, 2) %}
-      <tr>
-        <td><strong>{{ units[i].unit_number }}</strong></td>
-        <td>{{ units[i].tenant_name or '(vacant)' }}</td>
-        {% if units[i+1] is defined %}
-        <td><strong>{{ units[i+1].unit_number }}</strong></td>
-        <td>{{ units[i+1].tenant_name or '(vacant)' }}</td>
-        {% else %}<td></td><td></td>{% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
 
 </div>
 {% endblock %}

@@ -437,6 +437,7 @@ def unassigned_payments():
     in. He knows who lives where; the app does not.
     """
     group = request.args.get('view', 'sender') != 'date'
+    show_units = request.args.get('units') == '1'
     with get_connection() as conn:
         prop = get_current_property(conn)
         if not prop:
@@ -453,7 +454,7 @@ def unassigned_payments():
     return render_template('reports/unassigned_payments.html',
                            now=datetime.now().strftime('%Y-%m-%d %H:%M'),
                            property=prop, unassigned=rows, groups=groups,
-                           grouped=group, units=units,
+                           grouped=group, units=units, show_units=show_units,
                            total=sum(float(r['amount'] or 0) for r in rows),
                            active_nav='arrears_report')
 
