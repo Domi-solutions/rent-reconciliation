@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, date as _date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from src.database.db import get_connection, generate_id
+from src.reports.arrears_report import generate_arrears_report
 from src.reports.backfill import backfill_reports
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
 from src.parsers.banks.registry import bank_display_name
@@ -326,6 +327,74 @@ def caretaker_report(report_id):
                              period_end=report_row['period_end'],
                              created_at=report_row['created_at'],
                              vacant_units=vacant_units)
+
+
+@report_bp.route('/arrears-report')
+def arrears_report():
+    """Outstanding debt broken down by tenant, with the statement gaps that
+    decide how much of it can be trusted."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        report = generate_arrears_report(conn, prop['id'])
+
+    return render_template('reports/arrears_report.html',
+                           property=prop, report=report, active_nav='arrears_report')
+
+
+@report_bp.route('/arrears-report/send', methods=['POST'])
+def send_arrears_report():
+    """Put the report in the owners' inbox (and SMS them where a phone exists)."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        report = generate_arrears_report(conn, prop['id'])
+        summary = report['summary']
+        coverage = report['coverage']
+
+        lines = [
+            f"Arrears position for {prop['name']} as at {report['as_at']}.",
+            f"KES {summary['total_outstanding']:,.0f} outstanding across "
+            f"{summary['units_in_arrears']} unit(s).",
+        ]
+        if summary['never_paid_count']:
+            lines.append(
+                f"{summary['never_paid_count']} unit(s) have no payment on record, "
+                f"totalling KES {summary['never_paid_total']:,.0f}."
+            )
+        if report['unassigned']['count']:
+            lines.append(
+                f"KES {report['unassigned']['total']:,.0f} received but not yet matched "
+                f"to a unit ({report['unassigned']['count']} payment(s)) — the "
+                f"outstanding figure falls once these are assigned."
+            )
+        if coverage['gap_months']:
+            lines.append(
+                "No bank statement covers: " + ', '.join(coverage['gap_months'])
+                + ". Balances for those months are unverified against the bank."
+            )
+        body = '\n'.join(lines)
+
+        try:
+            from src.messaging.owner_notify import notify_property_owners
+            notify_property_owners(conn, prop['id'], body, sent_by='Admin')
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ('arrears_report_sent', 'property', prop['id'],
+                 f"Arrears report sent: KES {summary['total_outstanding']:,.0f} across "
+                 f"{summary['units_in_arrears']} unit(s)", 'admin')
+            )
+            flash('Arrears report sent to the property owners.', 'success')
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('Sending arrears report failed for %s', prop['id'])
+            flash(f'Could not send the report: {exc}', 'error')
+
+    return redirect(url_for('reports.arrears_report'))
 
 
 @report_bp.route('/history')

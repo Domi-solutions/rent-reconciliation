@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Arrears — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ar-wrap { max-width: 900px; margin: 0 auto; }
+  .ar-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .ar-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 16px; }
+  .ar-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  .ar-kpi-value { font-size: 25px; font-weight: 700; color: var(--ink); margin-top: 5px; line-height: 1.1; }
+  .ar-kpi-sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .ar-sec { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+  .ar-sec-h { padding: 12px 18px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .ar-sec-b { padding: 16px 18px; }
+  table.ar { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.ar th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  table.ar td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.ar tr:last-child td { border-bottom: none; }
+  .num { text-align: right; white-space: nowrap; }
+  .owed { font-weight: 700; color: #FF3B30; }
+  .ref { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-2); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+  .p-red { background: #FFF0EF; color: #b91c1c; }
+  .p-amber { background: #FFF4E5; color: #92400e; }
+  .p-grey { background: var(--bg); color: var(--ink-2); }
+  .p-green { background: #EDFAF1; color: #1E7A35; }
+  .warn { background: #FFF4E5; border: 1px solid #FED7AA; border-radius: 12px; padding: 13px 16px; margin-bottom: 14px; font-size: 13px; color: #92400e; }
+  .quiet { color: var(--ink-3); font-size: 12px; }
+  @media print { .no-print { display: none !important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ar-wrap">
+
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <div style="font-size: 21px; font-weight: 700; color: var(--ink);">Arrears &amp; statement coverage</div>
+      <div style="font-size: 13px; color: var(--ink-3);">{{ property.name }} · as at {{ report.as_at }}</div>
+    </div>
+    <div class="no-print d-flex gap-2">
+      <a href="#" onclick="window.print(); return false;" class="btn btn-sm btn-outline-secondary">Print / PDF</a>
+      <form method="POST" action="{{ url_for('reports.send_arrears_report') }}" style="display:inline;">
+        <button type="submit" class="btn btn-sm btn-dark">Send to owners</button>
+      </form>
+    </div>
+  </div>
+
+  {% set s = report.summary %}
+  <div class="ar-kpis">
+    <div class="ar-kpi">
+      <div class="ar-kpi-label">Outstanding</div>
+      <div class="ar-kpi-value">{{ '{:,.0f}'.format(s.total_outstanding) }}</div>
+      <div class="ar-kpi-sub">{{ s.units_in_arrears }} unit{{ 's' if s.units_in_arrears != 1 }}</div>
+    </div>
+    <div class="ar-kpi">
+      <div class="ar-kpi-label">Months of income</div>
+      <div class="ar-kpi-value">{{ s.months_of_income_outstanding }}</div>
+      <div class="ar-kpi-sub">vs KES {{ '{:,.0f}'.format(s.expected_monthly_income) }}/mo</div>
+    </div>
+    <div class="ar-kpi">
+      <div class="ar-kpi-label">No payment on record</div>
+      <div class="ar-kpi-value">{{ s.never_paid_count }}</div>
+      <div class="ar-kpi-sub">KES {{ '{:,.0f}'.format(s.never_paid_total) }}</div>
+    </div>
+    <div class="ar-kpi">
+      <div class="ar-kpi-label">In credit</div>
+      <div class="ar-kpi-value">{{ s.units_in_credit }}</div>
+      <div class="ar-kpi-sub">KES {{ '{:,.0f}'.format(s.total_credit) }}</div>
+    </div>
+  </div>
+
+  {% if report.unassigned.count %}
+  <div class="warn">
+    <strong>KES {{ '{:,.0f}'.format(report.unassigned.total) }}</strong> has been received but is not yet
+    matched to a unit ({{ report.unassigned.count }} payment{{ 's' if report.unassigned.count != 1 }}).
+    The outstanding figure above falls once these are assigned.
+  </div>
+  {% endif %}
+
+  {% if report.coverage.gap_months %}
+  <div class="warn">
+    <strong>No bank statement covers {{ report.coverage.gap_months|length }} month{{ 's' if report.coverage.gap_months|length != 1 }}:</strong>
+    {{ report.coverage.gap_months|join(', ') }}.
+    Balances that depend on those months have not been checked against the bank, so a tenant
+    shown here as owing may have paid into an account whose statement was never uploaded.
+  </div>
+  {% endif %}
+
+  {# ---- Who owes what ---- #}
+  <div class="ar-sec">
+    <div class="ar-sec-h">Who owes what — {{ report.debtors|length }} unit{{ 's' if report.debtors|length != 1 }}</div>
+    <div class="ar-sec-b" style="padding: 0;">
+      <table class="ar">
+        <thead>
+          <tr>
+            <th>Unit</th><th>Tenant</th><th class="num">Rent</th>
+            <th class="num">Charged</th><th class="num">Paid</th><th class="num">Owes</th>
+            <th>Last payment</th><th>Receipt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in report.debtors %}
+          <tr>
+            <td><strong>{{ d.unit_number }}</strong></td>
+            <td>
+              {{ d.tenant_name or 'Vacant' }}
+              {% if d.tenant_phone %}<div class="quiet">{{ d.tenant_phone }}</div>{% endif %}
+            </td>
+            <td class="num">{{ '{:,.0f}'.format(d.monthly_rent) }}</td>
+            <td class="num">{{ '{:,.0f}'.format(d.total_charged) }}</td>
+            <td class="num">{{ '{:,.0f}'.format(d.total_paid) }}</td>
+            <td class="num owed">
+              {{ '{:,.0f}'.format(d.balance) }}
+              <div><span class="pill {% if d.bucket == '3+ months' %}p-red{% elif d.bucket == '2-3 months' %}p-amber{% else %}p-grey{% endif %}">{{ d.bucket }}</span></div>
+            </td>
+            <td>
+              {% if d.never_paid %}
+                <span class="pill p-red">never paid</span>
+              {% else %}
+                {{ d.last_payment_date or '—' }}
+                {% if d.days_since_last_payment is not none %}
+                <div class="quiet">{{ d.days_since_last_payment }} days ago · {{ d.payment_count }} payment{{ 's' if d.payment_count != 1 }}</div>
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if d.receipts %}
+                {% for r in d.receipts[:3] %}
+                <div class="ref">
+                  {{ r.date or '—' }} · {{ '{:,.0f}'.format(r.amount) }}
+                  {% if r.mpesa_ref %}· {{ r.mpesa_ref }}{% endif %}
+                </div>
+                {% endfor %}
+                {% if d.payment_count > 3 %}<div class="quiet">+{{ d.payment_count - 3 }} earlier</div>{% endif %}
+              {% else %}
+                <span class="quiet">no receipts on record</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ---- Gone quiet ---- #}
+  {% if report.gone_quiet %}
+  <div class="ar-sec">
+    <div class="ar-sec-h">Stopped paying — nothing received in 45+ days</div>
+    <div class="ar-sec-b" style="padding: 0;">
+      <table class="ar">
+        <thead><tr><th>Unit</th><th>Tenant</th><th class="num">Owes</th><th>Last seen</th><th>Last receipt</th></tr></thead>
+        <tbody>
+          {% for d in report.gone_quiet %}
+          <tr>
+            <td><strong>{{ d.unit_number }}</strong></td>
+            <td>{{ d.tenant_name }}{% if d.tenant_phone %}<div class="quiet">{{ d.tenant_phone }}</div>{% endif %}</td>
+            <td class="num owed">{{ '{:,.0f}'.format(d.balance) }}</td>
+            <td>{{ d.last_payment_date }}<div class="quiet">{{ d.days_since_last_payment }} days ago</div></td>
+            <td class="ref">
+              {% if d.last_payment_amount %}{{ '{:,.0f}'.format(d.last_payment_amount) }}{% endif %}
+              {% if d.last_payment_ref %}· {{ d.last_payment_ref }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- Statement coverage ---- #}
+  <div class="ar-sec">
+    <div class="ar-sec-h">Statement coverage</div>
+    <div class="ar-sec-b">
+      <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 12px;">
+        {% if report.coverage.checked_through %}
+          Bank records have been checked through <strong>{{ report.coverage.checked_through }}</strong>.
+        {% else %}
+          No usable statement period on record.
+        {% endif %}
+      </div>
+      <table class="ar">
+        <thead><tr><th>Period</th><th>Bank</th><th>Status</th><th class="num">Transactions</th><th>File</th></tr></thead>
+        <tbody>
+          {% for st in report.coverage.statements %}
+          <tr>
+            <td>
+              {{ st.period_start }} → {{ st.period_end }}
+              {% if st.period_suspect %}<div><span class="pill p-amber">unreadable date</span></div>{% endif %}
+            </td>
+            <td>{{ st.bank_format }}</td>
+            <td><span class="pill {% if st.status == 'active' %}p-green{% else %}p-grey{% endif %}">{{ st.status }}</span></td>
+            <td class="num">{{ st.total_transactions or 0 }}</td>
+            <td class="quiet">{{ st.filename }}</td>
+          </tr>
+          {% endfor %}
+          {% if not report.coverage.statements %}
+          <tr><td colspan="5" class="quiet">No statements uploaded.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+
+      {% if report.coverage.gap_months %}
+      <div style="margin-top: 14px; font-size: 13px;">
+        <strong>Missing periods:</strong>
+        {% for m in report.coverage.gap_months %}<span class="pill p-amber" style="margin: 2px;">{{ m }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---- Flagged ---- #}
+  {% if report.flagged_claims %}
+  <div class="ar-sec">
+    <div class="ar-sec-h">Flagged claims — reference not found in any statement</div>
+    <div class="ar-sec-b" style="padding: 0;">
+      <table class="ar">
+        <thead><tr><th>Unit</th><th>Tenant</th><th>Reference</th><th class="num">Claimed</th><th>Reason</th></tr></thead>
+        <tbody>
+          {% for f in report.flagged_claims %}
+          <tr>
+            <td><strong>{{ f.unit_number or '—' }}</strong></td>
+            <td>{{ f.tenant_name or '—' }}</td>
+            <td class="ref">{{ f.mpesa_ref }}</td>
+            <td class="num">{{ '{:,.0f}'.format(f.claimed_amount or 0) }}</td>
+            <td class="quiet">{{ f.flag_reason }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="padding: 12px 18px; font-size: 12px; color: var(--ink-3);">
+        A reference can be missing because the payment went to an account whose statement
+        is not uploaded. Check the missing periods above before treating a flag as a dispute.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if report.credits %}
+  <div class="ar-sec">
+    <div class="ar-sec-h">In credit — paid ahead</div>
+    <div class="ar-sec-b" style="padding: 0;">
+      <table class="ar">
+        <thead><tr><th>Unit</th><th>Tenant</th><th class="num">Credit</th><th>Last payment</th></tr></thead>
+        <tbody>
+          {% for c in report.credits %}
+          <tr>
+            <td><strong>{{ c.unit_number }}</strong></td>
+            <td>{{ c.tenant_name or '—' }}</td>
+            <td class="num" style="color:#1E7A35; font-weight:700;">{{ '{:,.0f}'.format(c.balance|abs) }}</td>
+            <td>{{ c.last_payment_date or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
