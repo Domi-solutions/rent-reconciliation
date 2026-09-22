@@ -3,12 +3,16 @@ Admin routes for generating and viewing landlord reports.
 """
 import calendar
 import json
+import logging
 from datetime import datetime, timedelta, date as _date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from src.database.db import get_connection, generate_id
+from src.reports.backfill import backfill_reports
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
 from src.parsers.banks.registry import bank_display_name
+
+logger = logging.getLogger(__name__)
 
 report_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
@@ -334,6 +338,23 @@ def report_history():
             return redirect(url_for('property_list'))
 
         property_id = prop['id']
+
+        # Months that have activity but no report yet are generated here, so the
+        # history is complete on arrival instead of being filled in one month at
+        # a time by hand. Idempotent, so this is a no-op once caught up.
+        try:
+            backfilled = backfill_reports(conn, property_id)
+            if backfilled['created']:
+                flash(
+                    f"Generated {len(backfilled['created'])} missing monthly "
+                    f"report{'s' if len(backfilled['created']) != 1 else ''}: "
+                    + ', '.join(backfilled['created']),
+                    'success'
+                )
+        except Exception:
+            # A backfill failure must never keep somebody from reading the
+            # reports that already exist.
+            logger.exception('Report backfill failed for %s', property_id)
 
         reports = conn.execute("""
             SELECT id, period_start, period_end, created_at, report_type
