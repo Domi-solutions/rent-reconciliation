@@ -17,7 +17,8 @@ def get_unassigned_credits(conn, property_id, org_id=None):
     Includes statements left org-wide (property_id NULL), which is how the
     upload flow stores them when no property is chosen. Excludes transactions
     marked ignored, which stay assignable but must not be counted as
-    outstanding.
+    outstanding, and those on superseded statements, which a later upload has
+    already replaced. A reference seen twice is returned once.
     """
     if org_id is None:
         row = conn.execute(
@@ -34,11 +35,29 @@ def get_unassigned_credits(conn, property_id, org_id=None):
         WHERE (bs.property_id = ? OR (bs.property_id IS NULL AND bs.org_id = ?))
           AND bt.txn_type = 'PAYBILL_CREDIT'
           AND (bt.ignored IS NULL OR bt.ignored = 0)
+          AND COALESCE(bs.status, '') != 'superseded'
           AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
         ORDER BY bt.txn_date, bt.id
     """, (property_id, org_id)).fetchall()
 
-    unassigned = [dict(r) for r in rows]
+    # An M-Pesa reference identifies one transfer, so the same reference on two
+    # rows is the same money recorded twice — not two payments. Production holds
+    # the same statement uploaded more than once, with both copies marked
+    # active, which doubled every transaction on it. Counting those twice
+    # overstates what is outstanding and puts a line on the caretaker's
+    # worksheet that cannot be assigned, because assigning either one leaves the
+    # other behind.
+    seen_refs = set()
+    deduped = []
+    for row in rows:
+        ref = (row['mpesa_ref'] or '').strip().upper()
+        if ref:
+            if ref in seen_refs:
+                continue
+            seen_refs.add(ref)
+        deduped.append(row)
+
+    unassigned = [dict(r) for r in deduped]
     enrich_with_suggestions(unassigned, conn, property_id, org_id)
 
     for row in unassigned:
