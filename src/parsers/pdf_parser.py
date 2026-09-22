@@ -23,6 +23,13 @@ from datetime import datetime
 # as unit "0140" — which it was for 94% of credits.
 UNIT_HINT_RE = re.compile(r'MOWIN\s*([A-Z]{0,2}\d{1,3}[A-Z]{1,2})\b')
 
+# Smallest paybill credit the amount regexes will accept. It used to be 1,000 on
+# the reasoning that "rent is typically 1000+", which silently discarded every
+# part-payment below that. Tenants in arrears pay in instalments, so those are
+# precisely the payments that must not go missing. Anything the regexes still
+# misread is corrected afterwards by reconcile_amounts_from_balances().
+MIN_CREDIT_AMOUNT = Decimal('1')
+
 
 @dataclass
 class Transaction:
@@ -450,7 +457,7 @@ def extract_amount(block: dict) -> Optional[Decimal]:
                 amount_part = ref_match.group(1)
                 # Try to complete the amount using next line if needed
                 completed = _complete_amount(amount_part, lines, i, incomplete_pattern, dot_pattern)
-                if completed and completed >= Decimal('1000'):  # Rent is typically 1000+
+                if completed and completed >= MIN_CREDIT_AMOUNT:
                     return completed
 
         # Fallback: Look for any amount pattern in lines after reference code
@@ -465,14 +472,14 @@ def extract_amount(block: dict) -> Optional[Decimal]:
                 if amount_match:
                     amount_part = amount_match.group(1)
                     completed = _complete_amount(amount_part, lines, i, incomplete_pattern, dot_pattern)
-                    if completed and completed >= Decimal('1000'):
+                    if completed and completed >= MIN_CREDIT_AMOUNT:
                         return completed
                 # Also check for complete amounts
                 complete_match = complete_pattern.search(line)
                 if complete_match:
                     try:
                         amount = Decimal(complete_match.group(1).replace(',', ''))
-                        if amount >= Decimal('1000'):
+                        if amount >= MIN_CREDIT_AMOUNT:
                             return amount
                     except:
                         pass
@@ -642,7 +649,7 @@ def extract_amount(block: dict) -> Optional[Decimal]:
         if incomplete_match:
             amount_part = incomplete_match.group(1)
             completed = _complete_amount(amount_part, lines, i, incomplete_pattern, dot_pattern)
-            if completed and 1000 <= completed <= 1000000:
+            if completed and MIN_CREDIT_AMOUNT <= completed <= 1000000:
                 return completed
     
     return None
@@ -779,7 +786,10 @@ def extract_dates(first_line: str, next_line: Optional[str] = None) -> tuple[Opt
         # Try to get year from next line if provided
         year = None
         if next_line:
-            year_match = re.search(r'(\d{4})', next_line)
+            # Must look like a calendar year. Matching any four digits let the
+            # leading digits of an account or cheque number stand in as the year,
+            # which is how statements were stored with period_start '0034-02-02'.
+            year_match = re.search(r'\b(20\d{2})\b', next_line)
             if year_match:
                 year = year_match.group(1)
         

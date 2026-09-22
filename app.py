@@ -360,7 +360,7 @@ def _parse_txn_date_to_iso(date_str):
         if m:
             day, mon_str, year = m.groups()
             months = 'JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC'.split()
-            if mon_str in months:
+            if mon_str in months and 2000 <= int(year) <= 2099:
                 month = months.index(mon_str) + 1
                 return f"{year}-{month:02d}-{day}"
     except Exception:
