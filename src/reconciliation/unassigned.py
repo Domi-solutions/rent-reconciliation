@@ -37,6 +37,17 @@ def get_unassigned_credits(conn, property_id, org_id=None):
           AND (bt.ignored IS NULL OR bt.ignored = 0)
           AND COALESCE(bs.status, '') != 'superseded'
           AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+          -- Excluding by row id alone is not enough where a statement was
+          -- loaded twice: assigning one twin leaves the other as the only
+          -- surviving row for that reference, so it reappears as unclaimed
+          -- money and the worksheet never comes clean. A reference that has
+          -- been paid through ANY row is settled.
+          AND (bt.mpesa_ref IS NULL OR UPPER(TRIM(bt.mpesa_ref)) NOT IN (
+                SELECT UPPER(TRIM(paid.mpesa_ref))
+                FROM bank_transactions paid
+                JOIN payments p2 ON p2.bank_txn_id = paid.id
+                WHERE paid.mpesa_ref IS NOT NULL AND TRIM(paid.mpesa_ref) != ''
+          ))
         ORDER BY bt.txn_date, bt.id
     """, (property_id, org_id)).fetchall()
 

@@ -12,6 +12,7 @@ and tabular parsers stay independent so each layout is handled without breaking 
 
 import pdfplumber
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Optional
 from decimal import Decimal, ROUND_HALF_UP
@@ -1565,21 +1566,53 @@ def name_from_narration(description: str, reference: Optional[str] = None) -> Op
     plainly there. Dropping it costs the match: the name is what
     enrich_with_suggestions() has to work with.
 
-    Conservative by design — returns a name only when at least two alphabetic
-    words survive filtering, so a narration that holds no name yields None
-    rather than a plausible-looking fragment.
+    National Bank narrations bury the name at the end behind routing fragments —
+    "JAN JAN FT HYB UA OIWV From Acc.No. - 0. . . KES UA OIWV ALBERT MULANGO
+    WAUDO" — so taking the first words that survive filtering returns noise.
+    Two rules find the name instead:
+
+    A token repeated in the same narration is structural, not a name. Reference
+    halves and date fragments recur; "ALBERT" does not.
+
+    A name is a run of adjacent words. After the structural tokens are dropped,
+    the longest unbroken run is the name, preferring the later run on a tie
+    because these layouts put routing first and the payer last.
+
+    Conservative by design — returns a name only when at least two words
+    survive, so a narration holding no name yields None rather than a
+    plausible-looking fragment.
     """
     if not description:
         return None
     text = description.upper()
     if reference:
         text = text.replace(reference.upper(), ' ')
+
     words = [w.strip(",.:;/-'") for w in re.split(r'[\s,]+', text)]
-    kept = [
-        w for w in words
-        if w and w.isalpha() and len(w) > 2 and w not in _NOT_A_NAME
-    ]
-    return ' '.join(kept[:4]) if len(kept) >= 2 else None
+    counts = Counter(w for w in words if w)
+
+    runs, current = [], []
+    for word in words:
+        usable = (
+            word and word.isalpha() and len(word) > 2
+            and word not in _NOT_A_NAME
+            and counts[word] == 1          # repeated => structural, not a name
+        )
+        if usable:
+            current.append(word)
+        else:
+            if current:
+                runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+
+    if not runs:
+        return None
+    # Longest run wins; on a tie the later one does, since the payer trails the
+    # routing detail in these layouts.
+    best = max(runs, key=lambda run: (len(run), runs.index(run)))
+    return ' '.join(best[:4]) if len(best) >= 2 else None
 
 
 def _vision_json_to_transactions(data: dict) -> list[Transaction]:
