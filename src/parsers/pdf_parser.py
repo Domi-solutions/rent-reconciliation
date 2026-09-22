@@ -1499,7 +1499,7 @@ Schema:
       "date": "DD Mon YYYY e.g. 01 Mar 2025",
       "description": "full raw description text",
       "reference": "M-Pesa reference code if present (10-11 alphanumeric chars, e.g. QKA1B2C3D4) or null",
-      "sender": "payer name if visible else null",
+      "sender": "the person who paid. Often inside the description rather than a column of its own — read it out of there. Null only if no name appears at all",
       "amount": float (always positive),
       "direction": "credit or debit",
       "txn_type": "PAYBILL_CREDIT | REVERSAL | CHEQUE | SETTLEMENT | OTHER"
@@ -1546,6 +1546,42 @@ def _pdf_pages_to_b64(pdf_path: str, dpi: int = 130) -> list[str]:
     return pages_b64
 
 
+# Tokens that appear in every M-Pesa narration and are never part of a name.
+_NOT_A_NAME = {
+    'MPESA', 'M-PESA', 'PAYBILL', 'PAY', 'BILL', 'CREDIT', 'DEBIT', 'FROM', 'TO',
+    'REF', 'TRANSFER', 'DEPOSIT', 'MOWIN', 'ACC', 'ACCOUNT', 'NARRATION', 'SENDER',
+    'GAS', 'SUPPLY', 'INWARD', 'OUTWARD', 'CHARGE', 'CHARGES', 'EXCISE', 'DUTY',
+    'THE', 'AND', 'BANK', 'LEDGER', 'FEE', 'FEES', 'COMMISSION', 'INTEREST',
+    'WITHDRAWAL', 'CHEQUE', 'LEAF', 'BALANCE', 'OPENING', 'CLOSING', 'STATEMENT',
+    'REVERSAL', 'SETTLEMENT', 'LIPA', 'NDANI', 'TILL', 'TRANS', 'TXN', 'VALUE',
+}
+
+
+def name_from_narration(description: str, reference: Optional[str] = None) -> Optional[str]:
+    """Recover a payer name from a transaction narration.
+
+    Some statements put the payer inside the description rather than in a column
+    of its own, so the sender field comes back empty even though the name is
+    plainly there. Dropping it costs the match: the name is what
+    enrich_with_suggestions() has to work with.
+
+    Conservative by design — returns a name only when at least two alphabetic
+    words survive filtering, so a narration that holds no name yields None
+    rather than a plausible-looking fragment.
+    """
+    if not description:
+        return None
+    text = description.upper()
+    if reference:
+        text = text.replace(reference.upper(), ' ')
+    words = [w.strip(",.:;/-'") for w in re.split(r'[\s,]+', text)]
+    kept = [
+        w for w in words
+        if w and w.isalpha() and len(w) > 2 and w not in _NOT_A_NAME
+    ]
+    return ' '.join(kept[:4]) if len(kept) >= 2 else None
+
+
 def _vision_json_to_transactions(data: dict) -> list[Transaction]:
     """Convert the LLM JSON response into Transaction objects."""
     transactions = []
@@ -1570,12 +1606,15 @@ def _vision_json_to_transactions(data: dict) -> list[Transaction]:
 
         direction = "credit" if str(row.get("direction", "credit")).lower() == "credit" else "debit"
         reference = row.get("reference") or None
-        sender = row.get("sender") or None
         description = row.get("description") or ""
+        # The payer often sits inside the description rather than its own
+        # column, and a transaction with no name cannot be matched to a tenant.
+        sender = row.get("sender") or name_from_narration(description, reference)
 
-        # Extract unit hint from description (MOWIN 3A style)
+        # Same unit-code rule as the text parser: a code mixes digits with a
+        # letter, which keeps the account number out of the hint.
         unit_hint = None
-        uh = _re.search(r'MOWIN\s*([A-Z0-9]{1,4})', description.upper())
+        uh = UNIT_HINT_RE.search(description.upper())
         if uh:
             unit_hint = uh.group(1)
 

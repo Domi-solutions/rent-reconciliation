@@ -27,6 +27,7 @@ def get_unassigned_credits(conn, property_id, org_id=None):
 
     rows = conn.execute("""
         SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+               bt.raw_text,
                bs.id AS statement_id, bs.filename AS statement_filename, bs.bank_format
         FROM bank_transactions bt
         JOIN bank_statements bs ON bt.statement_id = bs.id
@@ -59,15 +60,33 @@ def group_by_sender(unassigned):
     A caretaker identifies people, not transactions: ninety-odd payments are
     perhaps thirty payers, and deciding once per payer is the difference
     between a job and an afternoon.
+
+    Payments with no payer name are deliberately NOT collapsed together. They
+    are not one person, and merging them produced a single line reading
+    "Unknown sender — 84 payments — KES 380,675", which cannot be assigned to
+    anything. Each keeps its own row with its date, amount and reference, so
+    there is something to work from.
     """
     groups = {}
+    unnamed = []
     for row in unassigned:
-        key = (row.get('sender_name') or 'Unknown sender').strip().upper()
-        group = groups.setdefault(key, {
-            'sender_name': row.get('sender_name') or 'Unknown sender',
+        name = (row.get('sender_name') or '').strip()
+        if not name:
+            unnamed.append({
+                'sender_name': None,
+                'payments': [row],
+                'total': float(row.get('amount') or 0),
+                'suggested_unit_number': row.get('suggested_unit_number'),
+                'suggested_tenant_name': row.get('suggested_tenant_name'),
+                'suggestion_source': row.get('suggestion_source'),
+                'narration': (row.get('raw_text') or '')[:70],
+            })
+            continue
+        group = groups.setdefault(name.upper(), {
+            'sender_name': name,
             'payments': [], 'total': 0.0,
             'suggested_unit_number': None, 'suggested_tenant_name': None,
-            'suggestion_source': None,
+            'suggestion_source': None, 'narration': None,
         })
         group['payments'].append(row)
         group['total'] += float(row.get('amount') or 0)
@@ -76,4 +95,7 @@ def group_by_sender(unassigned):
             group['suggested_tenant_name'] = row.get('suggested_tenant_name')
             group['suggestion_source'] = row.get('suggestion_source')
 
-    return sorted(groups.values(), key=lambda g: -g['total'])
+    named = sorted(groups.values(), key=lambda g: -g['total'])
+    unnamed.sort(key=lambda g: -g['total'])
+    # Named payers first: they are the quick decisions.
+    return named + unnamed

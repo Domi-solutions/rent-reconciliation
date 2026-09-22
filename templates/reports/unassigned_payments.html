@@ -22,6 +22,8 @@
   .c-box  { width: 108px; }
   .box    { border: 1.5px solid #000; border-radius: 4px; height: 30px; }
   .hint   { font-size: 10px; color: #0B4A9B; font-weight: 700; }
+  .noname { font-weight: 600; color: #333; }
+  .c-ref  { font-family: ui-monospace, monospace; font-size: 11px; color: #000; }
 
   .w-tot { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;
            border-top: 2px solid #000; padding-top: 6px; margin-top: 4px; }
@@ -70,6 +72,8 @@
   <div class="w-note">
     Write the house number in the box. These people have paid — until a house is written
     against each, they still show as owing the money.
+    Rows without a name are payments the bank recorded without one: use the date,
+    the reference and the amount to work out who it was.
   </div>
 
   {% if grouped %}
@@ -87,11 +91,20 @@
       <tr>
         <td class="c-no">{{ loop.index }}</td>
         <td>
-          <div class="c-name">{{ g.sender_name }}</div>
-          <div class="c-sub">
-            {{ g.payments|length }} payment{{ 's' if g.payments|length != 1 }}
-            {%- if g.suggested_unit_number %} · <span class="hint">maybe {{ g.suggested_unit_number }}</span>{% endif %}
-          </div>
+          {% if g.sender_name %}
+            <div class="c-name">{{ g.sender_name }}</div>
+            <div class="c-sub">
+              {{ g.payments|length }} payment{{ 's' if g.payments|length != 1 }}
+              {%- if g.suggested_unit_number %} · <span class="hint">maybe {{ g.suggested_unit_number }}</span>{% endif %}
+            </div>
+          {% else %}
+            {# No payer name on the statement — give the date and reference to
+               work from instead of a name nobody can act on. #}
+            {% set p = g.payments[0] %}
+            <div class="c-name noname">{{ p.txn_date or 'date unknown' }}
+              <span class="c-ref">{{ p.mpesa_ref or 'no ref' }}</span></div>
+            <div class="c-sub">no name on statement{% if g.narration %} · {{ g.narration }}{% endif %}</div>
+          {% endif %}
         </td>
         <td class="c-amt">{{ '{:,.0f}'.format(g.total) }}</td>
         <td class="c-box"><div class="box"></div></td>
