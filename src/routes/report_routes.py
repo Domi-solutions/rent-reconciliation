@@ -10,6 +10,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from src.database.db import get_connection, generate_id
 from src.reports.arrears_report import generate_arrears_report
 from src.reports.backfill import backfill_reports
+from src.reports.tenant_evidence import generate_tenant_evidence
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
 from src.parsers.banks.registry import bank_display_name
 
@@ -395,6 +396,35 @@ def send_arrears_report():
             flash(f'Could not send the report: {exc}', 'error')
 
     return redirect(url_for('reports.arrears_report'))
+
+
+@report_bp.route('/statement-of-account/<tenant_id>')
+def tenant_evidence(tenant_id):
+    """Full statement of account for one tenant, traced to source."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        owns = conn.execute(
+            "SELECT 1 FROM tenants WHERE id = ? AND property_id = ?", (tenant_id, prop['id'])
+        ).fetchone()
+        if not owns:
+            flash('That tenant is not on the selected property.', 'error')
+            return redirect(url_for('reports.arrears_report'))
+
+        report = generate_tenant_evidence(conn, tenant_id)
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ('statement_of_account_generated', 'tenant', tenant_id,
+             f"Statement of account generated for {report['tenant']['name']} "
+             f"(balance KES {report['totals']['balance']:,.0f}, "
+             f"hash {report['integrity_hash'][:12]})", 'admin')
+        )
+
+    return render_template('reports/statement_of_account.html',
+                           property=prop, report=report, active_nav='arrears_report')
 
 
 @report_bp.route('/history')

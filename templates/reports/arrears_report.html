@@ -104,7 +104,10 @@
           <tr>
             <td><strong>{{ d.unit_number }}</strong></td>
             <td>
-              {{ d.tenant_name or 'Vacant' }}
+              {% if d.tenant_id %}
+                <a href="{{ url_for('reports.tenant_evidence', tenant_id=d.tenant_id) }}">{{ d.tenant_name }}</a>
+                <div class="quiet no-print">statement of account →</div>
+              {% else %}{{ d.tenant_name or 'Vacant' }}{% endif %}
               {% if d.tenant_phone %}<div class="quiet">{{ d.tenant_phone }}</div>{% endif %}
             </td>
             <td class="num">{{ '{:,.0f}'.format(d.monthly_rent) }}</td>

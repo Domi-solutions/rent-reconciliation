@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}Statement of Account — {{ report.tenant.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .soa { max-width: 920px; margin: 0 auto; }
+  .soa-head { border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 18px; }
+  .soa-title { font-size: 23px; font-weight: 700; color: var(--ink); }
+  .soa-meta { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .soa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .soa-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .soa-box-l { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  .soa-kv { font-size: 13px; color: var(--ink); line-height: 1.7; }
+  .soa-kv span { color: var(--ink-2); display: inline-block; min-width: 96px; }
+  .soa-due { background: var(--ink); color: #fff; border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+  .soa-due-l { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; opacity: .7; }
+  .soa-due-v { font-size: 32px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+  .soa-due-s { font-size: 12px; opacity: .75; margin-top: 5px; }
+  .soa-sec { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+  .soa-sec-h { padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  table.led { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.led th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  table.led td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, monospace; font-size: 11px; }
+  .rowcharge { background: #fff; }
+  .rowpay { background: #FBFDFB; }
+  .ev { font-size: 11px; color: var(--ink-2); line-height: 1.55; margin-top: 3px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+  .p-green { background: #EDFAF1; color: #1E7A35; }
+  .p-amber { background: #FFF4E5; color: #92400e; }
+  .p-red { background: #FFF0EF; color: #b91c1c; }
+  .notice { border-radius: 10px; padding: 12px 15px; margin-bottom: 14px; font-size: 12.5px; line-height: 1.6; }
+  .notice-warn { background: #FFF4E5; border: 1px solid #FED7AA; color: #92400e; }
+  .notice-plain { background: var(--bg); border: 1px solid var(--border); color: var(--ink-2); }
+  .hash { font-family: ui-monospace, monospace; font-size: 10.5px; word-break: break-all; color: var(--ink-2); }
+  @media print {
+    .no-print { display: none !important; }
+    .soa-sec { break-inside: auto; }
+    table.led tr { break-inside: avoid; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="soa">
+
+  <div class="no-print d-flex justify-content-end gap-2 mb-3">
+    <a href="{{ url_for('reports.arrears_report') }}" class="btn btn-sm btn-outline-secondary">← Arrears</a>
+    <a href="#" onclick="window.print(); return false;" class="btn btn-sm btn-dark">Print / PDF</a>
+  </div>
+
+  <div class="soa-head">
+    <div class="soa-title">Statement of Account</div>
+    <div class="soa-meta">
+      {{ report.property.name }} · Unit {{ report.unit.unit_number }} ·
+      Generated {{ report.generated_at[:19].replace('T', ' ') }}
+    </div>
+  </div>
+
+  <div class="soa-grid">
+    <div class="soa-box">
+      <div class="soa-box-l">Tenant</div>
+      <div class="soa-kv">
+        <div><span>Name</span> <strong>{{ report.tenant.name }}</strong></div>
+        {% if report.tenant.phone %}<div><span>Phone</span> {{ report.tenant.phone }}</div>{% endif %}
+        <div><span>Unit</span> {{ report.unit.unit_number }}</div>
+        {% if report.tenant.move_in_date %}<div><span>Moved in</span> {{ report.tenant.move_in_date }}</div>{% endif %}
+        <div><span>Status</span> {{ report.tenant.status }}</div>
+      </div>
+    </div>
+    <div class="soa-box">
+      <div class="soa-box-l">Tenancy terms</div>
+      <div class="soa-kv">
+        <div><span>Monthly rent</span> KES {{ '{:,.0f}'.format(report.unit.monthly_rent) }}</div>
+        <div><span>Service</span> KES {{ '{:,.0f}'.format(report.unit.service_charge) }}</div>
+        <div><span>Due day</span> {{ report.unit.rent_due_day }}{% if report.unit.rent_due_day == 0 %} (month end){% endif %}</div>
+      </div>
+    </div>
+    <div class="soa-box">
+      <div class="soa-box-l">Account summary</div>
+      <div class="soa-kv">
+        <div><span>Charged</span> KES {{ '{:,.0f}'.format(report.totals.total_charged) }}</div>
+        <div><span>Paid</span> KES {{ '{:,.0f}'.format(report.totals.total_paid) }}</div>
+        <div><span>Payments</span> {{ report.totals.payment_count }}</div>
+        <div><span>Bank-verified</span> KES {{ '{:,.0f}'.format(report.totals.bank_verified_total) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="soa-due">
+    <div class="soa-due-l">{% if report.totals.balance >= 0 %}Balance outstanding{% else %}Account in credit{% endif %}</div>
+    <div class="soa-due-v">KES {{ '{:,.0f}'.format(report.totals.balance|abs) }}</div>
+    <div class="soa-due-s">
+      {{ '{:,.0f}'.format(report.totals.total_charged) }} charged
+      less {{ '{:,.0f}'.format(report.totals.total_paid) }} received
+      across {{ report.totals.charge_count }} charge{{ 's' if report.totals.charge_count != 1 }}
+      and {{ report.totals.payment_count }} payment{{ 's' if report.totals.payment_count != 1 }}
+    </div>
+  </div>
+
+  {% if report.coverage.gap_months %}
+  <div class="notice notice-warn">
+    <strong>Periods not checked against bank records:</strong>
+    {{ report.coverage.gap_months|join(', ') }}.<br>
+    No bank statement covering these periods has been loaded. A payment made during
+    them would not appear below. This is stated so that any line in this statement
+    can be challenged on the evidence rather than on assertion.
+  </div>
+  {% endif %}
+
+  {% if report.totals.unverified_payment_total %}
+  <div class="notice notice-warn">
+    KES {{ '{:,.0f}'.format(report.totals.unverified_payment_total) }} of the payments below
+    were recorded from a reported M-Pesa message and have not been matched to a line
+    on a bank statement. They are credited to the tenant, and marked as unverified.
+  </div>
+  {% endif %}
+
+  <div class="soa-sec">
+    <div class="soa-sec-h">Ledger — every charge and payment, in date order</div>
+    <table class="led">
+      <thead>
+        <tr>
+          <th style="width:88px;">Date</th>
+          <th>Description</th>
+          <th class="n">Charged</th>
+          <th class="n">Paid</th>
+          <th class="n">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in report.ledger %}
+        <tr class="{{ 'rowpay' if e.kind == 'payment' else 'rowcharge' }}">
+          <td class="mono">{{ e.date or '—' }}</td>
+          <td>
+            {{ e.description }}
+            {% if e.kind == 'payment' %}
+              {% set v = e.evidence %}
+              <div class="ev">
+                {% if v.mpesa_ref %}Ref <strong class="mono">{{ v.mpesa_ref }}</strong>{% else %}<em>no reference recorded</em>{% endif %}
+                {% if v.verified_against_bank %}
+                  <span class="pill p-green">bank verified</span>
+                {% else %}
+                  <span class="pill p-amber">not bank verified</span>
+                {% endif %}
+                <br>
+                {% if v.statement_filename %}
+                  Source: {{ v.statement_filename }}
+                  {% if v.statement_period %}({{ v.statement_period }}){% endif %}
+                  {% if v.bank_format %}· {{ v.bank_format }}{% endif %}
+                  {% if v.statement_uploaded_at %}· uploaded {{ v.statement_uploaded_at[:10] }}{% endif %}
+                {% else %}
+                  Source: {{ v.claim_source or v.assignment_type or 'manual entry' }}
+                  {% if v.recorded_by %}· recorded by {{ v.recorded_by }}{% endif %}
+                {% endif %}
+                {% if e.allocations %}
+                <br>Applied to:
+                {% for a in e.allocations %}{{ a.period }} {{ a.charge_type }} KES {{ '{:,.0f}'.format(a.amount) }}{% if not loop.last %}; {% endif %}{% endfor %}
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td class="n">{% if e.debit %}{{ '{:,.0f}'.format(e.debit) }}{% endif %}</td>
+          <td class="n">{% if e.credit %}{{ '{:,.0f}'.format(e.credit) }}{% endif %}</td>
+          <td class="n"><strong>{{ '{:,.0f}'.format(e.running_balance) }}</strong></td>
+        </tr>
+        {% endfor %}
+        {% if not report.ledger %}
+        <tr><td colspan="5" style="color: var(--ink-3);">No charges or payments recorded.</td></tr>
+        {% endif %}
+      </tbody>
+      <tfoot>
+        <tr style="background: var(--bg); font-weight: 700;">
+          <td colspan="2">Totals</td>
+          <td class="n">{{ '{:,.0f}'.format(report.totals.total_charged) }}</td>
+          <td class="n">{{ '{:,.0f}'.format(report.totals.total_paid) }}</td>
+          <td class="n">{{ '{:,.0f}'.format(report.totals.balance) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="soa-sec">
+    <div class="soa-sec-h">Bank statements this account was checked against</div>
+    <table class="led">
+      <thead><tr><th>Period</th><th>Bank</th><th>File</th><th class="n">Transactions</th></tr></thead>
+      <tbody>
+        {% for st in report.coverage.statements %}
+        <tr>
+          <td class="mono">{{ st.period_start }} → {{ st.period_end }}
+            {% if st.period_suspect %}<span class="pill p-amber">date unreadable</span>{% endif %}</td>
+          <td>{{ st.bank_format }}</td>
+          <td class="mono">{{ st.filename }}</td>
+          <td class="n">{{ st.total_transactions or 0 }}</td>
+        </tr>
+        {% endfor %}
+        {% if not report.coverage.statements %}
+        <tr><td colspan="4" style="color: var(--ink-3);">No bank statements loaded for this property.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if report.claims %}
+  <div class="soa-sec">
+    <div class="soa-sec-h">Payments reported by or for this tenant</div>
+    <table class="led">
+      <thead><tr><th>Date</th><th>Reference</th><th class="n">Claimed</th><th>Reported via</th><th>Outcome</th></tr></thead>
+      <tbody>
+        {% for c in report.claims %}
+        <tr>
+          <td class="mono">{{ (c.created_at or '')[:10] }}</td>
+          <td class="mono">{{ c.mpesa_ref or '—' }}</td>
+          <td class="n">{{ '{:,.0f}'.format(c.claimed_amount or 0) }}</td>
+          <td>{{ c.source or '—' }}</td>
+          <td>
+            <span class="pill {% if c.status == 'verified' %}p-green{% elif c.status == 'flagged' %}p-red{% else %}p-amber{% endif %}">{{ c.status }}</span>
+            {% if c.flag_reason %}<div class="ev">{{ c.flag_reason }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="notice notice-plain">
+    <strong>Scope of this statement</strong>
+    <ul style="margin: 7px 0 0 18px; padding: 0;">
+      {% for l in report.limitations %}<li>{{ l }}</li>{% endfor %}
+    </ul>
+    <div style="margin-top: 10px;">
+      If any line above is disputed, quote the reference and the date. Each payment
+      is traceable to the bank statement it was read from, and each charge to the
+      period it was raised for.
+    </div>
+    <div style="margin-top: 10px;">
+      Document fingerprint (SHA-256 of the ledger as rendered):
+      <div class="hash">{{ report.integrity_hash }}</div>
+      <div style="font-size: 11px; margin-top: 3px;">
+        A later copy showing the same fingerprint has not been altered since this was produced.
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
