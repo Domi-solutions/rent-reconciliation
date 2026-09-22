@@ -1,0 +1,80 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}{{ property.name }} — Unassigned Payments{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ua-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; margin-bottom: 10px; }
+  .ua-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .ua-amount { font-size: 19px; font-weight: 700; color: var(--ink); }
+  .ua-sender { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .ua-meta { font-size: 12px; color: var(--ink-3); font-family: ui-monospace, monospace; }
+  .ua-suggest { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #dbeafe; color: #1e40af; }
+  .ua-form { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .ua-form select { flex: 1 1 240px; min-width: 200px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); color: var(--ink); }
+  .ua-btn { padding: 7px 16px; border: none; border-radius: 6px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .ua-btn:hover { opacity: .88; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Unassigned payments</div>
+    <div style="font-size: 13px; color: var(--ink-3);">
+      Money received in the bank that is not yet matched to a tenant
+    </div>
+  </div>
+</div>
+
+{% if unassigned %}
+<div style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px;">
+  <div style="font-size: 14px; font-weight: 700; color: #92400e;">
+    {{ unassigned|length }} payment{{ 's' if unassigned|length != 1 }} totalling KES {{ '{:,.0f}'.format(unassigned_total) }}
+  </div>
+  <div style="font-size: 12px; color: #92400e; margin-top: 3px;">
+    Until these are assigned, the tenants who sent them still show as owing the money.
+  </div>
+</div>
+
+{% for u in unassigned %}
+<div class="ua-row">
+  <div class="ua-top">
+    <div>
+      <div class="ua-sender">{{ u.sender_name or 'Unknown sender' }}</div>
+      <div class="ua-meta">{{ u.txn_date or '—' }} · ref {{ u.mpesa_ref or '—' }}</div>
+    </div>
+    <div class="ua-amount">KES {{ '{:,.0f}'.format(u.amount or 0) }}</div>
+  </div>
+
+  {% if u.suggested_unit_number %}
+  <div style="margin-top: 8px;">
+    <span class="ua-suggest">
+      Suggested: {{ u.suggested_unit_number }}{% if u.suggested_tenant_name %} · {{ u.suggested_tenant_name }}{% endif %}
+      {% if u.suggestion_source == 'sender_history' %}(past payer){% elif u.suggestion_source == 'name_match' %}(name match){% elif u.suggestion_source == 'unit_hint' %}(unit hint){% endif %}
+    </span>
+  </div>
+  {% endif %}
+
+  <form method="POST" class="ua-form"
+        action="{{ url_for('caretaker.tenant_quick_assign', property_id=property.id, tenant_id='__TID__', txn_id=u.id) }}"
+        onsubmit="this.action = this.action.replace('__TID__', this.tenant_id.value); return this.tenant_id.value !== '';">
+    <input type="hidden" name="return_to" value="unassigned">
+    <select name="tenant_id" required>
+      <option value="">Assign to…</option>
+      {% for t in assignable_tenants %}
+      <option value="{{ t.id }}" {% if u.suggested_tenant_id == t.id %}selected{% endif %}>
+        {{ t.unit_number }} — {{ t.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="ua-btn">Assign</button>
+  </form>
+</div>
+{% endfor %}
+
+{% else %}
+<div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 16px; font-size: 14px; color: #166534;">
+  Every payment on record is matched to a tenant. Nothing to assign.
+</div>
+{% endif %}
+{% endblock %}

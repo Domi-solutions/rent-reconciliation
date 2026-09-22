@@ -1,175 +1,147 @@
 {% extends "caretaker/base_caretaker.html" %}
-{% block title %}{{ property.name }} — Caretaker Overview{% endblock %}
+{% block title %}{{ property.name }} — Caretaker{% endblock %}
 
 {% block extra_css %}
 <style>
-  .ct-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 24px; }
-  .ct-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 16px; }
-  .ct-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
-  .ct-kpi-value { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--ink); }
-  .ct-kpi-sub { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
-  .ct-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 18px; overflow: hidden; }
-  .ct-section-header { padding: 10px 18px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; align-items: center; }
-  .ct-section-body { padding: 18px; }
-  .ct-bar-wrap { background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
-  .ct-bar { height: 8px; border-radius: 6px; background: #198754; }
-  .vacant-pill { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #ede9fe; color: #4f46e5; margin: 3px 3px 3px 0; }
-  .mo-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-  .mo-warn { background: #fff3cd; color: #856404; }
-  .mo-danger { background: #f8d7da; color: #842029; }
+  /* Phone first. The caretaker is standing in the compound with one hand free,
+     so the three things they actually do are big buttons at the top and
+     everything else is a tap away in the nav. */
+  .ct-wrap { max-width: 620px; margin: 0 auto; }
+
+  .ct-do { display: block; text-decoration: none; border-radius: var(--r-card);
+    padding: 18px 18px; margin-bottom: 12px; min-height: 76px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit; }
+  .ct-do:hover { border-color: var(--ink-3); color: inherit; }
+  .ct-do-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ct-do-primary:hover { opacity: .92; color: #fff; }
+  .ct-do-title { font-size: 17px; font-weight: 700; display: flex;
+    justify-content: space-between; align-items: center; gap: 10px; }
+  .ct-do-sub { font-size: 13px; color: var(--ink-3); margin-top: 3px; }
+  .ct-do-primary .ct-do-sub { color: rgba(255,255,255,.72); }
+  .ct-count { display: inline-block; min-width: 26px; text-align: center;
+    padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: #FF3B30; color: #fff; }
+
+  .ct-head { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); padding: 18px; margin: 18px 0 12px; text-align: center; }
+  .ct-head-label { font-size: 11px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .ct-head-value { font-size: 32px; font-weight: 700; color: var(--ink); margin-top: 5px; line-height: 1.1; }
+  .ct-head-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+
+  .ct-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--ink-3); margin: 20px 4px 9px; }
+  .ct-list { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); overflow: hidden; }
+  .ct-row { display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--border);
+    min-height: 58px; text-decoration: none; color: inherit; }
+  .ct-row:last-child { border-bottom: none; }
+  .ct-row:active { background: var(--bg); }
+  .ct-u { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .ct-t { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .ct-owed { font-size: 16px; font-weight: 700; color: #FF3B30; white-space: nowrap; }
+  .ct-mo { font-size: 11px; color: var(--ink-3); text-align: right; margin-top: 2px; }
+  .ct-more { display: block; text-align: center; padding: 14px; font-size: 14px;
+    font-weight: 600; color: #0071E3; text-decoration: none; }
+  .ct-note { border-radius: 12px; padding: 11px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
-  <div>
-    <div style="font-size: 20px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
-    <div style="font-size: 13px; color: var(--ink-3);">Live operational view</div>
-  </div>
-  <a onclick="window.print()" href="#" class="ct-no-print" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Print</a>
-</div>
+<div class="ct-wrap">
 
-{% if days_to_due is not none %}
-<div style="padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; font-weight: 600;
-  background: {% if days_to_due <= 3 %}#fef3c7{% elif days_to_due <= 7 %}#eff6ff{% else %}#f0fdf4{% endif %};
-  border: 1px solid {% if days_to_due <= 3 %}#fbbf24{% elif days_to_due <= 7 %}#93c5fd{% else %}#86efac{% endif %};
-  color: {% if days_to_due <= 3 %}#92400e{% else %}var(--ink){% endif %};">
-  {% if days_to_due == 0 %}Rent due today — {{ next_due_date }}
-  {% elif days_to_due < 0 %}Rent was due {{ (-days_to_due) }} day{{ 's' if days_to_due != -1 }} ago — {{ next_due_date }}
-  {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due — {{ next_due_date }}{% endif %}
-</div>
-{% endif %}
-{% if recent_reminder %}
-<div style="padding: 8px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12px;
-  background: #f0fdf4; border: 1px solid #86efac; color: #166534;">
-  Reminder SMS sent today — {{ recent_reminder.details }}
-</div>
-{% endif %}
-
-{% if mismatches %}
-<div style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-  <div style="font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 6px;">
-    ⚠ {{ mismatches|length }} payment{{ 's' if mismatches|length != 1 }} — bank amount differs from what was reported
-  </div>
-  {% for m in mismatches %}
-  <div style="font-size: 13px; color: #92400e; margin-bottom: 2px;">
-    Unit {{ m.unit_number }}{% if m.tenant_name %} · {{ m.tenant_name }}{% endif %} —
-    Ref <span style="font-family: monospace;">{{ m.mpesa_ref }}</span>:
-    reported KES {{ '{:,.0f}'.format(m.claimed_amount) }}, bank confirmed KES {{ '{:,.0f}'.format(m.bank_amount) }}.
-    {% if m.caretaker_note %}<span style="color: #166534;">Note added ✓</span>{% endif %}
-  </div>
-  {% endfor %}
-  <a href="{{ url_for('caretaker.payment_activity', property_id=property.id) }}"
-     style="font-size: 12px; color: #92400e; font-weight: 600; text-decoration: underline; display: inline-block; margin-top: 6px;">
-    Review and add notes →
-  </a>
-</div>
-{% endif %}
-
-{# STAT CARDS #}
-<div class="ct-kpi-grid">
-  <div class="ct-kpi">
-    <div class="ct-kpi-label">Occupied</div>
-    <div class="ct-kpi-value" style="color:#198754;">{{ occ.occupied }}</div>
-    <div class="ct-kpi-sub">of {{ occ.total }} units · {{ occ.occ_rate }}%</div>
-  </div>
-  <div class="ct-kpi">
-    <div class="ct-kpi-label">Vacant</div>
-    <div class="ct-kpi-value" style="color:#6366f1;">{{ occ.vacant }}</div>
-    <div class="ct-kpi-sub">available for letting{% if occ.office > 0 %} · {{ occ.office }} office{% endif %}</div>
-  </div>
-  <div class="ct-kpi">
-    <div class="ct-kpi-label">On Time</div>
-    <div class="ct-kpi-value" style="color:#198754;">{{ occ.occupied - arrears_total }}</div>
-    <div class="ct-kpi-sub">fully current</div>
-  </div>
-  <div class="ct-kpi">
-    <div class="ct-kpi-label">Behind</div>
-    <div class="ct-kpi-value" style="color:#dc3545;">{{ arrears_total }}</div>
-    <div class="ct-kpi-sub">unit{{ 's' if arrears_total != 1 }} needing follow-up</div>
-  </div>
-</div>
-
-{# OCCUPANCY BAR #}
-<div class="ct-section">
-  <div class="ct-section-header">Occupancy</div>
-  <div class="ct-section-body">
-    <div class="ct-bar-wrap">
-      <div class="ct-bar" style="width: {{ occ.occ_rate }}%;"></div>
+  <div style="margin-bottom: 14px;">
+    <div style="font-size: 21px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
+    {% if days_to_due is not none %}
+    <div style="font-size: 13px; color: var(--ink-2);">
+      {% if days_to_due == 0 %}Rent due today
+      {% elif days_to_due < 0 %}Rent was due {{ -days_to_due }} day{{ 's' if days_to_due != -1 }} ago
+      {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due{% endif %}
+      · {{ next_due_date }}
     </div>
-    <small class="text-muted">{{ occ.occ_rate }}% of rentable units occupied · {{ occ.occupied }} occupied · {{ occ.vacant }} vacant{% if occ.office > 0 %} · {{ occ.office }} office{% endif %}</small>
-  </div>
-</div>
-
-{# VACANT UNITS #}
-{% if vacant_units %}
-<div class="ct-section">
-  <div class="ct-section-header">
-    <span>Vacant Units — {{ vacant_units|length }}</span>
-    <span style="font-size: 12px; font-weight: 400; color: var(--ink-3);">Available for letting</span>
-  </div>
-  <div class="ct-section-body">
-    {% for u in vacant_units %}
-      <span class="vacant-pill">{{ u.unit_number }}{% if u.apartment_size %} · {{ u.apartment_size }}{% endif %}</span>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{# TOP ARREARS #}
-{% if arrears %}
-<div class="ct-section">
-  <div class="ct-section-header">
-    <span>Rent Follow-up{% if arrears_total > 5 %} — top 5 of {{ arrears_total }}{% endif %}</span>
-    {% if arrears_total > 5 %}
-    <a href="{{ url_for('caretaker.arrears', property_id=property.id) }}" style="font-size: 12px; color: var(--blue); text-decoration: none;" class="ct-no-print">See all {{ arrears_total }} →</a>
     {% endif %}
   </div>
-  <div style="overflow-x: auto;">
-    <table class="table table-sm mb-0">
-      <thead>
-        <tr>
-          <th style="padding: 9px 18px;">Unit</th>
-          <th>Tenant</th>
-          <th>Contact</th>
-          <th class="text-end">Balance (KES)</th>
-          <th class="text-end" style="padding-right: 18px;">Behind</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for a in arrears %}
-        <tr>
-          <td style="padding: 9px 18px; font-weight: 600;">{{ a.unit_number }}</td>
-          <td>{{ a.tenant_name or '—' }}</td>
-          <td>
-            {% if a.tenant_phone %}
-            <a href="tel:{{ a.tenant_phone }}" style="color: var(--ink-2); text-decoration: none; font-weight: 500;">{{ a.tenant_phone }}</a>
-            {% else %}<span class="text-muted">—</span>{% endif %}
-          </td>
-          <td class="text-end" style="color: #dc3545; font-weight: 600;">{{ "{:,.0f}".format(a.balance or 0) }}</td>
-          <td class="text-end" style="padding-right: 18px;">
-            {% if a.months_behind %}
-            <span class="mo-badge {% if a.months_behind >= 2 %}mo-danger{% else %}mo-warn{% endif %}">{{ a.months_behind }}mo</span>
-            {% else %}—{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% if arrears_total > 5 %}
-  <div style="padding: 10px 18px; border-top: 1px solid var(--border);">
-    <a href="{{ url_for('caretaker.arrears', property_id=property.id) }}" class="btn btn-sm btn-outline-secondary ct-no-print">View all {{ arrears_total }} units behind →</a>
+
+  {# ---- The three things a caretaker actually does ---- #}
+  <a href="{{ url_for('caretaker.unassigned', property_id=property.id) }}"
+     class="ct-do {% if unassigned_count %}ct-do-primary{% endif %}">
+    <div class="ct-do-title">
+      <span>Assign payments to tenants</span>
+      {% if unassigned_count %}<span class="ct-count">{{ unassigned_count }}</span>{% endif %}
+    </div>
+    <div class="ct-do-sub">
+      {% if unassigned_count %}
+        KES {{ '{:,.0f}'.format(unassigned_total) }} received but not yet matched to anyone
+      {% else %}
+        Everything received is matched to a tenant
+      {% endif %}
+    </div>
+  </a>
+
+  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" class="ct-do">
+    <div class="ct-do-title"><span>Log an M-Pesa message</span></div>
+    <div class="ct-do-sub">Paste the SMS and assign it to a tenant</div>
+  </a>
+
+  <a href="{{ url_for('caretaker.arrears', property_id=property.id) }}" class="ct-do">
+    <div class="ct-do-title">
+      <span>Who owes what</span>
+      {% if arrears_total %}<span class="ct-count" style="background: var(--ink-3);">{{ arrears_total }}</span>{% endif %}
+    </div>
+    <div class="ct-do-sub">Every tenant behind on rent</div>
+  </a>
+
+  {% if mismatches %}
+  <div class="ct-note" style="background: #fffbeb; border: 1px solid #fbbf24; color: #92400e;">
+    {{ mismatches|length }} payment{{ 's' if mismatches|length != 1 }} where the bank amount differs from what was reported —
+    <a href="{{ url_for('caretaker.payment_activity', property_id=property.id) }}" style="color:#92400e; font-weight:700;">check →</a>
   </div>
   {% endif %}
-</div>
-{% else %}
-<div class="ct-section">
-  <div class="ct-section-header">Rent Follow-up</div>
-  <div class="ct-section-body">
-    <span class="text-muted" style="font-size: 13px;">All occupied units are current — no follow-up needed.</span>
-  </div>
-</div>
-{% endif %}
 
+  {# ---- Who owes what, inline ---- #}
+  <div class="ct-head">
+    <div class="ct-head-label">Outstanding</div>
+    <div class="ct-head-value">KES {{ '{:,.0f}'.format(arrears_sum or 0) }}</div>
+    <div class="ct-head-sub">
+      {{ arrears_total }} tenant{{ 's' if arrears_total != 1 }} behind ·
+      {{ occ.occupied }}/{{ occ.rentable }} units occupied
+    </div>
+  </div>
+
+  <div class="ct-title">Behind on rent</div>
+  {% if arrears %}
+  <div class="ct-list">
+    {% for a in arrears[:12] %}
+    <a class="ct-row" href="{{ url_for('caretaker.tenant_statement', property_id=property.id, tenant_id=a.tenant_id) if a.tenant_id else url_for('caretaker.arrears', property_id=property.id) }}">
+      <div>
+        <div class="ct-u">{{ a.unit_number }}</div>
+        <div class="ct-t">{{ a.tenant_name or 'Vacant' }}</div>
+      </div>
+      <div>
+        <div class="ct-owed">{{ '{:,.0f}'.format(a.display_balance or 0) }}</div>
+        {% if a.months_behind %}<div class="ct-mo">{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }}</div>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+    {% if arrears_total > 12 %}
+    <a class="ct-more" href="{{ url_for('caretaker.arrears', property_id=property.id) }}">See all {{ arrears_total }} →</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="ct-list">
+    <div class="ct-row" style="color: #1E7A35; font-weight: 600;">Nobody is behind on rent.</div>
+  </div>
+  {% endif %}
+
+  {% if vacant_units %}
+  <div class="ct-title">Vacant</div>
+  <div class="ct-list">
+    <div class="ct-row" style="display:block;">
+      {% for v in vacant_units %}<span style="display:inline-block; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; background:#ede9fe; color:#4f46e5; margin:3px 3px 3px 0;">{{ v.unit_number }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
 {% endblock %}

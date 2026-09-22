@@ -45,6 +45,8 @@
          href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
       <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"
          href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Arrears</a>
+      <a class="ct-nav-tab {% if active_tab == 'unassigned' %}active{% endif %}"
+         href="{{ url_for('caretaker.unassigned', property_id=property.id) }}">Unassigned</a>
       <a class="ct-nav-tab {% if active_tab == 'reports' %}active{% endif %}"
          href="{{ url_for('caretaker.reports_list', property_id=property.id) }}">Reports</a>
       <a class="ct-nav-tab {% if active_tab == 'tenants' %}active{% endif %}"

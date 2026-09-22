@@ -9,6 +9,7 @@ import re
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 
 from src.database.db import get_connection, generate_id, allocate_payment
+from src.reconciliation.matcher import enrich_with_suggestions
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
 
@@ -137,6 +138,64 @@ def _occupancy_data(conn, property_id):
     return occ
 
 
+def _unassigned_credits(conn, property_id, limit=None):
+    """Money that arrived in the bank but is not yet attributed to any unit.
+
+    This is the gap that leaves a tenant looking unpaid while their money sits
+    in the account, so the caretaker — who knows who actually lives where —
+    needs to see it rather than only the admin. Each row carries the matcher's
+    suggestion so the common case is one click, not a hunt.
+
+    Mirrors the admin 'unreported' query, including the ignored filter: an
+    ignored transaction stays assignable but must not be counted as outstanding.
+    """
+    rows = conn.execute("""
+        SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
+               bs.id AS statement_id, bs.filename AS statement_filename
+        FROM bank_transactions bt
+        JOIN bank_statements bs ON bt.statement_id = bs.id
+        WHERE bs.property_id = ?
+          AND bt.txn_type = 'PAYBILL_CREDIT'
+          AND (bt.ignored IS NULL OR bt.ignored = 0)
+          AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+        ORDER BY bt.txn_date DESC
+    """, (property_id,)).fetchall()
+
+    unassigned = [dict(row) for row in rows]
+    org_row = conn.execute(
+        "SELECT organization_id FROM properties WHERE id = ?", (property_id,)
+    ).fetchone()
+    enrich_with_suggestions(
+        unassigned, conn, property_id,
+        org_row['organization_id'] if org_row else None
+    )
+
+    # Attach the tenant sitting in the suggested unit so the caretaker sees a
+    # name, not a unit code, before committing someone's money to it.
+    for row in unassigned:
+        row['suggested_tenant_id'] = None
+        if row.get('suggested_unit_id'):
+            tenant = conn.execute(
+                "SELECT id, name FROM tenants WHERE unit_id = ? AND status = 'active'",
+                (row['suggested_unit_id'],)
+            ).fetchone()
+            if tenant:
+                row['suggested_tenant_id'] = tenant['id']
+                row.setdefault('suggested_tenant_name', None)
+                row['suggested_tenant_name'] = row.get('suggested_tenant_name') or tenant['name']
+    return unassigned[:limit] if limit else unassigned
+
+
+def _assignable_tenants(conn, property_id):
+    """Active tenants, for the assign dropdown."""
+    return conn.execute("""
+        SELECT t.id, t.name, u.unit_number
+        FROM tenants t JOIN units u ON t.unit_id = u.id
+        WHERE t.property_id = ? AND t.status = 'active'
+        ORDER BY u.unit_number
+    """, (property_id,)).fetchall()
+
+
 def _arrears_rows(conn, property_id):
     rows = conn.execute("""
         SELECT
@@ -232,17 +291,44 @@ def dashboard(property_id):
             ORDER BY p.payment_date DESC
         """, (property_id,)).fetchall()
 
+        unassigned = _unassigned_credits(conn, property_id)
+        unassigned_total = sum(float(u['amount'] or 0) for u in unassigned)
+        assignable_tenants = _assignable_tenants(conn, property_id)
+
     return render_template('caretaker/dashboard.html',
+                           unassigned=unassigned[:5],
+                           unassigned_count=len(unassigned),
+                           unassigned_total=unassigned_total,
+                           assignable_tenants=assignable_tenants,
                            property=prop,
                            occ=occ,
-                           arrears=arrears[:5],
+                           arrears=arrears,
                            arrears_total=len(arrears),
+                           arrears_sum=sum(float(a['display_balance']) for a in arrears),
                            vacant_units=vacant_units,
                            next_due_date=next_due_date,
                            days_to_due=days_to_due,
                            recent_reminder=recent_reminder,
                            mismatches=mismatches,
                            active_tab='overview')
+
+
+@caretaker_bp.route('/<property_id>/unassigned')
+def unassigned(property_id):
+    """Every payment received but not yet matched to a tenant."""
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        rows = _unassigned_credits(conn, property_id)
+        tenants_list = _assignable_tenants(conn, property_id)
+
+    return render_template('caretaker/unassigned.html',
+                           property=prop,
+                           unassigned=rows,
+                           unassigned_total=sum(float(r['amount'] or 0) for r in rows),
+                           assignable_tenants=tenants_list,
+                           active_tab='unassigned')
 
 
 @caretaker_bp.route('/<property_id>/arrears')
@@ -1399,4 +1485,10 @@ def tenant_quick_assign(property_id, tenant_id, txn_id):
         )
 
     flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
+    # Assigning now also happens from the dashboard and the unassigned list, so
+    # send the caretaker back where they were instead of always to the statement.
+    if request.form.get('return_to') == 'unassigned':
+        return redirect(url_for('caretaker.unassigned', property_id=property_id))
+    if request.form.get('return_to') == 'dashboard':
+        return redirect(url_for('caretaker.dashboard', property_id=property_id))
     return redirect(url_for('caretaker.tenant_statement', property_id=property_id, tenant_id=tenant_id))

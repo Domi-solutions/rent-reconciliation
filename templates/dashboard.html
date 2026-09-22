@@ -1,335 +1,143 @@
 {% extends "base.html" %}
-{% block title %}{{ property.name }} — Mowin{% endblock %}
+{% block title %}{{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* Phone first. One column, big tap targets, the primary action above the
+     fold. Everything else stays reachable from the sidebar rather than
+     competing for attention here. */
+  .ph-wrap { max-width: 620px; margin: 0 auto; }
+
+  .ph-action {
+    display: block; text-decoration: none;
+    background: var(--ink); color: #fff;
+    border-radius: var(--r-card); padding: 22px 20px; margin-bottom: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .ph-action:hover { opacity: .92; color: #fff; }
+  .ph-action-title { font-size: 19px; font-weight: 700; line-height: 1.2; }
+  .ph-action-sub { font-size: 13px; opacity: .72; margin-top: 4px; }
+
+  .ph-headline {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); padding: 20px; margin-bottom: 14px;
+    text-align: center;
+  }
+  .ph-headline-label { font-size: 11px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .ph-headline-value { font-size: 34px; font-weight: 700; color: var(--ink);
+    line-height: 1.1; margin-top: 6px; }
+  .ph-headline-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+
+  .ph-section-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--ink-3); margin: 22px 4px 10px; }
+
+  .ph-list { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); overflow: hidden; }
+  .ph-item { display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border);
+    text-decoration: none; color: inherit; min-height: 60px; }
+  .ph-item:last-child { border-bottom: none; }
+  .ph-item:active { background: var(--bg); }
+  .ph-unit { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .ph-name { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .ph-owed { font-size: 16px; font-weight: 700; color: var(--red); white-space: nowrap; }
+  .ph-months { font-size: 11px; color: var(--ink-3); text-align: right; margin-top: 2px; }
+
+  .ph-alert { border-radius: 12px; padding: 12px 15px; margin-bottom: 12px;
+    font-size: 13px; font-weight: 600; }
+  .ph-alert a { font-weight: 700; }
+  .ph-warn { background: var(--orange-soft); border: 1px solid var(--orange-border); color: #92400e; }
+  .ph-info { background: var(--blue-soft); border: 1px solid #bfdbfe; color: #1e40af; }
+
+  .ph-more { display: block; text-align: center; padding: 14px;
+    font-size: 14px; font-weight: 600; color: var(--blue); text-decoration: none; }
+</style>
+{% endblock %}
+
 {% block content %}
-{# Precompute pending totals #}
-{% set rentable_units = stats.total_units - stats.office_units %}
-{% set pending_ns = namespace(total=0) %}
-{% for c in pending %}
-  {% if c.claimed_amount %}
-    {% set pending_ns.total = pending_ns.total + (c.claimed_amount | float) %}
+<div class="ph-wrap">
+
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 22px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
+    {% if days_to_due is not none %}
+    <div style="font-size: 13px; color: var(--ink-2);">
+      {% if days_to_due == 0 %}Rent due today
+      {% elif days_to_due < 0 %}Rent was due {{ -days_to_due }} day{{ 's' if days_to_due != -1 }} ago
+      {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due{% endif %}
+      · {{ next_due_date }}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ---- The one thing an admin comes here to do ---- #}
+  <a href="{{ url_for('upload_statement') }}" class="ph-action">
+    <div class="ph-action-title">Upload bank statement</div>
+    <div class="ph-action-sub">Match payments to tenants automatically</div>
+  </a>
+
+  {% if show_generate_charges_hint %}
+  <div class="ph-alert ph-warn">
+    No charges generated for {{ current_month }} yet.
+    <a href="{{ url_for('generate_charges') }}">Generate now →</a>
+  </div>
   {% endif %}
-{% endfor %}
-{% set pending_count = pending|length %}
 
-{# PAGE HEADER #}
-<div class="mb-4">
-  <div class="page-title--hero">{{ property.name }}</div>
-  <div class="page-meta">{{ rentable_units }} units · {{ stats.occupancy_rate }}% occupied</div>
-</div>
-
-{# SETUP CHECKLIST — shown until all three steps are complete #}
-{% if show_setup_checklist %}
-<div class="surface-card mb-4" style="border: 1px solid #e0e7ff; background: #f8f9ff;">
-  <div style="padding: 16px 20px 12px;">
-    <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Get started — 3 steps to set up your property</div>
-    <div class="data-row-meta">Complete these once and the checklist disappears.</div>
+  {% if unassigned_stats and unassigned_stats.total_count %}
+  <div class="ph-alert ph-warn">
+    {{ unassigned_stats.total_count }} payment{{ 's' if unassigned_stats.total_count != 1 }} received but not matched to a tenant
+    — KES {{ '{:,.0f}'.format(unassigned_stats.total_amount or 0) }}.
+    <a href="{{ url_for('review', tab='unreported') }}">Assign →</a>
   </div>
-  <div style="border-top: 1px solid #e0e7ff;">
+  {% endif %}
 
-    <a href="{{ url_for('manage_owners') }}"
-       class="d-flex align-items-center text-decoration-none"
-       style="padding: 12px 20px; border-bottom: 1px solid #e0e7ff; gap: 14px;
-              color: {% if setup_checklist.has_owner %}var(--ink-3){% else %}var(--ink){% endif %};">
-      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
-                  {% if setup_checklist.has_owner %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
-        {% if setup_checklist.has_owner %}✓{% else %}1{% endif %}
-      </div>
-      <div>
-        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_owner %}text-decoration: line-through; opacity: 0.6;{% endif %}">Add property owners</div>
-        <div class="data-row-meta" style="font-size: 12px;">Link the owner(s) who will receive disbursements and view reports.</div>
-      </div>
-      {% if not setup_checklist.has_owner %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
-    </a>
-
-    <a href="{{ url_for('manage_caretakers') }}"
-       class="d-flex align-items-center text-decoration-none"
-       style="padding: 12px 20px; border-bottom: 1px solid #e0e7ff; gap: 14px;
-              color: {% if setup_checklist.has_caretaker %}var(--ink-3){% else %}var(--ink){% endif %};">
-      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
-                  {% if setup_checklist.has_caretaker %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
-        {% if setup_checklist.has_caretaker %}✓{% else %}2{% endif %}
-      </div>
-      <div>
-        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_caretaker %}text-decoration: line-through; opacity: 0.6;{% endif %}">Add a caretaker</div>
-        <div class="data-row-meta" style="font-size: 12px;">Caretakers report payments and receive daily briefings via SMS.</div>
-      </div>
-      {% if not setup_checklist.has_caretaker %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
-    </a>
-
-    <a href="{{ url_for('tools_index') }}"
-       class="d-flex align-items-center text-decoration-none"
-       style="padding: 12px 20px; gap: 14px;
-              color: {% if setup_checklist.has_charges %}var(--ink-3){% else %}var(--ink){% endif %};">
-      <div style="width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
-                  {% if setup_checklist.has_charges %}background: #d1fae5; color: #065f46;{% else %}background: #e0e7ff; color: #4338ca;{% endif %}">
-        {% if setup_checklist.has_charges %}✓{% else %}3{% endif %}
-      </div>
-      <div>
-        <div style="font-weight: 500; font-size: 13px; {% if setup_checklist.has_charges %}text-decoration: line-through; opacity: 0.6;{% endif %}">Run the monthly workflow</div>
-        <div class="data-row-meta" style="font-size: 12px;">Generate charges, upload a bank statement, and verify payments.</div>
-      </div>
-      {% if not setup_checklist.has_charges %}<div style="margin-left: auto; color: #4338ca; font-size: 13px;">→</div>{% endif %}
-    </a>
-
+  {% if pending %}
+  <div class="ph-alert ph-info">
+    {{ pending|length }} payment claim{{ 's' if pending|length != 1 }} awaiting confirmation.
+    <a href="{{ url_for('review', tab='unconfirmed') }}">Review →</a>
   </div>
-</div>
-{% endif %}
+  {% endif %}
 
-{# GENERATE CHARGES HINT #}
-{% if show_generate_charges_hint %}
-<div class="alert-banner mb-4">
-  <div class="alert-banner-icon">!</div>
-  <div class="alert-banner-body">
-    <div class="alert-banner-title">No charges for {{ current_month }} yet</div>
-    <div class="alert-banner-sub">Upload water charges first, then generate rent + service charges.</div>
-  </div>
-  <a href="{{ url_for('generate_charges') }}" class="alert-banner-action">Generate charges →</a>
-</div>
-{% endif %}
-
-{# ARREARS BANNER #}
-{% if stats.arrears_ratio > 0.5 %}
-<div class="alert-banner mb-4">
-  <div class="alert-banner-icon">!</div>
-  <div class="alert-banner-body">
-    <div class="alert-banner-title">{{ stats.arrears_ratio }} months of arrears outstanding</div>
-    <div class="alert-banner-sub">KES {{ "{:,.0f}".format(stats.total_arrears) }} across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}.</div>
-  </div>
-  <a href="{{ url_for('manage_units') }}" class="alert-banner-action">View details →</a>
-</div>
-{% endif %}
-
-{# UNASSIGNED PAYMENTS BANNER #}
-{% if unassigned_stats and unassigned_stats.total_count > 0 %}
-<div class="alert-banner mb-4" style="border-color: #6366f1;">
-  <div class="alert-banner-icon" style="background: #6366f1;">↑</div>
-  <div class="alert-banner-body">
-    <div class="alert-banner-title">{{ unassigned_stats.total_count }} unassigned bank payment{{ 's' if unassigned_stats.total_count != 1 }} · KES {{ "{:,.0f}".format(unassigned_stats.total_amount) }}</div>
-    <div class="alert-banner-sub">
-      {% if unassigned_stats.hint_count > 0 %}
-        {{ unassigned_stats.hint_count }} with narration hint{{ 's' if unassigned_stats.hint_count != 1 }} (KES {{ "{:,.0f}".format(unassigned_stats.hint_amount) }}) — manual match required
-      {% else %}
-        Manual assignment required
-      {% endif %}
+  {# ---- Who owes what ---- #}
+  <div class="ph-headline">
+    <div class="ph-headline-label">Total outstanding</div>
+    <div class="ph-headline-value">KES {{ '{:,.0f}'.format(stats.total_arrears or 0) }}</div>
+    <div class="ph-headline-sub">
+      {{ stats.units_in_arrears or 0 }} of {{ stats.total_units or 0 }} units ·
+      {{ stats.occupied_units or 0 }} occupied
     </div>
   </div>
-  <a href="{{ url_for('review', tab='unreported') }}" class="alert-banner-action">Review →</a>
-</div>
-{% endif %}
 
-{% if days_to_due is not none %}
-<div style="padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; font-weight: 600;
-  background: {% if days_to_due <= 3 %}#fef3c7{% elif days_to_due <= 7 %}#eff6ff{% else %}#f0fdf4{% endif %};
-  border: 1px solid {% if days_to_due <= 3 %}#fbbf24{% elif days_to_due <= 7 %}#93c5fd{% else %}#86efac{% endif %};
-  color: {% if days_to_due <= 3 %}#92400e{% else %}var(--ink){% endif %};">
-  {% if days_to_due == 0 %}Rent due today — {{ next_due_date }}
-  {% elif days_to_due < 0 %}Rent was due {{ (-days_to_due) }} day{{ 's' if days_to_due != -1 }} ago — {{ next_due_date }}
-  {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due — {{ next_due_date }}{% endif %}
-</div>
-{% endif %}
-{% if recent_reminder %}
-<div style="padding: 8px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12px;
-  background: #f0fdf4; border: 1px solid #86efac; color: #166534;">
-  Reminder SMS sent today — {{ recent_reminder.details }}
-</div>
-{% endif %}
-
-{# PRIMARY KPI ROW — 3 naked hero numbers #}
-<div class="row g-4 mb-0" style="padding-bottom: 24px;">
-  <div class="col-12 col-md-4">
-    <a href="{{ url_for('manage_units') }}" class="text-decoration-none" style="display:block;">
-      <div class="kpi-hero-label">Expected Income</div>
-      <div class="kpi-hero-value">KES {{ "{:,.0f}".format(stats.expected_monthly or 0) }}</div>
-      <div class="kpi-hero-sub">per month</div>
-    </a>
-  </div>
-  <div class="col-12 col-md-4">
-    <a href="{{ url_for('admin_arrears') }}" class="text-decoration-none" style="display:block;">
-      <div class="kpi-hero-label">Total Arrears</div>
-      <div class="kpi-hero-value kpi-hero-value--danger">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
-      <div class="kpi-hero-sub">
-        across {{ stats.units_in_arrears }} unit{{ 's' if stats.units_in_arrears != 1 }}
-        {% if stats.arrears_ratio and stats.arrears_ratio > 0 %} · {{ stats.arrears_ratio }}× monthly to clear{% endif %}
+  <div class="ph-section-title">Who owes what</div>
+  {% if arrears %}
+  <div class="ph-list">
+    {% for a in arrears[:15] %}
+    <a class="ph-item" href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) if a.tenant_id else url_for('admin_arrears') }}">
+      <div>
+        <div class="ph-unit">{{ a.unit_number }}</div>
+        <div class="ph-name">{{ a.tenant_name or 'Vacant' }}</div>
       </div>
-    </a>
-  </div>
-  <div class="col-12 col-md-4">
-    <a href="{{ url_for('review', tab='confirmed') }}" class="text-decoration-none" style="display:block;">
-      <div class="kpi-hero-label">Collected This Month</div>
-      <div class="kpi-hero-value kpi-hero-value--success">KES {{ "{:,.0f}".format(stats.total_collected or 0) }}</div>
-      <div class="kpi-hero-sub">
-        {% if stats.collection_rate is defined and stats.collection_rate > 0 %}
-          {{ stats.collection_rate }}% of expected monthly income
-        {% else %}
-          verified against bank records
+      <div>
+        <div class="ph-owed">{{ '{:,.0f}'.format(a.balance or 0) }}</div>
+        {% if a.monthly_rent and a.monthly_rent > 0 %}
+        <div class="ph-months">{{ '%.1f'|format((a.balance or 0) / a.monthly_rent) }} months</div>
         {% endif %}
       </div>
     </a>
-  </div>
-</div>
-
-{# SECONDARY STATS ROW #}
-<div class="stat-row mb-4">
-  <div class="stat-item">
-    <div class="stat-label">Charged This Month</div>
-    <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_charged or 0) }}</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-label">Outstanding</div>
-    <div class="stat-value">KES {{ "{:,.0f}".format(stats.total_arrears or 0) }}</div>
-  </div>
-  <div class="stat-item">
-    <a href="{{ url_for('review', tab='unconfirmed') }}" class="text-decoration-none" style="display:block;">
-      <div class="stat-label">Pending Claims</div>
-      <div class="stat-value">{{ pending_count }}</div>
+    {% endfor %}
+    {% if arrears|length > 15 %}
+    <a class="ph-more" href="{{ url_for('admin_arrears') }}">
+      See all {{ arrears|length }} →
     </a>
+    {% endif %}
   </div>
-  <div class="stat-item">
-    <div class="stat-label">Occupancy</div>
-    <div class="stat-value">{{ stats.occupancy_rate }}%</div>
+  {% else %}
+  <div class="ph-list">
+    <div class="ph-item" style="color: var(--green-dark); font-weight: 600;">
+      Every unit is settled.
+    </div>
   </div>
-</div>
+  {% endif %}
 
-<div class="row">
-  <div class="col-lg-6 mb-4" id="arrears-section">
-    <div class="surface-card">
-      <div class="surface-card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">Units in Arrears</h6>
-        <a href="{{ url_for('admin_arrears') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
-      </div>
-      {% if arrears %}
-      <table class="table table-sm mb-0 viewer-table">
-        <thead>
-          <tr>
-            <th>Unit</th>
-            <th>Tenant</th>
-            <th class="text-end">Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in arrears %}
-          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('admin_arrears') }}'">
-            <td>{{ row.unit_number }}</td>
-            <td>{{ row.tenant_name or '-' }}</td>
-            <td class="text-end">KES {{ "%.2f"|format(row.balance) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="empty-state">
-        <div class="empty-state-title">No arrears</div>
-        <div class="empty-state-sub">No units currently have outstanding balances.</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-  <div class="col-lg-6 mb-4">
-    <div class="surface-card">
-      <div class="surface-card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">Pending Payment Claims</h6>
-        <a href="{{ url_for('review', tab='unconfirmed') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
-      </div>
-      {% if pending %}
-      <table class="table table-sm mb-0 viewer-table">
-        <thead>
-          <tr>
-            <th>Ref</th>
-            <th>Unit</th>
-            <th class="text-end">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for c in pending %}
-          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('review', tab='unconfirmed') }}'">
-            <td>{{ c.mpesa_ref }}</td>
-            <td>{{ c.unit_number }}</td>
-            <td class="text-end">
-              {{ "%.2f"|format(c.claimed_amount) if c.claimed_amount else '-' }}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="empty-state">
-        <div class="empty-state-title">No pending claims</div>
-        <div class="empty-state-sub">No payment references are awaiting verification.</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-<div class="row">
-  <div class="col-lg-6 mb-4">
-    <div class="surface-card">
-      <div class="surface-card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">Unassigned Bank Payments</h6>
-        <a href="{{ url_for('review', tab='unreported') }}" class="btn btn-sm btn-outline-secondary">View all →</a>
-      </div>
-      {% if unassigned %}
-      <table class="table table-sm mb-0 viewer-table">
-        <thead>
-          <tr>
-            <th>Ref</th>
-            <th class="text-end">Amount</th>
-            <th>Date</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in unassigned %}
-          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('review', tab='unreported') }}'">
-            <td>{{ t.mpesa_ref or '-' }}</td>
-            <td class="text-end">KES {{ "%.2f"|format(t.amount) }}</td>
-            <td>{{ t.txn_date or '-' }}</td>
-            <td>
-              <a href="{{ url_for('assign_payment', txn_id=t.id) }}" class="topbar-btn-ghost" style="padding: 4px 10px; font-size: 12px;" onclick="event.stopPropagation();">
-                Assign
-              </a>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="empty-state">
-        <div class="empty-state-title">No unassigned payments</div>
-        <div class="empty-state-sub">All bank payments have been matched to units.</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-  <div class="col-lg-6 mb-4">
-    <div class="surface-card">
-      <div class="surface-card-header">
-        <h6>Recent Activity</h6>
-      </div>
-      {% if recent %}
-      {% for r in recent %}
-      <a href="{{ url_for('activity', action=r.action) }}" class="text-decoration-none">
-        <div class="data-row">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <div class="data-row-unit">{{ r.action.replace('_', ' ')|title }}</div>
-              <div class="data-row-meta">{{ r.user_id or 'System' }}</div>
-              {% if r.details %}
-              <div class="data-row-meta mt-1">{{ r.details }}</div>
-              {% endif %}
-            </div>
-            <div class="data-row-meta">{{ r.timestamp }}</div>
-          </div>
-        </div>
-      </a>
-      {% endfor %}
-      {% else %}
-      <div class="empty-state">
-        <div class="empty-state-title">No recent activity</div>
-        <div class="empty-state-sub">New changes will appear here as they are recorded.</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
 </div>
 {% endblock %}

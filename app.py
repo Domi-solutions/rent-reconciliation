@@ -971,6 +971,7 @@ def dashboard():
             JOIN bank_statements bs ON bt.statement_id = bs.id
             WHERE {_stmt_filter}
             AND bt.txn_type = 'PAYBILL_CREDIT'
+            AND (bt.ignored IS NULL OR bt.ignored = 0)
             AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
         """, (_stmt_param,)).fetchone()
 
