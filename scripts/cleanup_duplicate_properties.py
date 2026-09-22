@@ -62,11 +62,18 @@ def list_properties(conn):
 
 
 def backup_database(conn):
-    """Snapshot via sqlite3's own backup API, which is consistent under writes."""
+    """Snapshot via sqlite3's own backup API, which is consistent under writes.
+
+    The snapshot is written beside the database itself. On Fly that is the
+    mounted volume, so it survives the next deploy — writing it next to the
+    code instead would put it on the container's ephemeral layer, where a
+    restore point quietly disappears the moment anything is redeployed.
+    """
     source = os.environ.get('DATABASE_PATH') or os.path.join('data', 'rent.db')
-    os.makedirs('backups', exist_ok=True)
+    backup_dir = os.path.join(os.path.dirname(os.path.abspath(source)), 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
     target = os.path.join(
-        'backups', f"pre_cleanup_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.db")
+        backup_dir, f"pre_cleanup_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.db")
     try:
         dest = sqlite3.connect(target)
         conn.backup(dest)
