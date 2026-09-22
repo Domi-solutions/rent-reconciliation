@@ -10,6 +10,7 @@ from datetime import datetime
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
 
 from src.database.db import generate_id, get_connection
+from src.platform.property_purge import purge_property_data
 from src.parsers.banks.registry import bank_display_name as _bank_label
 
 platform_bp = Blueprint("platform", __name__, url_prefix="/platform")
@@ -759,35 +760,9 @@ def approve_deletion(property_id):
         org_id = prop['organization_id']
         from src.platform.guardian import platform_log, raise_alert
 
-        # Cascade delete in FK-safe order
-        conn.execute("DELETE FROM payment_allocations WHERE payment_id IN (SELECT id FROM payments WHERE property_id=?)", (property_id,))
-        conn.execute("DELETE FROM payment_allocations WHERE charge_id IN (SELECT id FROM rent_charges WHERE property_id=?)", (property_id,))
-        conn.execute("DELETE FROM payment_transactions WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM payments WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM disbursements WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM balance_snapshots WHERE property_id=? OR unit_id IN (SELECT id FROM units WHERE property_id=?)", (property_id, property_id))
-        conn.execute("DELETE FROM water_readings WHERE unit_id IN (SELECT id FROM units WHERE property_id=?)", (property_id,))
-        conn.execute("DELETE FROM water_uploads WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM rent_charges WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM maintenance_issues WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM messages WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM checkin_responses WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM inbound_sessions WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM inbound_messages WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM tenants WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM payment_claims WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM bank_transactions WHERE statement_id IN (SELECT id FROM bank_statements WHERE property_id=?)", (property_id,))
-        conn.execute("DELETE FROM statement_parse_errors WHERE statement_id IN (SELECT id FROM bank_statements WHERE property_id=?)", (property_id,))
-        conn.execute("DELETE FROM bank_statements WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM property_owners WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM caretakers WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM landlord_reports WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM message_templates WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM owner_messages WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM reminder_schedules WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM reminder_settings WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM report_settings WHERE property_id=?", (property_id,))
-        conn.execute("DELETE FROM units WHERE property_id=?", (property_id,))
+        # One shared cascade order, in src/platform/property_purge.py, so this
+        # route and the duplicate-property cleanup script cannot drift apart.
+        purge_property_data(conn, property_id)
 
         platform_log(conn, 'property_deleted', 'property', property_id,
             f'"{prop["name"]}" permanently deleted after 14-day window (platform approved)',
