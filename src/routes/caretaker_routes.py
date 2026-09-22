@@ -9,7 +9,7 @@ import re
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 
 from src.database.db import get_connection, generate_id, allocate_payment
-from src.reconciliation.matcher import enrich_with_suggestions
+from src.reconciliation.unassigned import get_unassigned_credits
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
 
@@ -139,51 +139,15 @@ def _occupancy_data(conn, property_id):
 
 
 def _unassigned_credits(conn, property_id, limit=None):
-    """Money that arrived in the bank but is not yet attributed to any unit.
+    """Money received that no unit has been credited with.
 
-    This is the gap that leaves a tenant looking unpaid while their money sits
-    in the account, so the caretaker — who knows who actually lives where —
-    needs to see it rather than only the admin. Each row carries the matcher's
-    suggestion so the common case is one click, not a hunt.
-
-    Mirrors the admin 'unreported' query, including the ignored filter: an
-    ignored transaction stays assignable but must not be counted as outstanding.
+    Delegates to the shared definition so the caretaker screen, the arrears
+    report and the printable worksheet cannot disagree about the total. The
+    local version missed statements uploaded org-wide, which carry a NULL
+    property_id.
     """
-    rows = conn.execute("""
-        SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name, bt.unit_hint,
-               bs.id AS statement_id, bs.filename AS statement_filename
-        FROM bank_transactions bt
-        JOIN bank_statements bs ON bt.statement_id = bs.id
-        WHERE bs.property_id = ?
-          AND bt.txn_type = 'PAYBILL_CREDIT'
-          AND (bt.ignored IS NULL OR bt.ignored = 0)
-          AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
-        ORDER BY bt.txn_date DESC
-    """, (property_id,)).fetchall()
-
-    unassigned = [dict(row) for row in rows]
-    org_row = conn.execute(
-        "SELECT organization_id FROM properties WHERE id = ?", (property_id,)
-    ).fetchone()
-    enrich_with_suggestions(
-        unassigned, conn, property_id,
-        org_row['organization_id'] if org_row else None
-    )
-
-    # Attach the tenant sitting in the suggested unit so the caretaker sees a
-    # name, not a unit code, before committing someone's money to it.
-    for row in unassigned:
-        row['suggested_tenant_id'] = None
-        if row.get('suggested_unit_id'):
-            tenant = conn.execute(
-                "SELECT id, name FROM tenants WHERE unit_id = ? AND status = 'active'",
-                (row['suggested_unit_id'],)
-            ).fetchone()
-            if tenant:
-                row['suggested_tenant_id'] = tenant['id']
-                row.setdefault('suggested_tenant_name', None)
-                row['suggested_tenant_name'] = row.get('suggested_tenant_name') or tenant['name']
-    return unassigned[:limit] if limit else unassigned
+    rows = get_unassigned_credits(conn, property_id)
+    return rows[:limit] if limit else rows
 
 
 def _assignable_tenants(conn, property_id):

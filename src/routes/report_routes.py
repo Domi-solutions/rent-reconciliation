@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, date as _date
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from src.database.db import get_connection, generate_id
 from src.reports.arrears_report import generate_arrears_report
+from src.reconciliation.unassigned import get_unassigned_credits, group_by_sender
 from src.reports.backfill import backfill_reports
 from src.reports.tenant_evidence import generate_tenant_evidence
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
@@ -425,6 +426,36 @@ def tenant_evidence(tenant_id):
 
     return render_template('reports/statement_of_account.html',
                            property=prop, report=report, active_nav='arrears_report')
+
+
+@report_bp.route('/unassigned-payments')
+def unassigned_payments():
+    """Printable worksheet of money received that no unit has been credited with.
+
+    Built to be handed to the caretaker on paper: grouped by payer, with the
+    system's suggestion where it has one and a blank column to write the unit
+    in. He knows who lives where; the app does not.
+    """
+    group = request.args.get('view', 'sender') != 'date'
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        rows = get_unassigned_credits(conn, prop['id'], prop['organization_id'])
+        groups = group_by_sender(rows) if group else []
+        units = conn.execute("""
+            SELECT u.unit_number, t.name AS tenant_name
+            FROM units u LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            WHERE u.property_id = ? ORDER BY u.unit_number
+        """, (prop['id'],)).fetchall()
+
+    return render_template('reports/unassigned_payments.html',
+                           now=datetime.now().strftime('%Y-%m-%d %H:%M'),
+                           property=prop, unassigned=rows, groups=groups,
+                           grouped=group, units=units,
+                           total=sum(float(r['amount'] or 0) for r in rows),
+                           active_nav='arrears_report')
 
 
 @report_bp.route('/history')

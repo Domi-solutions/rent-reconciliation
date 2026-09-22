@@ -75,6 +75,10 @@
     <strong>KES {{ '{:,.0f}'.format(report.unassigned.total) }}</strong> has been received but is not yet
     matched to a unit ({{ report.unassigned.count }} payment{{ 's' if report.unassigned.count != 1 }}).
     The outstanding figure above falls once these are assigned.
+    <div class="no-print" style="margin-top: 8px;">
+      <a href="{{ url_for('reports.unassigned_payments') }}"
+         style="font-weight: 700; color: #92400e;">Print the assignment worksheet →</a>
+    </div>
   </div>
   {% endif %}
 
