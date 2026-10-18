@@ -150,6 +150,7 @@ tables:
       status: {type: TEXT, default: pending, values: [pending, verified, flagged], note: "flagged is permanent — use caretaker_confirmed/admin_cleared for resolution, never change status back"}
       verified_at: {type: TIMESTAMP}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      tenant_id: {type: TEXT, fk: tenants.id, nullable: true, added_by: migrate_add_ledger_tenant_id, note: "Tenant the claim is for. Explicit from tenant portal; else trigger: departed_tenant_id, then occupant at created_at"}
       mpesa_date: {type: DATE, nullable: true, added_by: migrate_add_claim_resolution, note: "parsed from M-Pesa message timestamp"}
       mpesa_period: {type: TEXT, nullable: true, added_by: migrate_add_claim_resolution, note: "YYYY-MM derived from mpesa_date; used for period-based fraud detection"}
       flag_reason: {type: TEXT, nullable: true, added_by: migrate_add_claim_flagging, values: [ref_not_found, stale_30_days]}
@@ -186,6 +187,7 @@ tables:
       caretaker_note: {type: TEXT, nullable: true, added_by: migrate_add_payment_notes, note: "caretaker annotation on amount-mismatch payments; writes to audit_log + platform_shadow_log"}
       caretaker_note_at: {type: TIMESTAMP, nullable: true, added_by: migrate_add_payment_notes}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      tenant_id: {type: TEXT, fk: tenants.id, nullable: true, added_by: migrate_add_ledger_tenant_id, note: "Tenant the payment belongs to. Explicit on insert when known (statement-view assign, Daraja); else trigger trg_payments_tenant: claim's tenant, then occupant on payment_date (handover day → incoming). NULL = unit was empty; needs review"}
 
   rent_charges:
     status: live
@@ -199,6 +201,7 @@ tables:
       amount: {type: DECIMAL(10,2), required: true}
       due_date: {type: DATE, added_by: migrate_set_rent_charge_due_dates}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      tenant_id: {type: TEXT, fk: tenants.id, nullable: true, added_by: migrate_add_ledger_tenant_id, note: "Tenant the charge belongs to. Stamped on insert by trigger trg_rent_charges_tenant from the unit's occupancy (mid-month handover → outgoing tenant). NULL = no tenant matched; needs review"}
     constraints:
       - UNIQUE(unit_id, period, charge_type)
 
@@ -650,5 +653,10 @@ tables:
 views:
   unit_balances:
     status: live
-    note: "Calculated view — never stored. Always use this for balance queries. Charges and payments are scoped to the current active tenant's move_in_date so a new tenant starts with a clean balance (no inherited history from previous tenant)."
+    note: "Calculated view — never stored. Balance of the unit's current active tenant, read from tenant_balances (migrate_add_ledger_tenant_id). A new tenant starts clean because rows carry tenant_id — not because of move_in_date filtering."
     columns: [unit_id, property_id, unit_number, monthly_rent, tenant_id, tenant_name, tenant_phone, total_charged, total_paid, balance]
+  tenant_balances:
+    status: live
+    migration: migrate_add_ledger_tenant_id
+    note: "Calculated view — one row per tenant (any status): SUM(rent_charges) - SUM(payments) WHERE tenant_id = t.id. Use for anything shown to or about one person, including departed tenants. Never use unit_balances for a tenant's own balance."
+    columns: [tenant_id, property_id, unit_id, status, total_charged, total_paid, balance]

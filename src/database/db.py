@@ -164,7 +164,12 @@ def allocate_payment(conn, payment_id, unit_id, amount):
     """
     Allocate a payment across outstanding charges for a unit using FIFO (oldest first).
     Creates payment_allocation records. Returns list of allocation dicts.
+
+    Only the paying tenant's own charges are settled — never a previous or later
+    occupant's. A payment with no tenant settles only charges with no tenant.
     """
+    payment = conn.execute("SELECT tenant_id FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    tenant_id = payment['tenant_id'] if payment else None
     charges = conn.execute("""
         SELECT rc.id, rc.amount, rc.period, rc.charge_type,
                COALESCE(alloc.allocated, 0) as already_allocated
@@ -174,9 +179,9 @@ def allocate_payment(conn, payment_id, unit_id, amount):
             FROM payment_allocations
             GROUP BY charge_id
         ) alloc ON alloc.charge_id = rc.id
-        WHERE rc.unit_id = ?
+        WHERE rc.unit_id = ? AND rc.tenant_id IS ?
         ORDER BY rc.created_at ASC
-    """, (unit_id,)).fetchall()
+    """, (unit_id, tenant_id)).fetchall()
 
     remaining = float(amount)
     allocations = []
@@ -209,6 +214,11 @@ def allocate_payment(conn, payment_id, unit_id, amount):
 def migrate_allocate_existing_payments():
     """Create allocation records for any payments that don't have them yet. Idempotent."""
     with get_connection() as conn:
+        # Allocation is per tenant, so it waits until rows carry a tenant.
+        # migrate_add_ledger_tenant_id calls this again once they do.
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
+        if 'tenant_id' not in cols:
+            return
         unallocated = conn.execute("""
             SELECT p.id, p.unit_id, p.amount
             FROM payments p
@@ -1566,3 +1576,153 @@ def migrate_add_owner_org_id():
             WHERE org_id IS NULL
         """)
         print("Migration complete: owners.org_id ready.")
+
+
+# ── Per-tenant ledger ─────────────────────────────────────────────────────────
+#
+# Charges, payments and claims were recorded against the unit, and whose money
+# was whose was inferred afterwards from move-in dates. That let a new tenant's
+# payment settle the previous occupant's unpaid months, showed a departed
+# tenant the new occupant's balance, and meant editing a move-in date silently
+# moved debt between people. Each row now carries the tenant it belongs to.
+#
+# The rules below decide that tenant from the unit's occupancy history. They
+# are used twice: by triggers that stamp every new row, so no insert site can
+# forget, and by the backfill that stamps existing rows. {row} is the row being
+# stamped: NEW inside a trigger, the table name inside a backfill UPDATE.
+#
+# A tenancy runs from move-in to move-out. An active tenant with no move-out
+# date runs to today. A tenant who is no longer active but has no move-out date
+# covers nothing, so their rows stay unattributed and surface for review rather
+# than being handed to whoever happens to fit.
+
+def _covers(day):
+    """SQL condition: tenant t occupied the unit on `day` (YYYY-MM-DD)."""
+    return f"""(
+        COALESCE(t.move_in_date, '0000-00-00') <= {day}
+        AND ((t.move_out_date IS NULL AND t.status = 'active') OR t.move_out_date >= {day})
+    )"""
+
+
+def _charge_tenant_sql(row):
+    # A month is charged to whoever occupied the unit in it. On a mid-month
+    # handover both tenants occupied it; the outgoing tenant (earliest move-in)
+    # pays that month and the incoming tenant starts on the next one.
+    # ARREARS charges carry no month — they belong to whoever held the unit
+    # when the opening arrears were recorded.
+    created = f"substr(COALESCE({row}.created_at, CURRENT_TIMESTAMP), 1, 10)"
+    return f"""(
+        SELECT t.id FROM tenants t
+        WHERE t.unit_id = {row}.unit_id
+          AND CASE WHEN {row}.period = 'ARREARS' THEN {_covers(created)}
+                   ELSE substr(COALESCE(t.move_in_date, '0000-00'), 1, 7) <= {row}.period
+                        AND ((t.move_out_date IS NULL AND t.status = 'active')
+                             OR substr(t.move_out_date, 1, 7) >= {row}.period)
+              END
+        ORDER BY COALESCE(t.move_in_date, '0000-00-00') ASC
+        LIMIT 1
+    )"""
+
+
+def _payment_tenant_sql(row):
+    # A payment that came through a claim belongs to whoever the claim was for
+    # (this is how a departed tenant's later payment reaches their own debt).
+    # Otherwise it belongs to whoever occupied the unit on the payment date; on
+    # a handover day, the incoming tenant. A payment made while the unit had no
+    # occupant stays unattributed for review.
+    day = (f"COALESCE(NULLIF(substr({row}.payment_date, 1, 10), ''), "
+           f"substr(COALESCE({row}.created_at, CURRENT_TIMESTAMP), 1, 10))")
+    return f"""COALESCE(
+        (SELECT pc.tenant_id FROM payment_claims pc WHERE pc.id = {row}.claim_id),
+        (SELECT t.id FROM tenants t
+         WHERE t.unit_id = {row}.unit_id AND {_covers(day)}
+         ORDER BY COALESCE(t.move_in_date, '0000-00-00') DESC
+         LIMIT 1)
+    )"""
+
+
+def _claim_tenant_sql(row):
+    day = f"substr(COALESCE({row}.created_at, CURRENT_TIMESTAMP), 1, 10)"
+    return f"""COALESCE(
+        {row}.departed_tenant_id,
+        (SELECT t.id FROM tenants t
+         WHERE t.unit_id = {row}.unit_id AND {_covers(day)}
+         ORDER BY COALESCE(t.move_in_date, '0000-00-00') DESC
+         LIMIT 1)
+    )"""
+
+
+_LEDGER_TENANT_RULES = (
+    # Claims first: payments inherit their claim's tenant.
+    ('payment_claims', _claim_tenant_sql),
+    ('rent_charges', _charge_tenant_sql),
+    ('payments', _payment_tenant_sql),
+)
+
+
+def migrate_add_ledger_tenant_id():
+    """Add tenant_id to rent_charges, payments and payment_claims; stamp new rows by
+    trigger; backfill unattributed rows; key the balance views on tenant. Idempotent."""
+    with get_connection() as conn:
+        for table, rule in _LEDGER_TENANT_RULES:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if 'tenant_id' not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_tenant ON {table}(tenant_id)")
+
+            # Recreated every startup so the trigger always matches the rule above.
+            # An insert that names its tenant explicitly is left alone.
+            conn.execute(f"DROP TRIGGER IF EXISTS trg_{table}_tenant")
+            conn.execute(f"""
+                CREATE TRIGGER trg_{table}_tenant AFTER INSERT ON {table}
+                WHEN NEW.tenant_id IS NULL
+                BEGIN
+                    UPDATE {table} SET tenant_id = {rule('NEW')} WHERE id = NEW.id;
+                END
+            """)
+
+            # Only fills gaps — a row that already has a tenant is never re-pointed
+            # here. Re-pointing is an explicit rebuild (src/reconciliation/tenant_ledger.py).
+            conn.execute(f"UPDATE {table} SET tenant_id = {rule(table)} WHERE tenant_id IS NULL")
+
+        conn.execute("DROP VIEW IF EXISTS unit_balances")
+        conn.execute("DROP VIEW IF EXISTS tenant_balances")
+        conn.execute("""
+            CREATE VIEW tenant_balances AS
+            SELECT
+                t.id AS tenant_id,
+                t.property_id,
+                t.unit_id,
+                t.status,
+                COALESCE(charges.total, 0) AS total_charged,
+                COALESCE(paid.total, 0) AS total_paid,
+                COALESCE(charges.total, 0) - COALESCE(paid.total, 0) AS balance
+            FROM tenants t
+            LEFT JOIN (
+                SELECT tenant_id, SUM(amount) AS total FROM rent_charges
+                WHERE tenant_id IS NOT NULL GROUP BY tenant_id
+            ) charges ON charges.tenant_id = t.id
+            LEFT JOIN (
+                SELECT tenant_id, SUM(amount) AS total FROM payments
+                WHERE tenant_id IS NOT NULL GROUP BY tenant_id
+            ) paid ON paid.tenant_id = t.id
+        """)
+        conn.execute("""
+            CREATE VIEW unit_balances AS
+            SELECT
+                u.id AS unit_id,
+                u.property_id,
+                u.unit_number,
+                u.monthly_rent,
+                t.id AS tenant_id,
+                t.name AS tenant_name,
+                t.phone AS tenant_phone,
+                COALESCE(tb.total_charged, 0) AS total_charged,
+                COALESCE(tb.total_paid, 0) AS total_paid,
+                COALESCE(tb.balance, 0) AS balance
+            FROM units u
+            LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+            LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
+        """)
+        print("Migration complete: ledger rows carry tenant_id; balances keyed on tenant.")
+    migrate_allocate_existing_payments()

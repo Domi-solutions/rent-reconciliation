@@ -559,6 +559,20 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] `platform_outbox` table + `src/messaging/outbox.py` + `/platform/outbox` route
 - [x] All outbound SMS and portal notifications logged regardless of delivery status
 
+### Clean Base + Tenant-First Payments (Session 25 — started 2026-10-18)
+
+Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left balances untrustworthy. Order agreed: stop the bleeding → collect facts → agreed opening balances → tenant page + caretaker cut-down → payments live. All rent settles to ONE bank account.
+
+- [x] Per-tenant ledger — `tenant_id` on rent_charges/payments/payment_claims, stamped by trigger; `tenant_balances` view; allocation never crosses tenants; tenant portal, statements, evidence and arrears report scoped to the person (`migrate_add_ledger_tenant_id`, `scripts/tenant_ledger_report.py`)
+- [ ] Occupancy roll call screen — who actually lives in each unit; diff against the system
+- [ ] Unit history review — fix move-in/out dates, re-stamp + reallocate a unit, resolve unattributed rows
+- [ ] Opening balance per tenant at a locked cutover date
+- [ ] Tenant statement confirmation SMS ("Correct" / "Something's wrong"); departed-with-debt "pay here" SMS
+- [ ] Tenant page: receipts (incl. Daraja payments), monthly statement, two-way auditable thread with management
+- [ ] Caretaker page cut to: who's behind + water entry; statements held until water entered
+- [ ] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation (no 60s wait); Till support
+- [ ] Go live on own shortcode (Daraja Go-Live) → final "pay only here" SMS
+
 ### Session 19: Report Accuracy, Water Parser, Charge Generation UX (2026-05-25) ✅
 
 - [x] **Water parser: non-numeric charge values** — `parse_water_excel()` now treats `"Vacant"`, `"N/A"`, `"nil"`, `"-"`, blank as a skip-with-warning instead of an error; upload no longer blocked when Excel contains text placeholders for vacant units

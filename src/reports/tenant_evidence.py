@@ -61,16 +61,16 @@ def generate_tenant_evidence(conn, tenant_id):
     unit_id = tenant['unit_id']
     property_id = tenant['property_id']
 
-    # Charges and payments are scoped from move-in where one is recorded, so a
-    # tenant is never shown the previous occupant's history.
+    # Charges and payments are this tenant's by tenant_id, so a tenant is never
+    # shown a previous or later occupant's history.
     move_in = tenant['move_in_date'] or ''
 
     charges = conn.execute("""
         SELECT id, period, charge_type, amount, due_date, created_at
         FROM rent_charges
-        WHERE unit_id = ?
+        WHERE tenant_id = ?
         ORDER BY CASE WHEN period = 'ARREARS' THEN '0000-00' ELSE period END, charge_type
-    """, (unit_id,)).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # Each payment carries where it came from: the reference, the sender the
     # bank recorded, and the statement file it was read out of.
@@ -87,9 +87,9 @@ def generate_tenant_evidence(conn, tenant_id):
         LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
         LEFT JOIN bank_statements bs ON COALESCE(p.statement_id, bt.statement_id) = bs.id
         LEFT JOIN payment_claims pc ON p.claim_id = pc.id
-        WHERE p.unit_id = ?
+        WHERE p.tenant_id = ?
         ORDER BY p.payment_date, p.created_at
-    """, (unit_id,)).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # Which charge each shilling was applied against.
     allocations = conn.execute("""
@@ -97,9 +97,9 @@ def generate_tenant_evidence(conn, tenant_id):
                rc.period, rc.charge_type
         FROM payment_allocations pa
         JOIN rent_charges rc ON pa.charge_id = rc.id
-        WHERE rc.unit_id = ?
+        WHERE rc.tenant_id = ?
         ORDER BY pa.created_at
-    """, (unit_id,)).fetchall()
+    """, (tenant_id,)).fetchall()
     alloc_by_payment = {}
     for a in allocations:
         alloc_by_payment.setdefault(a['payment_id'], []).append({
@@ -183,8 +183,8 @@ def generate_tenant_evidence(conn, tenant_id):
         SELECT id, mpesa_ref, claimed_amount, status, source, flag_reason,
                created_at, verified_at, caretaker_confirmed, admin_cleared
         FROM payment_claims
-        WHERE unit_id = ? ORDER BY created_at
-    """, (unit_id,)).fetchall()
+        WHERE tenant_id = ? ORDER BY created_at
+    """, (tenant_id,)).fetchall()
 
     bank_verified = sum(
         e['credit'] for e in entries

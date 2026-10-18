@@ -312,15 +312,16 @@ def process_payment_queue():
                 conn.execute(
                     """
                     INSERT INTO payments
-                        (id, property_id, unit_id, claim_id, bank_txn_id, statement_id,
+                        (id, property_id, unit_id, tenant_id, claim_id, bank_txn_id, statement_id,
                          amount, payment_date, assignment_type, assignment_reason,
                          assigned_by, source, created_at)
-                    VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """,
                     (
                         payment_id,
                         property_id,
                         unit_id,
+                        tenant_id,              # NULL lets the ledger trigger decide
                         float(txn["amount"]),
                         payment_date,
                         txn["source"],          # assignment_type = 'daraja' | 'pesapal'

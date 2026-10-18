@@ -104,12 +104,10 @@ def get_tenant_statement(conn, tenant_id, property_id):
         return None, [], []
 
     tenant = dict(tenant)
-    unit_id    = tenant['unit_id']
-    move_in    = tenant.get('move_in_date') or '2000-01-01'
-    move_in_period = move_in[:7]  # YYYY-MM
 
     # ── Charges ────────────────────────────────────────────────
-    # Include ARREARS period explicitly — string sort puts 'ARREARS' < any 'YYYY-MM'
+    # Rows belong to this tenant by tenant_id, so a previous or later occupant
+    # of the same unit never appears here.
     charges = conn.execute("""
         SELECT
             rc.id,
@@ -123,10 +121,10 @@ def get_tenant_statement(conn, tenant_id, property_id):
                 0
             ) AS allocated
         FROM rent_charges rc
-        WHERE rc.unit_id = ? AND (rc.period >= ? OR rc.period = 'ARREARS')
+        WHERE rc.tenant_id = ?
         ORDER BY CASE WHEN rc.period = 'ARREARS' THEN '0000-00' ELSE rc.period END,
                  rc.charge_type
-    """, (unit_id, move_in_period)).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # ── Payments ───────────────────────────────────────────────
     payments = conn.execute("""
@@ -141,9 +139,9 @@ def get_tenant_statement(conn, tenant_id, property_id):
         FROM payments p
         LEFT JOIN bank_transactions bt ON bt.id = p.bank_txn_id
         LEFT JOIN payment_claims pc ON pc.id = p.claim_id
-        WHERE p.unit_id = ? AND p.payment_date >= ?
+        WHERE p.tenant_id = ?
         ORDER BY p.payment_date
-    """, (unit_id, move_in)).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # Fetch allocation breakdown for each payment
     payment_allocations_map = {}
@@ -165,14 +163,14 @@ def get_tenant_statement(conn, tenant_id, property_id):
                pc.caretaker_confirmed, pc.caretaker_note,
                pc.admin_cleared, pc.admin_note
         FROM payment_claims pc
-        WHERE pc.unit_id = ?
+        WHERE pc.tenant_id = ?
           AND pc.status IN ('pending', 'flagged')
           AND (pc.admin_cleared IS NULL OR pc.admin_cleared = 0)
           AND NOT EXISTS (
               SELECT 1 FROM payments p WHERE p.claim_id = pc.id
           )
         ORDER BY pc.created_at DESC
-    """, (unit_id,)).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # For each flagged claim, find which bank statements covered (and thus checked) its period
     org_id = conn.execute(

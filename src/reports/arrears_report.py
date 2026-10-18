@@ -109,7 +109,7 @@ def generate_arrears_report(conn, property_id):
     # it was reported by a caretaker or tenant.
     receipts = {}
     for row in conn.execute("""
-        SELECT p.unit_id, p.payment_date, p.amount, p.assignment_type, p.source,
+        SELECT p.tenant_id, p.payment_date, p.amount, p.assignment_type, p.source,
                COALESCE(bt.mpesa_ref, pc.mpesa_ref) AS mpesa_ref,
                bt.sender_name
         FROM payments p
@@ -118,7 +118,7 @@ def generate_arrears_report(conn, property_id):
         WHERE p.property_id = ?
         ORDER BY p.payment_date DESC, p.created_at DESC
     """, (property_id,)):
-        receipts.setdefault(row['unit_id'], []).append({
+        receipts.setdefault(row['tenant_id'], []).append({
             'date': row['payment_date'],
             'amount': float(row['amount'] or 0),
             'mpesa_ref': row['mpesa_ref'],
@@ -127,12 +127,9 @@ def generate_arrears_report(conn, property_id):
         })
 
     last_payments = dict(conn.execute("""
-        SELECT unit_id, MAX(payment_date) FROM payments
-        WHERE property_id = ? GROUP BY unit_id
+        SELECT tenant_id, MAX(payment_date) FROM payments
+        WHERE property_id = ? AND tenant_id IS NOT NULL GROUP BY tenant_id
     """, (property_id,)).fetchall())
-    unit_ids = dict(conn.execute(
-        "SELECT unit_number, id FROM units WHERE property_id = ?", (property_id,)
-    ).fetchall())
 
     debtors, credits = [], []
     buckets = {'current': 0.0, '1-2 months': 0.0, '2-3 months': 0.0, '3+ months': 0.0}
@@ -140,9 +137,8 @@ def generate_arrears_report(conn, property_id):
         balance = float(row['balance'] or 0)
         if balance == 0:
             continue
-        unit_id = unit_ids.get(row['unit_number'])
-        unit_receipts = receipts.get(unit_id, [])
-        last_paid = last_payments.get(unit_id)
+        unit_receipts = receipts.get(row['tenant_id'], [])
+        last_paid = last_payments.get(row['tenant_id'])
         days_since = None
         if last_paid:
             try:
@@ -198,7 +194,7 @@ def generate_arrears_report(conn, property_id):
                u.unit_number, t.name AS tenant_name
         FROM payment_claims pc
         LEFT JOIN units u ON pc.unit_id = u.id
-        LEFT JOIN tenants t ON t.unit_id = pc.unit_id AND t.status = 'active'
+        LEFT JOIN tenants t ON t.id = pc.tenant_id
         WHERE pc.property_id = ? AND pc.status = 'flagged'
         ORDER BY pc.created_at DESC
     """, (property_id,)).fetchall()

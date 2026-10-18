@@ -121,6 +121,7 @@ from src.database.db import (
     migrate_rename_office_to_owner_use,
     migrate_add_tenant_short_code,
     migrate_add_owner_org_id,
+    migrate_add_ledger_tenant_id,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -175,6 +176,7 @@ migrate_add_deposit_paid()
 migrate_rename_office_to_owner_use()
 migrate_add_tenant_short_code()
 migrate_add_owner_org_id()
+migrate_add_ledger_tenant_id()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -1648,10 +1650,10 @@ def tenant_quick_assign(tenant_id, txn_id):
         payment_id = generate_id('PAY')
         conn.execute("""
             INSERT INTO payments
-            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+            (id, property_id, unit_id, tenant_id, bank_txn_id, statement_id, amount, payment_date,
              assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from tenant statement view', 'admin')
-        """, (payment_id, prop['id'], unit_id, txn_id, txn['statement_id'],
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from tenant statement view', 'admin')
+        """, (payment_id, prop['id'], unit_id, tenant_id, txn_id, txn['statement_id'],
               txn['amount'], txn['txn_date'] or ''))
         allocate_payment(conn, payment_id, unit_id, txn['amount'])
 

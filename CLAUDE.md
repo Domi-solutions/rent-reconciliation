@@ -75,6 +75,8 @@ src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
+src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
+scripts/tenant_ledger_report.py      # run against a prod copy before deploy; --execute redoes crossed allocations
 src/reports/landlord_report.py # generate_report(), enrich_report_data()
 src/messaging/delivery.py      # send_sms(), send_sms_async() — logs to platform_outbox via _log_sms()
 src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
@@ -130,7 +132,9 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `tenant_departures` — one row per move-out. Columns: id, tenant_id, unit_id, property_id, departure_date, balance_at_departure, deposit_held, deposit_applied, deposit_refunded, remaining_debt, debt_status ('none'/'active'/'written_off'), write_off_note, admin_notes, created_at. Added by `migrate_add_tenant_departures`.
 - `payment_claims.departed_tenant_id` — FK to `tenants.id`; set when caretaker submits a claim in "Departed tenant" mode. Used to link post-departure payments to the correct former tenant. Added by `migrate_add_tenant_departures`.
 - `landlord_reports.needs_refresh`/`refresh_reason`/`refreshed_at` — staleness tracking. Reports < 3 months regenerate on every view; ≥3 months served from stored JSON. `_flag_stale_reports()` in `app.py` sets `needs_refresh=1` after upload/verify.
-- `unit_balances` VIEW — charges and payments scoped to current active tenant's `move_in_date` so a new tenant starts with a clean balance (no inherited history from previous tenant).
+- **Per-tenant ledger** — `rent_charges`, `payments`, `payment_claims` each carry `tenant_id` (`migrate_add_ledger_tenant_id`). Debt follows the person, not the door. AFTER INSERT triggers (`trg_<table>_tenant`) stamp it when an insert leaves it NULL, from the unit's occupancy history (rules in `db.py` `_charge_tenant_sql` etc.): a month is charged to whoever occupied the unit in it (mid-month handover → outgoing tenant); a payment goes to its claim's tenant, else the occupant on `payment_date`; NULL = nobody matched (e.g. paid while the unit was empty) and needs a person. When the route knows the tenant (statement view, Daraja, tenant portal), pass `tenant_id` explicitly. Any query about one person's money filters `WHERE tenant_id = ?` — never `unit_id` + `move_in_date`, which shows the previous occupant's history.
+- `tenant_balances` VIEW — one row per tenant (any status, departed included). Use for a tenant's own balance. `unit_balances` VIEW — the unit's current active tenant's balance, read from `tenant_balances`; same columns as before.
+- `allocate_payment` settles only the paying tenant's own charges (`rc.tenant_id IS payment.tenant_id`). Allocations made before this could cross tenants; `scripts/tenant_ledger_report.py` lists them and `--execute` redoes them per unit (snapshot first). Editing `move_in_date` no longer moves debt between people — re-pointing rows is an explicit rebuild.
 - `bank_transactions` — has index `idx_bank_txn_date` on `(txn_date)` added by `migrate_add_bank_txn_date_index` to avoid strftime full-table scans on period queries.
 
 ---
@@ -251,7 +255,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_owner_org_id`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_ledger_tenant_id`.
 
 ---
 

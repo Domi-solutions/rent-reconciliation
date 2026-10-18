@@ -767,6 +767,23 @@ def log_payment(property_id):
                                     "UPDATE payments SET claim_id = ? WHERE id = ?",
                                     (claim_id, _existing_pay['id'])
                                 )
+                                # The statement matched this payment to the unit, which
+                                # credited whoever lives there now. The caretaker has said
+                                # it was the departed tenant's — move it to their debt.
+                                if _departed_tenant_id and conn.execute(
+                                    "UPDATE payments SET tenant_id = ? "
+                                    "WHERE id = ? AND unit_id = ? AND tenant_id IS NOT ?",
+                                    (_departed_tenant_id, _existing_pay['id'], unit_id, _departed_tenant_id)
+                                ).rowcount:
+                                    from src.reconciliation.tenant_ledger import reallocate_unit
+                                    reallocate_unit(conn, unit_id)
+                                    conn.execute(
+                                        "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                                        ('payment_tenant_changed', 'payment', _existing_pay['id'],
+                                         f'Ref: {reference} | Unit: {unit_number} | moved to departed tenant '
+                                         f'{_departed_tenant_id} by {session.get("caretaker_name", "Caretaker")}',
+                                         session.get('caretaker_name', 'Caretaker')),
+                                    )
                             conn.execute(
                                 "UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = ?",
                                 (claim_id,)
@@ -1433,10 +1450,10 @@ def tenant_quick_assign(property_id, tenant_id, txn_id):
         payment_id = generate_id('PAY')
         conn.execute("""
             INSERT INTO payments
-            (id, property_id, unit_id, bank_txn_id, statement_id, amount, payment_date,
+            (id, property_id, unit_id, tenant_id, bank_txn_id, statement_id, amount, payment_date,
              assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from caretaker statement view', ?)
-        """, (payment_id, property_id, unit_id, txn_id, txn['statement_id'],
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from caretaker statement view', ?)
+        """, (payment_id, property_id, unit_id, tenant_id, txn_id, txn['statement_id'],
               txn['amount'], txn['txn_date'] or '', caretaker_name))
         allocate_payment(conn, payment_id, unit_id, txn['amount'])
 

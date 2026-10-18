@@ -424,6 +424,30 @@
 
 ---
 
+## Session 25 — 2026-10-18
+
+---
+
+### Ledger keyed by unit — whose money is whose inferred from move-in dates
+**File(s):** `src/database/db.py` (`allocate_payment`, `unit_balances`), `src/routes/tenant_routes.py`, `src/utils/statement.py`, `src/reports/tenant_evidence.py`, `src/reports/arrears_report.py`
+**Root cause:** The mental model was "a unit has a balance". Rent is owed by a person; the unit is only an address. Every query was written against `unit_id` and patched with a `move_in_date` filter where someone remembered — and many places did not.
+**What Cursor did:** FIFO allocation settled the oldest unpaid charge on the unit, so a new tenant's first payment cleared the previous occupant's arrears. A departed tenant's portal read `unit_balances` and showed the new occupant's balance; the charges and payments tabs listed the whole unit's history. A departed tenant's later payment, dated after the new move-in, was credited to the new tenant.
+**What it should do:** Filter by `tenant_id` for anything about one person's money (`tenant_balances` for balances). Charges, payments and claims are stamped with `tenant_id` by trigger; pass it explicitly when the route knows the tenant.
+**Why it matters:** Turnover is constant. Unit-keyed money silently moves debt between people — and once tenants see receipts, they see it too.
+**Spotted:** 2026-10-18 (Session 25)
+
+---
+
+### Tenant portal referenced names that did not exist
+**File(s):** `src/routes/tenant_routes.py`
+**Root cause:** Code paths that only run once real data exists (an auto-verified self-report, a verified claim with allocations) were never exercised in dev.
+**What Cursor did:** Used `os.environ` without importing `os` (auto-verify confirmation crashed and rolled back the claim), and selected `pa.charge_settled`, which is not a column of `payment_allocations` (Pay tab errored for any tenant with a verified claim).
+**What it should do:** Run `pyflakes` on changed files; check selected columns against `.agent/schema.yaml`. Derived values like "settled" are computed in SQL, not read from a column.
+**Why it matters:** Both were on the tenant's payment path — the one place a failure is seen by the person paying.
+**Spotted:** 2026-10-18 (Session 25)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

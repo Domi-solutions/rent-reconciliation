@@ -1,5 +1,7 @@
 """Tenant portal: token URL access (no session) + optional persons-based holistic login."""
 
+import os
+
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
@@ -94,13 +96,13 @@ def dashboard():
             """SELECT t.id AS tenant_id, t.name AS tenant_name, t.access_token,
                       u.id AS unit_id, u.unit_number,
                       p.name AS property_name, p.id AS property_id,
-                      COALESCE(ub.total_charged, 0) AS total_charged,
-                      COALESCE(ub.total_paid, 0) AS total_paid,
-                      COALESCE(ub.balance, 0) AS balance
+                      COALESCE(tb.total_charged, 0) AS total_charged,
+                      COALESCE(tb.total_paid, 0) AS total_paid,
+                      COALESCE(tb.balance, 0) AS balance
                FROM tenants t
                JOIN units u ON t.unit_id = u.id
                JOIN properties p ON u.property_id = p.id
-               LEFT JOIN unit_balances ub ON ub.unit_id = u.id
+               LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
                WHERE t.person_id = ? AND t.status = 'active'
                ORDER BY p.name, u.unit_number""",
             (person_id,),
@@ -109,13 +111,13 @@ def dashboard():
         unit_details = []
         for row in units:
             last_payment = conn.execute(
-                "SELECT amount, payment_date FROM payments WHERE unit_id = ? ORDER BY payment_date DESC LIMIT 1",
-                (row["unit_id"],),
+                "SELECT amount, payment_date FROM payments WHERE tenant_id = ? ORDER BY payment_date DESC LIMIT 1",
+                (row["tenant_id"],),
             ).fetchone()
 
             pending = float(conn.execute(
-                "SELECT COALESCE(SUM(claimed_amount), 0) FROM payment_claims WHERE unit_id = ? AND status = 'pending'",
-                (row["unit_id"],),
+                "SELECT COALESCE(SUM(claimed_amount), 0) FROM payment_claims WHERE tenant_id = ? AND status = 'pending'",
+                (row["tenant_id"],),
             ).fetchone()[0])
 
             unit_details.append({
@@ -149,8 +151,8 @@ def portal(token):
         tenant, unit, prop = ctx
         balance_row = conn.execute("""
             SELECT total_charged, total_paid, balance
-            FROM unit_balances WHERE unit_id = ?
-        """, (unit['id'],)).fetchone()
+            FROM tenant_balances WHERE tenant_id = ?
+        """, (tenant['id'],)).fetchone()
         total_charged = float(balance_row['total_charged']) if balance_row else 0
         total_paid = float(balance_row['total_paid']) if balance_row else 0
         verified_balance = float(balance_row['balance']) if balance_row else 0
@@ -159,8 +161,8 @@ def portal(token):
         pending_claims_total = conn.execute("""
             SELECT COALESCE(SUM(claimed_amount), 0) AS total
             FROM payment_claims
-            WHERE unit_id = ? AND status = 'pending'
-        """, (unit['id'],)).fetchone()['total']
+            WHERE tenant_id = ? AND status = 'pending'
+        """, (tenant['id'],)).fetchone()['total']
         pending_claims_total = float(pending_claims_total)
 
         # Tenant-facing balance: subtract pending claims from verified outstanding
@@ -207,9 +209,9 @@ def charges(token):
             SELECT rc.id, rc.period, rc.charge_type, rc.amount, rc.due_date,
                    COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.charge_id = rc.id), 0) AS paid
             FROM rent_charges rc
-            WHERE rc.unit_id = ?
+            WHERE rc.tenant_id = ?
             ORDER BY rc.period DESC, rc.charge_type
-        """, (unit['id'],)).fetchall()
+        """, (tenant['id'],)).fetchall()
 
         raw_by_period = {}
         for r in charge_rows:
@@ -263,9 +265,9 @@ def payments(token):
                    bt.mpesa_ref, bt.sender_name
             FROM payments p
             JOIN bank_transactions bt ON p.bank_txn_id = bt.id
-            WHERE p.unit_id = ?
+            WHERE p.tenant_id = ?
             ORDER BY p.payment_date DESC, p.id
-        """, (unit['id'],)).fetchall()
+        """, (tenant['id'],)).fetchall()
 
         payments_with_allocations = []
         for p in payment_rows:
@@ -290,9 +292,9 @@ def payments(token):
         claim_rows = conn.execute("""
             SELECT mpesa_ref, claimed_amount, status, created_at
             FROM payment_claims
-            WHERE unit_id = ? AND status IN ('pending', 'flagged')
+            WHERE tenant_id = ? AND status IN ('pending', 'flagged')
             ORDER BY created_at DESC
-        """, (unit['id'],)).fetchall()
+        """, (tenant['id'],)).fetchall()
 
         for c in claim_rows:
             if c['mpesa_ref'] in verified_refs:
@@ -388,7 +390,7 @@ def pay(token):
         tenant, unit, prop = ctx
 
         balance_row = conn.execute(
-            "SELECT balance FROM unit_balances WHERE unit_id = ?", (unit['id'],)
+            "SELECT balance FROM tenant_balances WHERE tenant_id = ?", (tenant['id'],)
         ).fetchone()
         balance = float(balance_row['balance']) if balance_row else 0.0
 
@@ -397,9 +399,9 @@ def pay(token):
                    p.amount AS verified_amount, p.id AS payment_id
             FROM payment_claims pc
             LEFT JOIN payments p ON p.claim_id = pc.id
-            WHERE pc.unit_id = ?
+            WHERE pc.tenant_id = ?
             ORDER BY pc.created_at DESC LIMIT 20
-        """, (unit['id'],)).fetchall()
+        """, (tenant['id'],)).fetchall()
 
         claims = []
         for c in claims_raw:
@@ -407,7 +409,8 @@ def pay(token):
             if c['status'] == 'verified' and c['payment_id']:
                 allocs = conn.execute("""
                     SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period,
-                           pa.charge_settled
+                           (SELECT COALESCE(SUM(pa2.amount), 0) FROM payment_allocations pa2
+                            WHERE pa2.charge_id = rc.id) >= rc.amount AS charge_settled
                     FROM payment_allocations pa
                     JOIN rent_charges rc ON pa.charge_id = rc.id
                     WHERE pa.payment_id = ?
@@ -485,9 +488,9 @@ def report_payment(token):
         claim_id = generate_id('CLM')
         conn.execute("""
             INSERT INTO payment_claims
-            (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
-            VALUES (?, ?, ?, ?, ?, ?, 'tenant', ?, ?)
-        """, (claim_id, prop['id'], reference, unit['id'], amount, message, mpesa_date, mpesa_period))
+            (id, property_id, mpesa_ref, unit_id, tenant_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'tenant', ?, ?)
+        """, (claim_id, prop['id'], reference, unit['id'], tenant['id'], amount, message, mpesa_date, mpesa_period))
 
         amt_str = f'{amount:,.0f}' if amount is not None else '-'
         unit_number = unit['unit_number']
