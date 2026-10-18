@@ -77,6 +77,7 @@ src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit sugge
 src/reconciliation/state_machine.py  # payment lifecycle
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
 scripts/tenant_ledger_report.py      # run against a prod copy before deploy; --execute redoes crossed allocations
+scripts/payment_coverage_check.py    # read-only: find a payer by name/phone; payments + statements per month per property
 src/reports/landlord_report.py # generate_report(), enrich_report_data()
 src/messaging/delivery.py      # send_sms(), send_sms_async() — logs to platform_outbox via _log_sms()
 src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
