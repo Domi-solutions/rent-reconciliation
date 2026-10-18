@@ -150,6 +150,7 @@ blueprints:
       - "GET /reports/<id> — live/frozen: reports < 3 months old regenerate on view; ≥3 months serve stored JSON; staleness banner + refresh button shown when needs_refresh=1"
       - "POST /reports/<id>/refresh — admin force-refresh a frozen report; regenerates report_data, clears needs_refresh"
       - "GET /reports/<id>/caretaker"
+      - "GET /reports/lookup — read-only, phone-friendly (payment_lookup): ?q= finds a name/phone across tenants (any status), bank senders and reported claims, org-scoped; ?from=&to= (YYYY-MM) shows per month payments, KES, statement coverage, charged, and each tenant's months with no payment recorded. Logic in src/reports/payment_lookup.py, shared with scripts/payment_coverage_check.py"
 
   agent:
     file: src/routes/agent_routes.py

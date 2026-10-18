@@ -4,6 +4,7 @@ Admin routes for generating and viewing landlord reports.
 import calendar
 import json
 import logging
+import re
 from datetime import datetime, timedelta, date as _date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
@@ -12,6 +13,7 @@ from src.reports.arrears_report import generate_arrears_report
 from src.reconciliation.unassigned import get_unassigned_credits, group_by_sender
 from src.reports.backfill import backfill_reports
 from src.reports.tenant_evidence import generate_tenant_evidence
+from src.reports.payment_lookup import find_payer, month_coverage
 from src.reports.landlord_report import generate_landlord_report, enrich_report_data
 from src.parsers.banks.registry import bank_display_name
 
@@ -520,3 +522,26 @@ def report_history():
         return render_template('reports/history.html',
                              property=prop,
                              reports=reports_with_summary)
+
+
+@report_bp.route('/lookup')
+def payment_lookup():
+    """Read-only, phone-friendly: find a payer by name or phone, and see which
+    months this property has payments and bank statements recorded for."""
+    q = (request.args.get('q') or '').strip()
+    today = _date.today()
+    first = request.args.get('from') or f'{today.year}-01'
+    last = request.args.get('to') or today.strftime('%Y-%m')
+    if not re.fullmatch(r'\d{4}-\d{2}', first) or not re.fullmatch(r'\d{4}-\d{2}', last) or first > last:
+        first, last = f'{today.year}-01', today.strftime('%Y-%m')
+
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            flash('Please select a property first.', 'warning')
+            return redirect(url_for('property_list'))
+        hits = find_payer(conn, q, prop['organization_id']) if q else None
+        coverage = month_coverage(conn, prop['id'], first, last)
+
+    return render_template('reports/payment_lookup.html', property=prop, q=q, hits=hits,
+                           coverage=coverage, first=first, last=last)

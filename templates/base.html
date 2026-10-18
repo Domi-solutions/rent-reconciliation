@@ -16,6 +16,7 @@
     else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
     else 'messages'   if request.endpoint.startswith('messaging.')
     else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field', 'move_out_tenant')
+    else 'lookup'     if request.endpoint == 'reports.payment_lookup'
     else 'reports'    if request.endpoint.startswith('reports.')
     else 'activity'   if request.endpoint == 'activity'
     else 'water'      if request.endpoint in ('upload_water_charges', 'water_uploads_list', 'water_upload_detail')
@@ -87,6 +88,11 @@
       <a class="sidebar-item {% if active_nav == 'arrears_report' %}active{% endif %}" href="{{ url_for('reports.arrears_report') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
         Arrears
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'lookup' %}active{% endif %}" href="{{ url_for('reports.payment_lookup') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        Lookup
       </a>
 
       <a class="sidebar-item {% if active_nav == 'activity' %}active{% endif %}" href="{{ url_for('activity') }}">

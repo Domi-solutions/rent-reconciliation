@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Lookup — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .lk-wrap { max-width: 720px; margin: 0 auto; }
+  .lk-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 14px; overflow: hidden; }
+  .lk-h { padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .lk-b { padding: 14px 16px; }
+  .lk-search { display: flex; gap: 8px; }
+  .lk-search input[type=search] { flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+  .lk-search button, .lk-range button { font-size: 15px; padding: 10px 16px; border-radius: 10px; border: none; background: var(--ink); color: #fff; font-weight: 600; }
+  .lk-range { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+  .lk-range label { font-size: 11px; color: var(--ink-3); display: block; }
+  .lk-range input { font-size: 15px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+  .hit { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .hit:last-child { border-bottom: none; }
+  .hit-kind { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .hit-main { font-weight: 600; color: var(--ink); }
+  .hit-sub { font-size: 12px; color: var(--ink-3); }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.lk { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.lk th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.lk td { padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.lk tr:last-child td { border-bottom: none; }
+  .num { text-align: right; white-space: nowrap; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin: 1px 2px 1px 0; }
+  .p-red { background: #FFF0EF; color: #b91c1c; }
+  .p-amber { background: #FFF4E5; color: #92400e; }
+  .p-green { background: #EDFAF1; color: #1E7A35; }
+  .p-grey { background: var(--bg); color: var(--ink-2); }
+  .quiet { color: var(--ink-3); font-size: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lk-wrap">
+
+  <div style="font-size: 21px; font-weight: 700; color: var(--ink);">Lookup</div>
+  <div class="quiet mb-3">{{ property.name }} · read-only</div>
+
+  <div class="lk-card"><div class="lk-b">
+    <form method="get" class="lk-search">
+      <input type="hidden" name="from" value="{{ first }}">
+      <input type="hidden" name="to" value="{{ last }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Name or phone, e.g. Ruth Kanduma or 0759…" autocomplete="off">
+      <button type="submit">Find</button>
+    </form>
+  </div></div>
+
+  {% if hits is not none %}
+  <div class="lk-card">
+    <div class="lk-h">Results for “{{ q }}”</div>
+    <div class="lk-b">
+      {% if not hits.tenants and not hits.bank and not hits.claims %}
+        <div class="hit-sub">Not found — never recorded as a tenant, never on an uploaded bank statement, never in a reported M-Pesa message.</div>
+      {% endif %}
+      {% for t in hits.tenants %}
+      <div class="hit">
+        <div class="hit-kind">Tenant</div>
+        <div class="hit-main">
+          {% if t.property_id == property.id %}<a href="{{ url_for('reports.tenant_evidence', tenant_id=t.id) }}">{{ t.name }}</a>{% else %}{{ t.name }}{% endif %}
+          <span class="pill {{ 'p-green' if t.status == 'active' else 'p-amber' if t.status == 'departed' else 'p-grey' }}">{{ t.status }}</span>
+        </div>
+        <div class="hit-sub">{{ t.property }} · unit {{ t.unit_number or '—' }} · {{ t.phone or 'no phone' }}</div>
+        <div class="hit-sub">In {{ t.move_in_date or '?' }}{% if t.move_out_date %} · out {{ t.move_out_date }}{% endif %}</div>
+      </div>
+      {% endfor %}
+      {% for b in hits.bank %}
+      <div class="hit">
+        <div class="hit-kind">Bank statement sender</div>
+        <div class="hit-main">{{ b.sender_name or '(no name)' }}</div>
+        <div class="hit-sub">{{ b.n }} credit{{ '' if b.n == 1 else 's' }} · KES {{ '{:,.0f}'.format(b.total) }} · {{ b.first }} → {{ b.last }}</div>
+        <div class="hit-sub">
+          {% if b.assigned %}{{ b.assigned }} assigned to unit {{ b.units }}{% endif %}
+          {% if b.assigned < b.n %}<span class="pill p-amber">{{ b.n - b.assigned }} not assigned</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% for c in hits.claims %}
+      <div class="hit">
+        <div class="hit-kind">Reported payment</div>
+        <div class="hit-main">{{ c.mpesa_ref or '—' }} · KES {{ '{:,.0f}'.format(c.claimed_amount or 0) }}
+          <span class="pill {{ 'p-green' if c.status == 'verified' else 'p-red' if c.status == 'flagged' else 'p-amber' }}">{{ c.status }}</span></div>
+        <div class="hit-sub">{{ (c.created_at or '')[:10] }} · unit {{ c.unit_number or '—' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="lk-card">
+    <div class="lk-h">Months recorded</div>
+    <div class="lk-b">
+      <form method="get" class="lk-range mb-3">
+        <input type="hidden" name="q" value="{{ q }}">
+        <div><label>From</label><input type="month" name="from" value="{{ first }}"></div>
+        <div><label>To</label><input type="month" name="to" value="{{ last }}"></div>
+        <button type="submit">Show</button>
+      </form>
+      <div class="scroll">
+        <table class="lk">
+          <thead><tr><th>Month</th><th class="num">KES</th><th>Statement</th><th class="num">Payments</th><th class="num">Units</th><th class="num">Charged</th></tr></thead>
+          <tbody>
+          {% for m in coverage.months %}
+            <tr>
+              <td style="white-space: nowrap;">{{ m.label }}</td>
+              <td class="num">{{ '{:,.0f}'.format(m.total) }}</td>
+              <td>{% if m.statements %}<span class="pill p-green">{{ m.statements|length }} uploaded</span>{% else %}<span class="pill p-red">none</span>{% endif %}</td>
+              <td class="num">{{ m.payments }}</td>
+              <td class="num">{{ m.units_paid }}</td>
+              <td class="num">{{ '{:,.0f}'.format(m.charged) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="quiet mt-2">“none” means no bank statement covering that month has been uploaded — payments in that month cannot have been checked against the bank.</div>
+    </div>
+  </div>
+
+  <div class="lk-card">
+    <div class="lk-h">Tenants — months with no payment recorded</div>
+    <div class="lk-b">
+      {% for t in coverage.tenants %}
+      <div class="hit">
+        <div class="hit-main"><span class="quiet">{{ t.unit_number }}</span>
+          <a href="{{ url_for('reports.tenant_evidence', tenant_id=t.tenant_id) }}">{{ t.name }}</a>
+          {% if t.status != 'active' %}<span class="pill p-grey">{{ t.status }}</span>{% endif %}</div>
+        <div>
+          {% if t.missing %}{% for m in t.missing %}<span class="pill p-red">{{ m }}</span>{% endfor %}
+          {% else %}<span class="pill p-green">a payment recorded every month</span>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="hit-sub">No tenancies overlap this range.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
