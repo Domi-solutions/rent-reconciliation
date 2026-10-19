@@ -211,6 +211,31 @@ def allocate_payment(conn, payment_id, unit_id, amount):
     return allocations
 
 
+def apply_unallocated_credit(conn, property_id):
+    """Settle newly added charges from payments that still hold unallocated credit.
+
+    A payment allocated before later charges existed (an early payment, or charges
+    generated after the bank statement was matched) keeps its remainder as credit
+    until this runs. Oldest payment first; each settles only its own tenant's
+    charges. Adds allocations only — existing ones, and the receipts built from
+    them, stay as they are. Call after creating charges. Returns payments touched.
+    """
+    rows = conn.execute("""
+        SELECT p.id, p.unit_id, p.amount - COALESCE(SUM(pa.amount), 0) AS remainder
+        FROM payments p
+        LEFT JOIN payment_allocations pa ON pa.payment_id = p.id
+        WHERE p.property_id = ?
+        GROUP BY p.id
+        HAVING remainder > 0.005
+        ORDER BY p.payment_date, p.created_at
+    """, (property_id,)).fetchall()
+    touched = 0
+    for r in rows:
+        if allocate_payment(conn, r['id'], r['unit_id'], r['remainder']):
+            touched += 1
+    return touched
+
+
 def migrate_allocate_existing_payments():
     """Create allocation records for any payments that don't have them yet. Idempotent."""
     with get_connection() as conn:

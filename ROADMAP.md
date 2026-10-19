@@ -569,7 +569,8 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [ ] Opening balance per tenant at a locked cutover date
 - [ ] Tenant statement confirmation SMS ("Correct" / "Something's wrong"); departed-with-debt "pay here" SMS
 - [x] Tenant sign-in: SMS link → 6-digit SMS code → 4-digit PIN; phone + PIN after; reset by SMS code; lockout (`migrate_add_tenant_pin_login`, `src/utils/tenant_auth.py`)
-- [ ] Tenant page: receipts (incl. Daraja payments), monthly statement, two-way auditable thread with management
+- [x] Tenant statement, monthly invoices, receipts (incl. app payments); printable; unallocated credit applied when charges are added
+- [ ] Two-way auditable message thread between tenant and management
 - [ ] Caretaker page cut to: who's behind + water entry; statements held until water entered
 - [ ] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation (no 60s wait); Till support
 - [ ] Go live on own shortcode (Daraja Go-Live) → final "pay only here" SMS

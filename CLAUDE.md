@@ -74,6 +74,7 @@ src/utils/phone.py             # normalize_to_e164(), normalize_to_daraja() — 
 src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_income(), get_months_behind()
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
 src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
+src/utils/tenant_documents.py  # build_invoice(), build_receipt() — cut from get_tenant_statement so statement/invoice/receipt never disagree
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
@@ -202,6 +203,8 @@ with get_connection() as conn:
     conn.execute("INSERT INTO ...", (val1, val2))
 ```
 
+**Unallocated credit — `apply_unallocated_credit(conn, property_id)` after creating charges:** a payment matched before later charges existed keeps its remainder as credit; this settles new charges from it (adds allocations only). Already called by generate_charges, admin water upload, caretaker water. Any new route that inserts `rent_charges` must call it too.
+
 **Payment allocation — called automatically on verify/assign AND at-submission auto-verify in caretaker `log_payment`; do NOT call manually anywhere else:**
 ```python
 from src.database.db import allocate_payment
@@ -304,6 +307,8 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - `departed` tenants can sign in (to see and pay their debt); `inactive` cannot (no access_token).
 - `/tenant` and `/t/` (`short_link`) paths are exempt from admin auth.
 - `_get_tenant_by_token(conn, token)` in `tenant_routes.py` → (tenant, unit, property) or None
+- Documents: `/tenant/<token>/statement` (every charge + payment, running balance, newest first), `/invoice/<YYYY-MM>` (brought forward + month's charges − month's payments), `/receipt/<payment_id>` (amount, M-Pesa code, what it settled, account balance today). All printable (`window.print()`), all built from `get_tenant_statement` via `tenant_documents.py`. A receipt shows "balance today", never "balance after this payment" — charges fall due on their own dates, so a mid-ledger balance is ambiguous.
+- Overview shows the same bank-matched balance as the statement; reported-but-unmatched claims are shown beside it, never netted into it.
 
 ### Monthly Reports (/reports/*)
 - Always call `enrich_report_data()` before rendering — back-fills fields on old saved reports

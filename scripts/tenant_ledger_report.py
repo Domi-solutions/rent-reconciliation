@@ -15,9 +15,10 @@ It reports:
   - unattributed     rows no tenant could be matched to — each needs a person
   - departed         former tenants who still owe (or are owed) money
 
-Nothing is written without --execute. --execute takes a snapshot, then redoes
-allocations on every unit with a cross-tenant allocation. Balances do not change;
-only which charge each payment settled.
+Nothing is written without --execute. --execute takes a snapshot, redoes
+allocations on every unit with a cross-tenant allocation, then applies any credit
+still sitting unallocated on a payment to charges created after it was matched.
+Balances do not change; only which charge each payment settled.
 """
 
 import argparse
@@ -29,7 +30,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database.db import get_connection, migrate_add_ledger_tenant_id  # noqa: E402
+from src.database.db import apply_unallocated_credit, get_connection, migrate_add_ledger_tenant_id  # noqa: E402
 from src.reconciliation.tenant_ledger import (  # noqa: E402
     balance_changes, cross_tenant_allocations, departed_balances,
     reallocate_unit, unattributed_rows,
@@ -104,13 +105,9 @@ def main():
                   f"left {r['move_out_date'] or '?':<12}KES{kes(r['balance'])}  {r['phone'] or ''}")
 
         if not args.execute:
-            if units:
-                print('\nRe-run with --execute to redo allocations on those units. A snapshot is taken first.')
+            print('\nRe-run with --execute to redo crossed allocations and apply unallocated credit. A snapshot is taken first.')
             return
 
-        if not units:
-            print('\nNo cross-tenant allocations. Nothing to do.')
-            return
         snapshot = backup_database(conn)
         print(f'\nSnapshot written to {snapshot}')
         for unit_id in units:
@@ -121,6 +118,16 @@ def main():
                  f'Allocations redone per tenant for {n} payment(s)', 'system'),
             )
         print(f'Allocations redone on {len(units)} unit(s).')
+        props = [r[0] for r in conn.execute(
+            "SELECT id FROM properties" + (" WHERE id = ?" if pid else ""), (pid,) if pid else ()).fetchall()]
+        touched = sum(apply_unallocated_credit(conn, p) for p in props)
+        if touched:
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('ledger_credit_applied', 'property', pid or 'all',
+                 f'Unallocated credit applied to later charges on {touched} payment(s)', 'system'),
+            )
+        print(f'Unallocated credit applied on {touched} payment(s).')
 
 
 if __name__ == '__main__':

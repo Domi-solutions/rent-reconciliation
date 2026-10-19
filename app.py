@@ -25,7 +25,7 @@ from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
-from src.database.db import get_connection, init_database, generate_id, allocate_payment
+from src.database.db import get_connection, init_database, generate_id, allocate_payment, apply_unallocated_credit
 from src.parsers.pdf_parser import parse_bank_statement
 from src.parsers.sms_parser import parse_mpesa_message
 from src.reconciliation.matcher import enrich_with_suggestions
@@ -4366,6 +4366,7 @@ def generate_charges():
                     """, (generate_id('CHG'), property_row['id'], unit['id'], period, unit['service_charge'], due_date))
                     svc_created += cur.rowcount
 
+            apply_unallocated_credit(conn, property_row['id'])
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('charges_generated', 'charge', period,
@@ -4566,6 +4567,9 @@ def upload_water_charges():
                     (charge_id, property_row['id'], unit_id, period, row['water_charge'])
                 )
                 created += 1
+
+            if created > 0:
+                apply_unallocated_credit(conn, property_row['id'])
 
             # Create water_uploads anchor record for this Excel batch
             if created > 0:

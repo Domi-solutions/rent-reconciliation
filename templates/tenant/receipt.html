@@ -1,0 +1,29 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Receipt {{ rec.ref or '' }} — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <a href="{{ url_for('tenant.statement', token=token) }}">← Statement</a>
+  <button class="print-btn" onclick="window.print()">Print / save</button>
+</div>
+<div class="doc">
+  <div class="muted">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
+  <h2>Payment receipt</h2>
+  <div class="big credit" style="margin:6px 0 2px">KES {{ "{:,.0f}".format(rec.amount) }}</div>
+  <div class="muted" style="margin-bottom:14px">Received {{ (rec.date or '')[:10] }}</div>
+  <table>
+    {% if rec.ref %}<tr><td>M-Pesa code</td><td class="num"><b>{{ rec.ref }}</b></td></tr>{% endif %}
+    {% if rec.sender %}<tr><td>Paid by</td><td class="num">{{ rec.sender|title }}</td></tr>{% endif %}
+    <tr><td>Method</td><td class="num">{{ rec.method }}</td></tr>
+  </table>
+  <h2 style="font-size:15px;margin:18px 0 6px">Applied to</h2>
+  <table>
+    {% for a in rec.applied %}<tr><td>{{ a.label }}</td><td class="num">{{ "{:,.0f}".format(a.amount) }}</td></tr>{% endfor %}
+    {% if rec.credit_left > 0 %}<tr><td>Held as credit for future charges</td><td class="num">{{ "{:,.0f}".format(rec.credit_left) }}</td></tr>{% endif %}
+  </table>
+  <table style="margin-top:14px">
+    <tr class="total"><td>Account balance today{% if rec.balance_today > 0 %} (owed){% endif %}</td>
+        <td class="num">{% if rec.balance_today < 0 %}{{ "{:,.0f}".format(-rec.balance_today) }} credit{% else %}{{ "{:,.0f}".format(rec.balance_today) }}{% endif %}</td></tr>
+  </table>
+  <div class="muted" style="margin-top:12px">Oldest charges are settled first. Amounts in KES.</div>
+</div>
+{% endblock %}

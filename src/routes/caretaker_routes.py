@@ -8,7 +8,7 @@ import re
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
 
-from src.database.db import get_connection, generate_id, allocate_payment
+from src.database.db import get_connection, generate_id, allocate_payment, apply_unallocated_credit
 from src.reconciliation.unassigned import get_unassigned_credits
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
@@ -1208,6 +1208,8 @@ def water_new(property_id):
                     created += 1
                 else:
                     skipped += 1
+            if created:
+                apply_unallocated_credit(conn, property_id)
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",

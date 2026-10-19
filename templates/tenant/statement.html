@@ -1,0 +1,54 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Statement — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+<div class="doc">
+  <div class="muted">Balance on this account</div>
+  {% if balance > 0 %}<div class="big owed">KES {{ "{:,.0f}".format(balance) }} owed</div>
+  {% elif balance < 0 %}<div class="big credit">KES {{ "{:,.0f}".format(-balance) }} in credit</div>
+  {% else %}<div class="big credit">Fully paid</div>{% endif %}
+  {% if pending %}
+  <div class="muted" style="margin-top:6px">KES {{ "{:,.0f}".format(pending|sum(attribute='claimed_amount')) }} reported as paid, not yet matched to a bank record — not included above.</div>
+  {% endif %}
+</div>
+
+{% if periods %}
+<div class="doc no-print">
+  <h2>Monthly invoices</h2>
+  <div class="muted" style="margin-bottom:10px">Tap a month to see and print its invoice.</div>
+  {% for p in periods %}<a class="chip" href="{{ url_for('tenant.invoice', token=token, period=p) }}">{{ period_label(p) }}</a>{% endfor %}
+</div>
+{% endif %}
+
+<div class="doc">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <h2>Statement</h2>
+    <button class="print-btn no-print" onclick="window.print()">Print</button>
+  </div>
+  <div class="muted" style="margin-bottom:8px">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }} · newest first</div>
+  {% if rows %}
+  <table>
+    {% for r in rows %}
+    <tr>
+      <td style="width:84px" class="muted">{% if r.is_arrears %}B/F{% else %}{{ (r.row_date or '')[:10] }}{% endif %}</td>
+      <td>
+        {% if r.row_type == 'payment' %}
+          <a href="{{ url_for('tenant.receipt', token=token, payment_id=r.payment_id) }}"><b>Payment</b></a>
+          {% if r.ref %}<div class="muted">{{ r.ref }}</div>{% endif %}
+        {% elif r.is_arrears %}
+          Balance brought forward
+        {% else %}
+          {{ {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water'}.get(r.charge_type, r.charge_type|title) }} — {{ period_label(r.period) }}
+          <div class="muted">due {{ (r.row_date or '')[:10] }}</div>
+        {% endif %}
+      </td>
+      <td class="num">{% if r.row_type == 'payment' %}<span class="credit">−{{ "{:,.0f}".format(r.credit) }}</span>{% else %}{{ "{:,.0f}".format(r.debit) }}{% endif %}</td>
+      <td class="num muted">{{ "{:,.0f}".format(r.running_balance) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="muted" style="margin-top:8px">Columns: date · item · amount · balance after. Charges are listed on their due date. Tap a payment for its receipt.</div>
+  {% else %}
+  <div class="muted">No charges or payments recorded yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

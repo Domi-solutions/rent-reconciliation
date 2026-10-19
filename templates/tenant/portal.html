@@ -16,9 +16,17 @@
     <div class="data-row-amount {% if balance > 0 %}amount-danger{% else %}amount-success{% endif %}">
       {% if balance > 0 %}
         KES {{ "{:,.0f}".format(balance) }} outstanding.
+      {% elif balance < 0 %}
+        KES {{ "{:,.0f}".format(-balance) }} in credit.
       {% else %}
         All charges settled — KES 0 outstanding.
       {% endif %}
+    </div>
+    {% if pending_total > 0 %}
+    <div class="data-row-meta mt-1">KES {{ "{:,.0f}".format(pending_total) }} reported as paid, not yet matched to a bank record.</div>
+    {% endif %}
+    <div class="mt-3">
+      <a class="print-btn d-inline-block" style="text-decoration:none;color:#1b1b1a" href="{{ url_for('tenant.statement', token=token) }}">Statement, invoices &amp; receipts</a>
     </div>
   </div>
 </div>

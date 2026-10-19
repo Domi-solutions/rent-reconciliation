@@ -1,11 +1,14 @@
 """Tenant portal: token URL access (no session) + optional persons-based holistic login."""
 
 import os
+import re
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
+from src.utils.statement import get_tenant_statement
+from src.utils.tenant_documents import build_invoice, build_receipt, invoice_periods, period_label
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.tenant_auth import (
@@ -284,10 +287,10 @@ def portal(token):
         """, (tenant['id'],)).fetchone()['total']
         pending_claims_total = float(pending_claims_total)
 
-        # Tenant-facing balance: subtract pending claims from verified outstanding
-        # Floor at 0 — don't show negative balance if claims exceed outstanding
-        balance = max(0.0, verified_balance - pending_claims_total)
-        total_paid_display = total_paid + pending_claims_total
+        # Same figure as the statement: what the bank-matched ledger says. Payments
+        # reported but not yet matched are shown beside it, never netted into it.
+        balance = verified_balance
+        total_paid_display = total_paid
 
         recent_messages = conn.execute("""
             SELECT id, subject, body, message_type, read_at, created_at
@@ -310,6 +313,7 @@ def portal(token):
         total_charged=total_charged,
         total_paid=total_paid_display,
         balance=balance,
+        pending_total=pending_claims_total,
         recent_messages=recent_messages,
         caretaker=caretaker,
     )
@@ -379,11 +383,16 @@ def payments(token):
         tenant, unit, prop = ctx
 
         # Verified payments with allocations
+        # Every payment on this tenancy: from bank statements, reported claims,
+        # and M-Pesa/card payments made in the app (ref in assignment_reason).
         payment_rows = conn.execute("""
             SELECT p.id, p.amount, p.payment_date,
-                   bt.mpesa_ref, bt.sender_name
+                   COALESCE(bt.mpesa_ref, pc.mpesa_ref,
+                            CASE WHEN p.source IN ('daraja', 'pesapal') THEN p.assignment_reason END) AS mpesa_ref,
+                   bt.sender_name
             FROM payments p
-            JOIN bank_transactions bt ON p.bank_txn_id = bt.id
+            LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
+            LEFT JOIN payment_claims pc ON p.claim_id = pc.id
             WHERE p.tenant_id = ?
             ORDER BY p.payment_date DESC, p.id
         """, (tenant['id'],)).fetchall()
@@ -398,6 +407,7 @@ def payments(token):
                 ORDER BY rc.created_at ASC
             """, (p['id'],)).fetchall()
             payments_with_allocations.append({
+                'payment_id': p['id'],
                 'date': p['payment_date'],
                 'amount': float(p['amount']),
                 'mpesa_ref': p['mpesa_ref'] or '-',
@@ -438,6 +448,54 @@ def payments(token):
         property=prop,
         payments_with_allocations=payments_with_allocations,
     )
+
+
+@tenant_bp.route('/<token>/statement')
+def statement(token):
+    """Every charge and payment on this tenancy, with the running balance."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        _, rows, open_claims = get_tenant_statement(conn, tenant['id'], prop['id'])
+    balance = rows[-1]['running_balance'] if rows else 0.0
+    return render_template('tenant/statement.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='statement', rows=list(reversed(rows)), balance=balance,
+                           periods=invoice_periods(rows), period_label=period_label,
+                           pending=[c for c in open_claims if c['status'] == 'pending'])
+
+
+@tenant_bp.route('/<token>/invoice/<period>')
+def invoice(token, period):
+    """One month's invoice — printable."""
+    if not re.fullmatch(r'\d{4}-\d{2}', period):
+        return redirect(url_for('tenant.statement', token=token))
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        inv = build_invoice(conn, tenant['id'], prop['id'], period)
+    if not inv:
+        return redirect(url_for('tenant.statement', token=token))
+    return render_template('tenant/invoice.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='statement', inv=inv)
+
+
+@tenant_bp.route('/<token>/receipt/<payment_id>')
+def receipt(token, payment_id):
+    """Receipt for one payment — printable. Only the tenant's own payments."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        rec = build_receipt(conn, tenant['id'], prop['id'], payment_id)
+    if not rec:
+        return redirect(url_for('tenant.statement', token=token))
+    return render_template('tenant/receipt.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='payments', rec=rec)
 
 
 @tenant_bp.route('/<token>/messages')

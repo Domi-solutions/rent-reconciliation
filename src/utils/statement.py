@@ -134,7 +134,9 @@ def get_tenant_statement(conn, tenant_id, property_id):
             p.amount,
             p.source,
             p.notes,
-            COALESCE(bt.mpesa_ref, pc.mpesa_ref) AS mpesa_ref,
+            -- STK Push / card payments carry their M-Pesa ref in assignment_reason
+            COALESCE(bt.mpesa_ref, pc.mpesa_ref,
+                     CASE WHEN p.source IN ('daraja', 'pesapal') THEN p.assignment_reason END) AS mpesa_ref,
             bt.sender_name
         FROM payments p
         LEFT JOIN bank_transactions bt ON bt.id = p.bank_txn_id
@@ -222,6 +224,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
         description = f"Opening arrears — {label}" if is_arrears else f"{label} — {c['period']}"
         rows.append({
             'row_type':    'charge',
+            'charge_type': c['charge_type'],
             'row_date':    (tenant.get('move_in_date') or c['row_date']) if is_arrears else c['row_date'],
             'period':      c['period'],
             'description': description,
@@ -240,6 +243,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
         source_label = {'daraja': 'M-Pesa Paybill', 'pesapal': 'Card'}.get(p['source'], 'M-Pesa')
         rows.append({
             'row_type':    'payment',
+            'payment_id':  p['id'],
             'row_date':    p['row_date'],
             'period':      None,
             'description': source_label,

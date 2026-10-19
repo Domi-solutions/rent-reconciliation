@@ -458,6 +458,16 @@
 
 ---
 
+### Payment credit stayed unapplied when charges were created later
+**File(s):** `src/database/db.py` (`allocate_payment`), charge-creating routes in `app.py` / `caretaker_routes.py`
+**Root cause:** Allocation runs once, when a payment is matched. The mental model assumed charges always exist before payments — but charges are often generated after the bank statement is matched (backfilled months, early payers).
+**What Cursor did:** Left the remainder of such payments as permanent "credit" while the tenant's later charges showed unpaid. The balance was right; the receipt ("16,700 held as credit") and the charge list ("April unpaid") contradicted each other.
+**What it should do:** After inserting charges, call `apply_unallocated_credit(conn, property_id)`. For history, `scripts/tenant_ledger_report.py --execute` applies it across the database.
+**Why it matters:** Tenants now see receipts. Two documents that disagree are a dispute, even when the total is correct.
+**Spotted:** 2026-10-19 (Session 25)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.
