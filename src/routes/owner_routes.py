@@ -195,6 +195,7 @@ def property_view(property_id):
     if not row:
         abort(403)
     session["owner_id"] = row["owner_id"]
+    session.pop("viewer_shared", None)
     return redirect(url_for("viewer.property_dashboard", property_id=property_id))
 
 

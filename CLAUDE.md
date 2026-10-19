@@ -299,6 +299,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 ### Owner Viewer (/view/*)
 - Auth: bridged from person session (preferred) or legacy `VIEWER_PASSWORD` → `session['owner_id']`; property list filtered via `property_owners` M:M
 - Ownership check on every `/view/<property_id>/...` route — returns 403 if not in `property_owners`
+- Shared `VIEWER_PASSWORD` signs in as the first owner and sets `session['viewer_shared']`: it can look but the payout routes (request-otp/confirm-otp) return 403 — payout changes need the owner's own sign-in. Unset `VIEWER_PASSWORD` means closed in production, open only in dev.
 - Templates extend `viewer/base_viewer.html`; pass `active_tab`
 - Notifications page: SELECT all columns from `owner_messages` — omitting any silently hides data
 - Broadcasts show `template_body` (unsubstituted). `sent_by` badge: blue=Admin, amber=Caretaker, gray=System
@@ -306,7 +307,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 
 ### Caretaker Portal (/caretaker/*)
 - Auth priority: 1) `caretakers` table (name+password); 2) `CARETAKER_PASSWORD` env var; 3) open in dev
-- `before_request` verifies `caretaker_id` still exists in DB — deletion revokes immediately — and that the URL's `property_id` is the account's own (`caretakers.property_id`, read from the DB): one caretaker, one property → 403 otherwise. Legacy `CARETAKER_PASSWORD` sessions have no property binding.
+- `before_request` verifies `caretaker_id` still exists in DB — deletion revokes immediately — and that the URL's `property_id` is the account's own (`caretakers.property_id`, read from the DB): one caretaker, one property → 403 otherwise. Legacy `CARETAKER_PASSWORD` sessions have no property binding and are honoured only while no named accounts exist; with no accounts and no password the portal is open in dev only — closed when `FLASK_ENV=production`.
 - `sent_by` attribution: `session.get('caretaker_name', 'Caretaker')` for owner inbox
 - Log Payment: parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission
 - Paths starting with `/caretaker` exempt from admin auth

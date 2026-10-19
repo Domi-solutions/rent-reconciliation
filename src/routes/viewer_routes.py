@@ -41,8 +41,12 @@ def login():
     import os
     if request.method == 'POST':
         password = request.form.get('password', '')
+        import hmac
         viewer_pw = os.environ.get('VIEWER_PASSWORD', '')
-        if not viewer_pw or password == viewer_pw:
+        if not viewer_pw and os.environ.get('FLASK_ENV') == 'production':
+            # Unset must mean closed, not open to anyone.
+            return render_template('viewer/login.html', error='Owners sign in at /login with their email.')
+        if not viewer_pw or hmac.compare_digest(password, viewer_pw):
             # Set owner_id to first active owner so ownership checks pass
             with get_connection() as conn:
                 owner = conn.execute(
@@ -50,6 +54,9 @@ def login():
                 ).fetchone()
                 if owner:
                     session['owner_id'] = owner['id']
+                    # Shared password: whoever knows it, not a known owner.
+                    # It may look, but never change where money is paid out.
+                    session['viewer_shared'] = True
             next_url = request.form.get('next') or url_for('viewer.property_list')
             return redirect(next_url)
         return render_template('viewer/login.html', error='Incorrect password.')
@@ -78,6 +85,7 @@ def owner_login(token):
                                    token=token, owner_name=owner['name'])
         if check_password_hash(owner['password_hash'], password):
             session['owner_id'] = owner['id']
+            session.pop('viewer_shared', None)
             session['owner_token'] = token
             return redirect(url_for('viewer.property_list'))
         return render_template('viewer/owner_login.html',
@@ -1042,6 +1050,8 @@ def property_wallet(property_id):
 @viewer_bp.route('/<property_id>/payout/request-otp', methods=['POST'])
 def payout_request_otp(property_id):
     """Owner requests OTP to verify a new M-Pesa payout number."""
+    if session.get('viewer_shared'):
+        abort(403)          # payout changes need the owner's own sign-in, never the shared password
     owner_id = session.get('owner_id')
     with get_connection() as conn:
         access = conn.execute(
@@ -1081,6 +1091,8 @@ def payout_request_otp(property_id):
 @viewer_bp.route('/<property_id>/payout/confirm-otp', methods=['POST'])
 def payout_confirm_otp(property_id):
     """Owner submits OTP to activate their payout account."""
+    if session.get('viewer_shared'):
+        abort(403)          # payout changes need the owner's own sign-in, never the shared password
     owner_id = session.get('owner_id')
     with get_connection() as conn:
         access = conn.execute(

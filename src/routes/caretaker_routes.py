@@ -2,6 +2,7 @@
 Caretaker portal routes — live operational view.
 Auth: CARETAKER_PASSWORD env var; session key 'caretaker_authenticated'.
 """
+import hmac
 import json
 import os
 import re
@@ -73,12 +74,17 @@ def require_caretaker_auth():
             abort(403)
         return None
 
-    # Legacy shared-password mode
+    # Legacy shared-password mode — honoured only while it is the way in: the
+    # password is set and no named accounts exist. A cookie from the shared
+    # password must not outlive the switch to named accounts.
     if session.get('caretaker_authenticated'):
-        return None
+        if os.environ.get('CARETAKER_PASSWORD') and not _has_db_caretakers():
+            return None
+        session.pop('caretaker_authenticated', None)
 
-    # Dev mode: open if no CARETAKER_PASSWORD env var and no DB accounts exist
-    if not os.environ.get('CARETAKER_PASSWORD') and not _has_db_caretakers():
+    # Dev mode: open if no CARETAKER_PASSWORD, no DB accounts — never in production
+    if (not os.environ.get('CARETAKER_PASSWORD') and not _has_db_caretakers()
+            and os.environ.get('FLASK_ENV') != 'production'):
         return None
 
     return redirect(url_for('caretaker.login', next=request.url))
@@ -109,8 +115,11 @@ def login():
             # Legacy shared-password mode
             password = os.environ.get('CARETAKER_PASSWORD')
             if not password:
+                if os.environ.get('FLASK_ENV') == 'production':
+                    return render_template('caretaker/login.html', use_db=use_db,
+                                           error='Caretaker sign-in is not set up. Ask management for an account.')
                 return redirect(url_for('caretaker.index'))
-            if request.form.get('password') == password:
+            if hmac.compare_digest(request.form.get('password') or '', password):
                 session['caretaker_authenticated'] = True
                 next_url = request.args.get('next') or url_for('caretaker.index')
                 return redirect(next_url)
