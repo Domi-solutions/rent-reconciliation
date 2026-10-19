@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}M-Pesa payments — Domi{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <h4 class="mb-1">M-Pesa payments</h4>
+  <div style="font-size:13px;color:#718096;max-width:720px">
+    Payments made to the property's own paybill, from the tenant's Pay button or the M-Pesa menu.
+    {% if not live %}<b>The paybill is not connected yet</b> — this page fills once Daraja keys are set.{% endif %}
+    A payment whose account number named nobody waits here until you name the tenant.
+  </div>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0" style="overflow-x:auto">
+    <table class="table mb-0" style="font-size:13px">
+      <thead><tr><th style="padding-left:16px">Received</th><th>How</th><th>M-Pesa code</th><th>Account no.</th><th class="text-end">KES</th><th>Tenant</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr>
+        <td style="padding-left:16px;white-space:nowrap">{{ (r.paid_at or r.received_at or '')[:16] }}</td>
+        <td>{{ 'Pay button' if r.source == 'daraja' else 'Paybill menu' }}</td>
+        <td>{{ r.mpesa_ref or '—' }}</td>
+        <td>{{ r.account_ref or '—' }}</td>
+        <td class="text-end">{{ '{:,.0f}'.format(r.callback_amount if r.callback_amount is not none else r.amount) }}</td>
+        <td>{% if r.tenant_name %}{{ r.unit_number }} · {{ r.tenant_name|title }}{% else %}—{% endif %}</td>
+        <td>
+          {% if r.processing_status == 'completed' %}<span class="badge bg-success">booked</span>
+          {% elif r.processing_status == 'unmatched' %}
+            <form method="POST" action="{{ url_for('mpesa_admin.assign', txn_id=r.id) }}" class="d-flex gap-1">
+              <select name="tenant_id" class="form-select form-select-sm" required style="min-width:200px">
+                <option value="">Whose payment is this?</option>
+                {% for t in tenants %}<option value="{{ t.id }}">{{ t.unit_number }} · {{ t.name|title }}{% if t.status == 'departed' %} (moved out){% endif %}</option>{% endfor %}
+              </select>
+              <button class="btn btn-sm btn-primary">Assign</button>
+            </form>
+          {% elif r.processing_status == 'pending' %}<span class="badge bg-warning text-dark">{{ 'waiting for tenant' if not r.raw_callback else 'checking with Safaricom' }}</span>
+          {% elif r.processing_status == 'duplicate' %}<span class="badge bg-secondary">same payment, already booked</span>
+          {% else %}<span class="badge bg-light text-dark" title="{{ r.error_detail }}">not paid</span>
+            <div style="font-size:11px;color:#718096">{{ (r.error_detail or '')[:80] }}</div>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="padding:20px;color:#718096">No M-Pesa payments yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

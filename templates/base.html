@@ -12,7 +12,7 @@
 {% set active_nav =
     'overview'    if request.endpoint == 'dashboard'
     else 'flagged'    if request.endpoint in ('flagged_claims_admin', 'admin_clear_flag')
-    else 'payments'   if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments')
+    else 'payments'   if request.endpoint in ('review', 'report_payment', 'assign_payment', 'verify_payments') or request.endpoint.startswith('mpesa_admin.')
     else 'statements' if request.endpoint in ('manage_statements', 'upload_statement')
     else 'inbox'      if request.endpoint.startswith('messaging.inbox')
     else 'messages'   if request.endpoint.startswith('messaging.')
@@ -57,6 +57,13 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"/></svg>
         Payments
       </a>
+
+      {% if mpesa_unmatched_count %}
+      <a class="sidebar-item" href="{{ url_for('mpesa_admin.payments') }}" style="padding-left: 28px; font-size: 12px; color: #b45309;">
+        M-Pesa: name the tenant
+        <span style="margin-left: auto; background: #b45309; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;">{{ mpesa_unmatched_count }}</span>
+      </a>
+      {% endif %}
 
       {% if flagged_claims_count > 0 %}
       <a class="sidebar-item {% if active_nav == 'flagged' %}active{% endif %}" href="{{ url_for('flagged_claims_admin') }}"

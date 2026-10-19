@@ -763,10 +763,10 @@ def _complete_amount(amount_part: str, lines: List[str], line_idx: int,
 def extract_reference(full_text: str) -> Optional[str]:
     """
     Extract Mpesa reference code.
-    Format: [TU][A-Z0-9]{9,10}
+    Format: [P-Z][A-Z0-9]{9,10} — the first letter moves on each year (T 2025, U 2026, V 2027…)
     """
     # Pattern for Mpesa reference codes
-    ref_pattern = re.compile(r'\b([TU][A-Z0-9]{9,10})\b')
+    ref_pattern = re.compile(r'\b([P-Z][A-Z0-9]{9,10})\b')
     match = ref_pattern.search(full_text)
     return match.group(1) if match else None
 

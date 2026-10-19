@@ -11,7 +11,7 @@ from src.utils.statement import get_tenant_statement
 from src.utils.tenant_documents import build_invoice, build_receipt, invoice_periods, period_label
 from src.messaging import threads
 from src.messaging.delivery import send_sms_async
-from src.utils.phone import normalize_to_e164 as _normalize_phone
+from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
 from src.utils.tenant_auth import (
     check_otp, check_pin, issue_otp, mask_phone, person_for_phone, set_pin,
     tenancies_for_phone, valid_pin,
@@ -717,6 +717,12 @@ def report_payment(token):
         except (TypeError, ValueError):
             amount = None
 
+        # Already received through the property's own paybill: nothing to check.
+        from src.payments.mpesa import paid_through_mpesa
+        if paid_through_mpesa(conn, reference):
+            return redirect(url_for('tenant.pay', token=token,
+                                    success=f'Payment {reference} is already confirmed — see your statement.'))
+
         # Duplicate check
         existing = conn.execute(
             "SELECT id FROM payment_claims WHERE property_id = ? AND mpesa_ref = ?",
@@ -968,8 +974,18 @@ def pay_stk(token):
 
     if amount <= 0:
         return jsonify({'success': False, 'error': 'Enter a valid amount'})
-    if not phone:
-        return jsonify({'success': False, 'error': 'Phone number required'})
+    if amount > 250000:
+        return jsonify({'success': False, 'error': 'M-Pesa allows up to KES 250,000 per payment'})
+    if not phone or not normalize_to_daraja(phone):
+        return jsonify({'success': False, 'error': 'Enter a Safaricom number, e.g. 0712 345 678'})
+    with get_connection() as conn:
+        recent = conn.execute("""
+            SELECT 1 FROM payment_transactions
+            WHERE tenant_id = ? AND source = 'daraja' AND processing_status = 'pending'
+              AND received_at > datetime('now', '-60 seconds')
+        """, (tenant['id'],)).fetchone()
+    if recent:
+        return jsonify({'success': False, 'error': 'A payment prompt was just sent. Check your phone, or try again in a minute.'})
 
     description = f"Rent — Unit {unit['unit_number']}"
     result = stk_push(phone, amount, unit['unit_number'], description)
@@ -1014,24 +1030,26 @@ def pay_status(token, checkout_request_id):
         if not ctx:
             return jsonify({'status': 'error', 'message': 'Invalid token'}), 400
 
+        tenant = ctx[0]
         row = conn.execute(
             """
-            SELECT processing_status, error_detail, amount
+            SELECT processing_status, error_detail, amount, payment_id, mpesa_ref
             FROM payment_transactions
-            WHERE external_reference = ?
+            WHERE external_reference = ? AND tenant_id = ?
             """,
-            (checkout_request_id,),
+            (checkout_request_id, tenant['id']),
         ).fetchone()
 
     if not row:
         return jsonify({'status': 'not_found', 'message': 'Payment not found'})
 
     status = row['processing_status']
-    if status == 'completed':
+    if status in ('completed', 'duplicate'):
         amount_fmt = f"{float(row['amount']):,.0f}"
         return jsonify({
             'status': 'completed',
-            'message': f"KES {amount_fmt} confirmed.",
+            'message': f"KES {amount_fmt} payment confirmed" + (f" (M-Pesa {row['mpesa_ref']})." if row['mpesa_ref'] else "."),
+            'receipt_url': url_for('tenant.receipt', token=token, payment_id=row['payment_id']) if row['payment_id'] else None,
         })
     if status == 'failed':
         return jsonify({

@@ -22,6 +22,11 @@ from decimal import Decimal
 from datetime import datetime
 from enum import Enum
 
+# M-Pesa receipt codes: a letter that moves on each year (S 2024, T 2025, U 2026,
+# V 2027…), then 9–10 letters/digits. P–Z covers 2021–2031; widen before then.
+_REF_BODY = r'[P-Z][A-Z0-9]{9,10}'
+_REF = rf'^{_REF_BODY}$'
+
 
 class ClaimStatus(Enum):
     """Status states for SMS claims."""
@@ -56,13 +61,13 @@ class SMSClaim:
         """Validate that reference code exists."""
         if not self.reference:
             raise ValueError("Reference code is required")
-        if not re.match(r'^[TU][A-Z0-9]{9,10}$', self.reference):
+        if not re.match(_REF, self.reference):
             raise ValueError(f"Invalid reference code format: {self.reference}")
 
 
 def extract_reference_code(text: str) -> Optional[str]:
     """Extract Mpesa reference code from text."""
-    ref_pattern = re.compile(r'\b([TU][A-Z0-9]{9,10})\b')
+    ref_pattern = re.compile(rf'\b({_REF_BODY})\b')
     match = ref_pattern.search(text)
     return match.group(1) if match else None
 
@@ -177,7 +182,7 @@ def detect_format(text: str) -> str:
     """Detect which format the message is in."""
     text_upper = text.upper()
     
-    if re.match(r'^[TU][A-Z0-9]{9,10}$', text.strip()):
+    if re.match(_REF, text.strip()):
         return 'reference_only'
     
     if 'CONFIRMED' in text_upper and 'BIASHARA PAYBILL' in text_upper:
@@ -216,7 +221,7 @@ def parse_mpesa_message(text: str, received_at: Optional[datetime] = None) -> Di
     text = text.strip()
     
     # PRIORITY 1: Check if it's JUST a reference code (minimal input)
-    minimal_ref_pattern = re.compile(r'^([TU][A-Z0-9]{9,10})$')
+    minimal_ref_pattern = re.compile(rf'^({_REF_BODY})$')
     minimal_match = minimal_ref_pattern.match(text)
     
     if minimal_match:

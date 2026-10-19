@@ -114,6 +114,50 @@ def stk_push(phone: str, amount: int, account_ref: str, description: str) -> dic
         return {"success": False, "checkout_request_id": None, "error": "Payment initiation failed"}
 
 
+def configured() -> bool:
+    """True when real Daraja credentials are present — STK Push can take money."""
+    return all(os.environ.get(k) for k in (
+        "DARAJA_CONSUMER_KEY", "DARAJA_CONSUMER_SECRET", "DARAJA_SHORTCODE", "DARAJA_PASSKEY", "DARAJA_CALLBACK_URL"))
+
+
+def stk_query(checkout_request_id: str) -> dict:
+    """Ask Safaricom whether an STK Push really succeeded — never trust a callback alone.
+
+    Returns {'state': 'success'|'failed'|'pending', 'detail': str}. 'pending' means
+    Safaricom has not settled it yet (ask again later); an unreachable API is also
+    'pending' so a short outage never turns a real payment into a failure.
+    """
+    shortcode = os.environ.get("DARAJA_SHORTCODE", "")
+    passkey = os.environ.get("DARAJA_PASSKEY", "")
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    payload = {
+        "BusinessShortCode": shortcode,
+        "Password": base64.b64encode(f"{shortcode}{passkey}{timestamp}".encode()).decode(),
+        "Timestamp": timestamp,
+        "CheckoutRequestID": checkout_request_id,
+    }
+    try:
+        token = _get_access_token()
+        req = urllib.request.Request(
+            f"{_base_url()}/mpesa/stkpushquery/v1/query",
+            data=json.dumps(payload).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        # "The transaction is being processed" comes back as an HTTP 500 error body.
+        return {"state": "pending", "detail": f"query HTTP {e.code}: {body[:200]}"}
+    except Exception as e:
+        return {"state": "pending", "detail": f"query unavailable: {e}"}
+    if str(data.get("ResultCode")) == "0":
+        return {"state": "success", "detail": data.get("ResultDesc", "")}
+    if data.get("ResultCode") is not None:
+        return {"state": "failed", "detail": data.get("ResultDesc", "")}
+    return {"state": "pending", "detail": data.get("errorMessage") or data.get("ResponseDescription", "")}
+
+
 def parse_stk_callback(body: dict) -> dict:
     """
     Parse the Daraja STK Push callback body.

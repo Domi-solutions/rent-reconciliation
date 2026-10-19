@@ -1884,3 +1884,22 @@ def migrate_add_admin_users():
         if cols and 'sender_account_id' not in cols:
             conn.execute("ALTER TABLE conversation_messages ADD COLUMN sender_account_id TEXT")
         print(f"Migration complete: admin_users ready ({len(orgs)} organisation login(s) converted).")
+
+
+def migrate_add_mpesa_fields():
+    """Fields to check and de-duplicate M-Pesa payments. Idempotent.
+
+    payment_transactions.amount stays what was asked for (STK) or received (C2B);
+    callback_amount is what Safaricom's callback says was paid — the two must match.
+    mpesa_ref de-duplicates: an STK payment to a paybill can also arrive as a C2B
+    confirmation, and Safaricom retries callbacks. A payment is recorded once per ref.
+    """
+    with get_connection() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()}
+        for name, decl in (('mpesa_ref', 'TEXT'), ('account_ref', 'TEXT'), ('paid_at', 'TEXT'),
+                           ('callback_amount', 'REAL'), ('attempts', 'INTEGER DEFAULT 0'),
+                           ('verified_via', 'TEXT')):
+            if cols and name not in cols:
+                conn.execute(f"ALTER TABLE payment_transactions ADD COLUMN {name} {decl}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ptxn_mpesa_ref ON payment_transactions(mpesa_ref)")
+        print("Migration complete: payment_transactions M-Pesa check fields ready.")

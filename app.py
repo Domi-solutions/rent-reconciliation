@@ -126,6 +126,7 @@ from src.database.db import (
     migrate_add_tenant_pin_login,
     migrate_add_conversations,
     migrate_add_admin_users,
+    migrate_add_mpesa_fields,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -184,10 +185,12 @@ migrate_add_ledger_tenant_id()
 migrate_add_tenant_pin_login()
 migrate_add_conversations()
 migrate_add_admin_users()
+migrate_add_mpesa_fields()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
 from src.routes.team_routes import team_bp
+from src.routes.mpesa_admin_routes import mpesa_admin_bp, unmatched_count as mpesa_unmatched_count
 from src.messaging.reminders import generate_due_reminders
 
 if os.environ.get('ENVIRONMENT') != 'production':
@@ -203,6 +206,7 @@ app.register_blueprint(inbound_bp)
 app.register_blueprint(platform_bp)
 app.register_blueprint(owner_bp)
 app.register_blueprint(team_bp)
+app.register_blueprint(mpesa_admin_bp)
 
 
 @app.route('/t/<code>')
@@ -585,10 +589,11 @@ def inject_property_context():
                 "all_properties": all_properties,
                 "flagged_claims_count": flagged_claims_count,
                 "inbox_awaiting_count": inbox_awaiting_count,
+                "mpesa_unmatched_count": mpesa_unmatched_count(conn, org_id),
             }
     except Exception:
         return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": [], "flagged_claims_count": 0,
-                "inbox_awaiting_count": 0}
+                "inbox_awaiting_count": 0, "mpesa_unmatched_count": 0}
 
 
 @app.route('/login', methods=['GET', 'POST'])
