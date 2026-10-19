@@ -424,6 +424,16 @@
 
 ---
 
+### Caretaker auth checked identity but not property — any caretaker could open any property by editing the URL
+**File(s):** `src/routes/caretaker_routes.py` — `require_caretaker_auth()` (`caretaker_bp.before_request`)
+**Root cause:** Authentication ("is this a real caretaker?") was treated as authorization ("may this caretaker see this property?"). Every caretaker route takes `property_id` from the URL, and nothing compared it with the property the account belongs to.
+**What Cursor did:** `before_request` ran `SELECT 1 FROM caretakers WHERE id = ?` and returned `None` if the row existed. A caretaker of property A could load `/caretaker/<B>/arrears`, `/tenants`, `/log-payment`, `/water/new`, etc. A per-route `_own_property_only()` check (on a feature branch) covered only the repair routes and read the property from the session.
+**What it should do:** Enforce the binding once, centrally, in `before_request`: `SELECT property_id FROM caretakers WHERE id = ?`, then `abort(403)` if `request.view_args['property_id']` is present and differs. Read the property from the DB row, not `session['caretaker_property_id']`, so reassigning an account takes effect on the next request. Legacy `CARETAKER_PASSWORD` mode and dev-open mode have no property binding and stay unchanged. New `/caretaker/<property_id>/...` routes get the check automatically; don't add per-route checks.
+**Why it matters:** Exposes another property's tenant names, phones, balances and bank data, and lets a caretaker submit payment claims or water readings against a property they don't manage. Invisible in dev with a single property.
+**Spotted:** 2026-10-19
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

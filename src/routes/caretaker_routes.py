@@ -54,15 +54,20 @@ def require_caretaker_auth():
     caretaker_id = session.get('caretaker_id')
     if caretaker_id:
         with get_connection() as conn:
-            still_exists = conn.execute(
-                "SELECT 1 FROM caretakers WHERE id = ?", (caretaker_id,)
+            caretaker = conn.execute(
+                "SELECT property_id FROM caretakers WHERE id = ?", (caretaker_id,)
             ).fetchone()
-        if not still_exists:
+        if not caretaker:
             # Account was deleted — clear session and force re-login
             session.pop('caretaker_id', None)
             session.pop('caretaker_name', None)
             session.pop('caretaker_property_id', None)
             return redirect(url_for('caretaker.login'))
+        # A named caretaker is bound to one property. Compare against the DB row,
+        # not the session, so reassigning the account takes effect immediately.
+        url_property_id = (request.view_args or {}).get('property_id')
+        if url_property_id and url_property_id != caretaker['property_id']:
+            abort(403)
         return None
 
     # Legacy shared-password mode
@@ -123,6 +128,13 @@ def logout():
 @caretaker_bp.route('/')
 def index():
     """Auto-select property if only one, else show picker."""
+    if session.get('caretaker_id'):
+        with get_connection() as conn:
+            caretaker = conn.execute(
+                "SELECT property_id FROM caretakers WHERE id = ?", (session['caretaker_id'],)
+            ).fetchone()
+        if caretaker:
+            return redirect(url_for('caretaker.dashboard', property_id=caretaker['property_id']))
     with get_connection() as conn:
         properties = conn.execute(
             "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"

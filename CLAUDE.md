@@ -284,6 +284,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 ### Caretaker Portal (/caretaker/*)
 - Auth priority: 1) `caretakers` table (name+password); 2) `CARETAKER_PASSWORD` env var; 3) open in dev
 - `before_request` verifies `caretaker_id` still exists in DB — deletion revokes immediately
+- `before_request` also enforces property binding for named caretakers: if `request.view_args['property_id']` differs from the caretaker's `property_id` (read from the DB row, not the session) → 403. Applies to every `/caretaker/<property_id>/...` route automatically. Legacy `CARETAKER_PASSWORD` and dev-open modes have no binding. `/caretaker/` redirects a named caretaker to their own property.
 - `sent_by` attribution: `session.get('caretaker_name', 'Caretaker')` for owner inbox
 - Log Payment: parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission
 - Paths starting with `/caretaker` exempt from admin auth
