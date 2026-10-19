@@ -280,7 +280,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 
 ## User Roles
 
-- **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`). One account per person (`admin_users`, `/team`); a lead admin adds and switches off accounts. Tenants and owners see only the organisation's name; the record keeps the person.
+- **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`). One account per person (`admin_users`, `/team`); a lead admin adds and switches off accounts. Tenants see management replies signed "Management" (`threads.STAFF_LABEL`) — never the organisation's record name or the person; the record keeps the person.
 - **Property Owner**: Primary login at `/login` (email + password) or direct token link `/owner/l/<token>` (password only). Person account via `persons` table. Also has legacy view-only `/view/*` access bridged from person session.
 - **Caretaker**: `/caretaker/<property_id>`; named account (name+password) or `CARETAKER_PASSWORD` fallback
 - **Tenant**: `/tenant/<token>` after signing in with phone + PIN (SMS code to set/reset); departed tenants included
@@ -363,7 +363,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 ## Messaging (Admin)
 
 - Scope: current property only
-- Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed with the organisation's name, logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
+- Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed "Management" to the tenant (the replying person is stored in `conversation_messages.sender_account_id` and shown to admins only), logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
 - `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications

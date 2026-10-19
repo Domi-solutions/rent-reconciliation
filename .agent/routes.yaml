@@ -156,7 +156,7 @@ blueprints:
       - "GET /messages/thread/<tenant_id> — chat-style message thread (outbound messages + inbound_messages combined by phone, sorted by created_at)"
       - "POST /messages/thread/<tenant_id> — send message from thread; _build_variables() used for substitution; optional SMS async"
       - "GET /messages/inbox — tenant conversations for the current property, awaiting reply first (longest waiting at top); ?show=all includes closed"
-      - "GET/POST /messages/inbox/<conv_id> — read + reply (optional close); signed with org name; audit_log conversation_reply; SMS tenant that a reply is waiting"
+      - "GET/POST /messages/inbox/<conv_id> — read + reply (optional close); signed 'Management' to the tenant, replying account stored; audit_log conversation_reply; SMS tenant that a reply is waiting"
       - "POST /messages/inbox/<conv_id>/close — system message + close"
       - "GET /messages/inbox/photo/<photo_id> — photo, scoped to the current property"
 

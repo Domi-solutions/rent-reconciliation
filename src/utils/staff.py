@@ -2,7 +2,7 @@
 Who is acting on the admin side.
 
 Each administrator has their own account (admin_users) under the organisation.
-Tenants and owners see only the organisation's name; the record — audit_log,
+Tenants see management replies signed 'Management'; the record — audit_log,
 conversation messages — keeps the person, so when administrators change you
 can tell who did what. Accounts are switched off, never deleted.
 

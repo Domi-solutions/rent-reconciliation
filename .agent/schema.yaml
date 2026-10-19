@@ -407,7 +407,7 @@ tables:
       id: {type: TEXT, pk: true}
       conversation_id: {type: TEXT, fk: conversations.id, required: true}
       sender_type: {type: TEXT, values: [tenant, admin, caretaker, system]}
-      sender_name: {type: TEXT, notes: "what the tenant sees — the organisation's name for admin replies"}
+      sender_name: {type: TEXT, notes: "what the tenant sees — 'Management' (threads.STAFF_LABEL) for admin replies"}
       body: {type: TEXT}
       sender_account_id: {type: TEXT, notes: "ADM-… (admin_users) or CTKR-… (caretakers): who actually wrote it. Added by migrate_add_admin_users. NULL = before personal accounts / tenant / system"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}

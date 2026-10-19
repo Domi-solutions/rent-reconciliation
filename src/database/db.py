@@ -1841,7 +1841,7 @@ def migrate_add_admin_users():
 
     Until now an organisation had one shared email + password, so every admin
     action was recorded as 'admin'. Each person now has their own account under
-    the organisation; tenants and owners still see only the organisation's name,
+    the organisation; tenants still see replies signed 'Management',
     while the record keeps who acted. Accounts are switched off, never deleted,
     so a former admin's name stays on what they did.
 

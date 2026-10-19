@@ -30,6 +30,9 @@ REPAIR_CATEGORIES = [
     ('pest', 'Pests'), ('appliance', 'Appliance'), ('common_area', 'Common area'), ('general', 'Other'),
 ]
 MAX_PHOTOS = 3
+# How a management reply is signed to the tenant. Never the organisation's record
+# name (that is an internal label); the person is kept in sender_account_id.
+STAFF_LABEL = 'Management'
 MAX_PHOTO_BYTES = 12 * 1024 * 1024     # what a phone camera produces; stored copies are much smaller
 STORED_MAX_SIDE = 1600
 
@@ -64,7 +67,7 @@ def _store_photo(upload):
 def add_message(conn, conversation_id, sender_type, sender_name, body, photos=(), account_id=None):
     """Append a message (and up to MAX_PHOTOS photos). Returns (message_id, photos_saved, photos_rejected).
 
-    sender_name is what the tenant sees (the organisation's name for admins);
+    sender_name is what the tenant sees (STAFF_LABEL for admins);
     account_id (ADM-… or CTKR-…) records which person wrote it."""
     msg_id = generate_id('CMSG')
     conn.execute("""

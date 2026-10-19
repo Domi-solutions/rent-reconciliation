@@ -23,7 +23,7 @@
     <div class="card-body" style="padding: 24px;">
       <h6 style="font-weight: 700; margin-bottom: 4px;">Your name</h6>
       <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
-        What the activity log records you as. Tenants and owners see the organisation's name, not yours.
+        What the activity log records you as. Tenants see replies signed "Management", never your name.
       </div>
       <form method="POST" action="{{ url_for('account_name', next=url_for('org_settings')) }}">
         <div class="mb-3"><input name="name" class="form-control" value="{{ account.name }}" required></div>

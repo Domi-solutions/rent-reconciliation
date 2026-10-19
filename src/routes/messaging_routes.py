@@ -556,13 +556,6 @@ def reminder_schedules():
 
 # ── Tenant conversations (inbox) ─────────────────────────────────────────────
 
-def _org_name(conn):
-    """Replies are signed with the organisation: admin logins are per org, not per person."""
-    org_id = session.get('org_id')
-    row = conn.execute("SELECT name FROM organizations WHERE id = ?", (org_id,)).fetchone() if org_id else None
-    return row['name'] if row else 'Management'
-
-
 @messaging_bp.route('/inbox')
 def inbox():
     """Tenant conversations for the current property — awaiting a reply first, longest-waiting first."""
@@ -592,7 +585,7 @@ def inbox_thread(conv_id):
         if request.method == 'POST':
             body = (request.form.get('body') or '').strip()
             if body:
-                threads.add_message(conn, conv_id, 'admin', _org_name(conn), body, request.files.getlist('photos'),
+                threads.add_message(conn, conv_id, 'admin', threads.STAFF_LABEL, body, request.files.getlist('photos'),
                                     account_id=session.get('admin_user_id'))
                 if request.form.get('close'):
                     threads.close(conn, conv_id, staff.actor())
