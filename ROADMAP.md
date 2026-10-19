@@ -574,6 +574,7 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [ ] Caretaker page cut to: who's behind + water entry; statements held until water entered
 - [ ] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation (no 60s wait); Till support
 - [ ] Go live on own shortcode (Daraja Go-Live) → final "pay only here" SMS
+- [ ] **DECIDE BEFORE TENANT LINKS GO OUT (owners' meeting):** when is a month's rent due — in advance (April rent due 5 April) or in arrears (April rent due 5 May, current behaviour of generate_charges)? And when is water due (it is read after the month, so it is billed the month after)? Every invoice shows these due dates.
 
 ### Session 19: Report Accuracy, Water Parser, Charge Generation UX (2026-05-25) ✅
 
