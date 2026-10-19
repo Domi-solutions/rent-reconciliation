@@ -1772,3 +1772,65 @@ def migrate_add_tenant_pin_login():
             if col not in cols:
                 conn.execute(f"ALTER TABLE persons ADD COLUMN {col} {ddl}")
         print("Migration complete: tenant PIN sign-in fields on persons.")
+
+
+def migrate_add_conversations():
+    """Tenant ↔ management message threads, with photos. Idempotent.
+
+    A conversation belongs to one tenant and has a topic: 'money' (balance or a
+    payment — management only), 'repair' (also visible to the caretaker; creates
+    a linked maintenance_issues row) or 'other'. Messages and photos are never
+    edited: a trigger rejects any UPDATE, so what was said stays as it was said.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                tenant_id TEXT NOT NULL REFERENCES tenants(id),
+                unit_id TEXT REFERENCES units(id),
+                topic TEXT NOT NULL,                 -- money | repair | other
+                subject TEXT NOT NULL,
+                ref_type TEXT,                       -- charge | payment (the ledger line it is about)
+                ref_id TEXT,
+                issue_id TEXT,                       -- maintenance_issues.id for repairs
+                status TEXT NOT NULL DEFAULT 'awaiting_reply',   -- awaiting_reply | replied | closed
+                last_from TEXT,                      -- tenant | admin | caretaker | system
+                last_message_at TIMESTAMP,
+                tenant_read_at TIMESTAMP,
+                staff_read_at TIMESTAMP,
+                closed_at TIMESTAMP,
+                closed_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_property ON conversations(property_id, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                sender_type TEXT NOT NULL,           -- tenant | admin | caretaker | system
+                sender_name TEXT,
+                body TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_convmsg_conv ON conversation_messages(conversation_id, created_at)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_photos (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                message_id TEXT NOT NULL REFERENCES conversation_messages(id),
+                file_name TEXT NOT NULL,             -- stored JPEG under <db dir>/message_photos/
+                width INTEGER, height INTEGER, bytes INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_convphoto_msg ON conversation_photos(message_id)")
+        for table in ('conversation_messages', 'conversation_photos'):
+            conn.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS trg_{table}_no_edit BEFORE UPDATE ON {table}
+                BEGIN SELECT RAISE(ABORT, 'messages are never edited — add a new message instead'); END
+            """)
+        print("Migration complete: conversations, conversation_messages, conversation_photos ready.")

@@ -123,6 +123,7 @@ from src.database.db import (
     migrate_add_owner_org_id,
     migrate_add_ledger_tenant_id,
     migrate_add_tenant_pin_login,
+    migrate_add_conversations,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -179,6 +180,7 @@ migrate_add_tenant_short_code()
 migrate_add_owner_org_id()
 migrate_add_ledger_tenant_id()
 migrate_add_tenant_pin_login()
+migrate_add_conversations()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -548,11 +550,14 @@ def inject_property_context():
                 ).fetchall()
 
             flagged_claims_count = 0
+            inbox_awaiting_count = 0
             if prop:
                 flagged_claims_count = conn.execute(
                     "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'flagged' AND admin_cleared = 0",
                     (prop["id"],)
                 ).fetchone()[0]
+                from src.messaging.threads import awaiting_count
+                inbox_awaiting_count = awaiting_count(conn, prop["id"])
 
             return {
                 "current_property": prop,
@@ -560,9 +565,11 @@ def inject_property_context():
                 "unit_count": unit_count,
                 "all_properties": all_properties,
                 "flagged_claims_count": flagged_claims_count,
+                "inbox_awaiting_count": inbox_awaiting_count,
             }
     except Exception:
-        return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": [], "flagged_claims_count": 0}
+        return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": [], "flagged_claims_count": 0,
+                "inbox_awaiting_count": 0}
 
 
 @app.route('/login', methods=['GET', 'POST'])

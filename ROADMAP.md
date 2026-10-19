@@ -570,7 +570,9 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [ ] Tenant statement confirmation SMS ("Correct" / "Something's wrong"); departed-with-debt "pay here" SMS
 - [x] Tenant sign-in: SMS link → 6-digit SMS code → 4-digit PIN; phone + PIN after; reset by SMS code; lockout (`migrate_add_tenant_pin_login`, `src/utils/tenant_auth.py`)
 - [x] Tenant statement, monthly invoices, receipts (incl. app payments); printable; unallocated credit applied when charges are added
-- [ ] Two-way auditable message thread between tenant and management
+- [x] Two-way auditable message thread between tenant and management — one conversation per question; topics money/repair/other; append-only (DB trigger); up to 3 photos per message, re-encoded with location data stripped; questions can point at a statement line; admin "Tenant inbox" (awaiting reply first); caretaker sees repairs only, replies, marks fixed; tenant SMS'd that a reply is waiting (`migrate_add_conversations`, `src/messaging/threads.py`)
+- [ ] Admin attention-first panel — the inbox + who needs follow-up on one screen; tenants on track hidden
+- [ ] Per-person admin accounts (replies are currently signed with the organisation's name)
 - [ ] Caretaker page cut to: who's behind + water entry; statements held until water entered
 - [ ] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation (no 60s wait); Till support
 - [ ] Go live on own shortcode (Daraja Go-Live) → final "pay only here" SMS

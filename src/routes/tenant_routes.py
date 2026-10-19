@@ -3,12 +3,13 @@
 import os
 import re
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
+from flask import Blueprint, abort, render_template, request, redirect, url_for, session, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
 from src.utils.statement import get_tenant_statement
 from src.utils.tenant_documents import build_invoice, build_receipt, invoice_periods, period_label
+from src.messaging import threads
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.tenant_auth import (
@@ -500,32 +501,99 @@ def receipt(token, payment_id):
 
 @tenant_bp.route('/<token>/messages')
 def messages(token):
-    """Full message inbox; mark unread as read on view."""
+    """Conversations with management, plus notices sent to this tenant."""
     with get_connection() as conn:
         ctx = _get_tenant_by_token(conn, token)
         if not ctx:
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
-
-        message_list = conn.execute("""
+        conversations = threads.list_for_tenant(conn, tenant['id'])
+        notices = conn.execute("""
             SELECT id, subject, body, message_type, read_at, created_at
             FROM messages WHERE tenant_id = ?
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC LIMIT 30
         """, (tenant['id'],)).fetchall()
-
         conn.execute(
             "UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND read_at IS NULL",
             (tenant['id'],),
         )
+    return render_template('tenant/messages.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='messages', conversations=conversations, notices=notices,
+                           topics=threads.TOPICS)
 
-    return render_template(
-        'tenant/messages.html',
-        token=token,
-        tenant=tenant,
-        unit=unit,
-        property=prop,
-        messages=message_list,
-    )
+
+@tenant_bp.route('/<token>/messages/new', methods=['GET', 'POST'])
+def message_new(token):
+    """Start a conversation. ?topic=repair|money|other; ?ref=payment:<id>|charge:<id> links it to a ledger line."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        topic = request.values.get('topic') or 'money'
+        ref_type, _, ref_id = (request.values.get('ref') or '').partition(':')
+        ref_text = threads.ref_summary(conn, tenant['id'], ref_type, ref_id) if ref_id else None
+        if not ref_text:
+            ref_type = ref_id = None
+        error = None
+        if request.method == 'POST':
+            subject = (request.form.get('subject') or '').strip() or ref_text or ''
+            body = (request.form.get('body') or '').strip()
+            if not subject or not body:
+                error = 'Please write a short title and your message.'
+            else:
+                conv_id, saved, rejected = threads.start_conversation(
+                    conn, tenant, unit, prop, topic, subject[:120], body,
+                    photos=request.files.getlist('photos'), ref_type=ref_type, ref_id=ref_id,
+                    category=request.form.get('category') or 'general')
+                return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id,
+                                        rejected=rejected or None))
+    return render_template('tenant/message_new.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='messages', topic=topic if topic in threads.TOPICS else 'money',
+                           topics=threads.TOPICS, categories=threads.REPAIR_CATEGORIES,
+                           ref=f'{ref_type}:{ref_id}' if ref_id else '', ref_text=ref_text,
+                           error=error, max_photos=threads.MAX_PHOTOS)
+
+
+@tenant_bp.route('/<token>/messages/<conv_id>', methods=['GET', 'POST'])
+def conversation(token, conv_id):
+    """One conversation: read it, reply, add photos."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        conv, msgs = threads.thread(conn, conv_id)
+        if not conv or conv['tenant_id'] != tenant['id']:
+            return redirect(url_for('tenant.messages', token=token))
+        if request.method == 'POST':
+            body = (request.form.get('body') or '').strip()
+            if body:
+                _, _, rejected = threads.add_message(conn, conv_id, 'tenant', tenant['name'], body,
+                                                     request.files.getlist('photos'))
+                return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id,
+                                        rejected=rejected or None))
+        threads.mark_read(conn, conv_id, 'tenant')
+    return render_template('tenant/conversation.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='messages', conv=conv, msgs=msgs, topics=threads.TOPICS,
+                           rejected=request.args.get('rejected'), max_photos=threads.MAX_PHOTOS)
+
+
+@tenant_bp.route('/<token>/messages/<conv_id>/photo/<photo_id>')
+def conversation_photo(token, conv_id, photo_id):
+    """A photo in one of this tenant's own conversations."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            abort(404)
+        tenant, _, _ = ctx
+        row = conn.execute("""
+            SELECT ph.file_name FROM conversation_photos ph JOIN conversations c ON c.id = ph.conversation_id
+            WHERE ph.id = ? AND c.id = ? AND c.tenant_id = ?
+        """, (photo_id, conv_id, tenant['id'])).fetchone()
+    if not row:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
 
 
 @tenant_bp.route('/<token>/maintenance')
@@ -539,10 +607,12 @@ def maintenance(token):
 
         issues = conn.execute(
             """
-            SELECT id, category, title, description, status, created_at, resolved_at
-            FROM maintenance_issues
-            WHERE raised_by_tenant_id = ?
-            ORDER BY created_at DESC
+            SELECT m.id, m.category, m.title, m.description, m.status, m.created_at, m.resolved_at,
+                   c.id AS conversation_id
+            FROM maintenance_issues m
+            LEFT JOIN conversations c ON c.issue_id = m.id
+            WHERE m.raised_by_tenant_id = ?
+            ORDER BY m.created_at DESC
             """,
             (tenant['id'],),
         ).fetchall()
@@ -554,6 +624,7 @@ def maintenance(token):
         unit=unit,
         property=prop,
         issues=issues,
+        active_tab='maintenance',
     )
 
 
@@ -972,33 +1043,20 @@ def pay_status(token, checkout_request_id):
 
 @tenant_bp.route('/<token>/maintenance/new', methods=['POST'])
 def new_maintenance(token):
-    """Submit a new maintenance issue from the tenant portal."""
-    category = (request.form.get('category') or 'general').strip() or 'general'
+    """Older repair form — now opens a repair conversation, so every repair has a thread."""
     title = (request.form.get('title') or '').strip()
-    description = (request.form.get('description') or '').strip()
-
     if not title:
-        # Title is required; rely on frontend required attribute in practice.
-        return redirect(url_for('tenant.maintenance', token=token))
-
+        return redirect(url_for('tenant.message_new', token=token, topic='repair'))
     with get_connection() as conn:
         ctx = _get_tenant_by_token(conn, token)
         if not ctx:
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
-
-        issue_id = generate_id('MAINT')
-        conn.execute(
-            """
-            INSERT INTO maintenance_issues
-                (id, property_id, unit_id, source, raised_by_tenant_id, category, title, description)
-            VALUES
-                (?, ?, ?, 'tenant', ?, ?, ?, ?)
-            """,
-            (issue_id, prop['id'], unit['id'], tenant['id'], category, title, description),
-        )
-
-    return redirect(url_for('tenant.maintenance', token=token))
+        conv_id, _, _ = threads.start_conversation(
+            conn, tenant, unit, prop, 'repair', title[:120],
+            (request.form.get('description') or '').strip() or title,
+            category=(request.form.get('category') or 'general').strip() or 'general')
+    return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id))
 
 
 @tenant_bp.route('/<token>/dispute', methods=['POST'])

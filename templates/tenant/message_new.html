@@ -1,0 +1,42 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}New message — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+<div class="no-print" style="margin-bottom:12px"><a href="{{ url_for('tenant.messages', token=token) }}">← Messages</a></div>
+<div class="doc">
+  <h2>{{ topics[topic] }}</h2>
+  <div class="muted" style="margin-bottom:14px">
+    {% if topic == 'repair' %}Seen by management and the caretaker.{% else %}Seen by management only.{% endif %}
+  </div>
+  {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+  <form method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="topic" value="{{ topic }}">
+    <input type="hidden" name="ref" value="{{ ref }}">
+    {% if ref_text %}
+      <div class="chip" style="display:block;border-radius:10px;margin-bottom:12px">About: <b>{{ ref_text }}</b></div>
+    {% endif %}
+    {% if topic == 'repair' %}
+    <div class="mb-3">
+      <label class="form-label fw-semibold">What needs fixing?</label>
+      <select name="category" class="form-select">
+        {% for value, label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Title</label>
+      <input type="text" name="subject" class="form-control" maxlength="120"
+             value="{{ ref_text or '' }}" placeholder="{% if topic == 'repair' %}e.g. Kitchen tap leaking{% else %}e.g. Question about my balance{% endif %}" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Message</label>
+      <textarea name="body" class="form-control" rows="5" required></textarea>
+    </div>
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Photos <span class="muted">(optional, up to {{ max_photos }})</span></label>
+      <input type="file" name="photos" class="form-control" accept="image/*" multiple>
+      <div class="muted" style="margin-top:4px">{% if topic == 'repair' %}A photo of the problem helps it get fixed faster.{% else %}For a payment, a screenshot of the M-Pesa message helps.{% endif %}</div>
+    </div>
+    <button type="submit" class="btn btn-dark w-100" style="padding:12px;border-radius:12px;font-weight:600">Send</button>
+  </form>
+</div>
+{% endblock %}

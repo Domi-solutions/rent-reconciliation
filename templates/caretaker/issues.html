@@ -67,7 +67,12 @@
             <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
               {{ issue.category or 'general' }}
             </td>
-            <td>{{ issue.title }}</td>
+            <td>{{ issue.title }}
+              {% if issue.conversation_id %}
+              <div><a href="{{ url_for('caretaker.repair_thread', property_id=property.id, conv_id=issue.conversation_id) }}" style="font-size:12px">Conversation{% if issue.photo_count %} · {{ issue.photo_count }} photo{{ 's' if issue.photo_count != 1 }}{% endif %}</a>
+                {% if issue.conversation_status == 'awaiting_reply' %}<span class="badge bg-danger" style="font-size:10px">awaiting reply</span>{% endif %}</div>
+              {% endif %}
+            </td>
             <td>
               {% if issue.source == 'tenant' %}
               <span class="badge bg-light text-dark" style="font-size: 11px;">Tenant</span>
@@ -122,7 +127,12 @@
             <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
               {{ issue.category or 'general' }}
             </td>
-            <td>{{ issue.title }}</td>
+            <td>{{ issue.title }}
+              {% if issue.conversation_id %}
+              <div><a href="{{ url_for('caretaker.repair_thread', property_id=property.id, conv_id=issue.conversation_id) }}" style="font-size:12px">Conversation{% if issue.photo_count %} · {{ issue.photo_count }} photo{{ 's' if issue.photo_count != 1 }}{% endif %}</a>
+                {% if issue.conversation_status == 'awaiting_reply' %}<span class="badge bg-danger" style="font-size:10px">awaiting reply</span>{% endif %}</div>
+              {% endif %}
+            </td>
             <td>
               {% if issue.source == 'tenant' %}
               <span class="badge bg-light text-dark" style="font-size: 11px;">Tenant</span>

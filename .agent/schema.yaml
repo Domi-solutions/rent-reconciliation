@@ -376,6 +376,55 @@ tables:
       resolved_note: {type: TEXT}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
+  conversations:
+    status: live
+    migration: migrate_add_conversations
+    notes: "Tenant ↔ management threads. Written only via src/messaging/threads.py. Caretaker sees topic=repair only."
+    columns:
+      id: {type: TEXT, pk: true}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      tenant_id: {type: TEXT, fk: tenants.id, required: true}
+      unit_id: {type: TEXT, fk: units.id}
+      topic: {type: TEXT, values: [money, repair, other]}
+      subject: {type: TEXT}
+      ref_type: {type: TEXT, values: [payment, charge], notes: "statement line the question is about"}
+      ref_id: {type: TEXT}
+      issue_id: {type: TEXT, fk: maintenance_issues.id, notes: "repairs only"}
+      status: {type: TEXT, default: awaiting_reply, values: [awaiting_reply, replied, closed]}
+      last_from: {type: TEXT, values: [tenant, admin, caretaker, system]}
+      last_message_at: {type: TIMESTAMP}
+      tenant_read_at: {type: TIMESTAMP}
+      staff_read_at: {type: TIMESTAMP}
+      closed_at: {type: TIMESTAMP}
+      closed_by: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  conversation_messages:
+    status: live
+    migration: migrate_add_conversations
+    notes: "Append-only — trigger trg_conversation_messages_no_edit aborts any UPDATE."
+    columns:
+      id: {type: TEXT, pk: true}
+      conversation_id: {type: TEXT, fk: conversations.id, required: true}
+      sender_type: {type: TEXT, values: [tenant, admin, caretaker, system]}
+      sender_name: {type: TEXT}
+      body: {type: TEXT}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  conversation_photos:
+    status: live
+    migration: migrate_add_conversations
+    notes: "Append-only (trg_conversation_photos_no_edit). File in <db dir>/message_photos/, re-encoded JPEG, EXIF/GPS stripped, max side 1600px."
+    columns:
+      id: {type: TEXT, pk: true}
+      conversation_id: {type: TEXT, fk: conversations.id, required: true}
+      message_id: {type: TEXT, fk: conversation_messages.id}
+      file_name: {type: TEXT}
+      width: {type: INTEGER}
+      height: {type: INTEGER}
+      bytes: {type: INTEGER}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
   report_settings:
     status: live
     migration: schema.sql (base)

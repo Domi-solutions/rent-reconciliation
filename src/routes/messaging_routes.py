@@ -4,8 +4,9 @@ import os
 from datetime import date, timedelta
 import calendar
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, abort, render_template, request, redirect, url_for, flash, session, send_from_directory
 from src.database.db import get_connection, generate_id
+from src.messaging import threads
 
 messaging_bp = Blueprint('messaging', __name__, url_prefix='/messages')
 
@@ -550,3 +551,80 @@ def reminder_schedules():
         ).fetchall()
 
     return render_template('messaging/schedules.html', property=prop, schedules=schedules, templates=templates)
+
+
+# ── Tenant conversations (inbox) ─────────────────────────────────────────────
+
+def _org_name(conn):
+    """Replies are signed with the organisation: admin logins are per org, not per person."""
+    org_id = session.get('org_id')
+    row = conn.execute("SELECT name FROM organizations WHERE id = ?", (org_id,)).fetchone() if org_id else None
+    return row['name'] if row else 'Management'
+
+
+@messaging_bp.route('/inbox')
+def inbox():
+    """Tenant conversations for the current property — awaiting a reply first, longest-waiting first."""
+    show = request.args.get('show', 'open')
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        rows = threads.list_for_staff(conn, prop['id'])
+    if show == 'open':
+        rows = [r for r in rows if r['status'] != 'closed']
+    return render_template('messaging/inbox.html', property=prop, rows=rows, show=show,
+                           topics=threads.TOPICS, active_nav='inbox')
+
+
+@messaging_bp.route('/inbox/<conv_id>', methods=['GET', 'POST'])
+def inbox_thread(conv_id):
+    """Read and reply to one tenant conversation."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        conv, msgs = threads.thread(conn, conv_id)
+        if not conv or conv['property_id'] != prop['id']:
+            flash('Conversation not found.', 'warning')
+            return redirect(url_for('messaging.inbox'))
+        if request.method == 'POST':
+            body = (request.form.get('body') or '').strip()
+            if body:
+                threads.add_message(conn, conv_id, 'admin', _org_name(conn), body, request.files.getlist('photos'))
+                if request.form.get('close'):
+                    threads.close(conn, conv_id, _org_name(conn))
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('conversation_reply', 'conversation', conv_id,
+                     f"Unit {conv['unit_number']} | {conv['subject'][:60]}", 'admin'))
+                threads.notify_tenant_of_reply(conv, os.environ.get('APP_BASE_URL') or request.host_url)
+            return redirect(url_for('messaging.inbox_thread', conv_id=conv_id))
+        threads.mark_read(conn, conv_id, 'staff')
+        ref_text = threads.ref_summary(conn, conv['tenant_id'], conv['ref_type'], conv['ref_id']) if conv['ref_id'] else None
+    return render_template('messaging/inbox_thread.html', property=prop, conv=conv, msgs=msgs,
+                           topics=threads.TOPICS, ref_text=ref_text, active_nav='inbox')
+
+
+@messaging_bp.route('/inbox/<conv_id>/close', methods=['POST'])
+def inbox_close(conv_id):
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        conv, _ = threads.thread(conn, conv_id)
+        if prop and conv and conv['property_id'] == prop['id']:
+            threads.add_message(conn, conv_id, 'system', None, 'Conversation closed by management.')
+            threads.close(conn, conv_id, _org_name(conn))
+    return redirect(url_for('messaging.inbox'))
+
+
+@messaging_bp.route('/inbox/photo/<photo_id>')
+def inbox_photo(photo_id):
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        row = conn.execute("""
+            SELECT ph.file_name FROM conversation_photos ph JOIN conversations c ON c.id = ph.conversation_id
+            WHERE ph.id = ? AND c.property_id = ?
+        """, (photo_id, prop['id'] if prop else None)).fetchone()
+    if not row:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')

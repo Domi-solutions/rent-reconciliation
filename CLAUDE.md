@@ -75,6 +75,7 @@ src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
 src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
 src/utils/tenant_documents.py  # build_invoice(), build_receipt() — cut from get_tenant_statement so statement/invoice/receipt never disagree
+src/messaging/threads.py       # tenant ↔ management conversations + photos: start_conversation, add_message, thread, list_for_staff, awaiting_count
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
@@ -136,6 +137,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `tenant_departures` — one row per move-out. Columns: id, tenant_id, unit_id, property_id, departure_date, balance_at_departure, deposit_held, deposit_applied, deposit_refunded, remaining_debt, debt_status ('none'/'active'/'written_off'), write_off_note, admin_notes, created_at. Added by `migrate_add_tenant_departures`.
 - `payment_claims.departed_tenant_id` — FK to `tenants.id`; set when caretaker submits a claim in "Departed tenant" mode. Used to link post-departure payments to the correct former tenant. Added by `migrate_add_tenant_departures`.
 - `landlord_reports.needs_refresh`/`refresh_reason`/`refreshed_at` — staleness tracking. Reports < 3 months regenerate on every view; ≥3 months served from stored JSON. `_flag_stale_reports()` in `app.py` sets `needs_refresh=1` after upload/verify.
+- `conversations` / `conversation_messages` / `conversation_photos` (`migrate_add_conversations`) — tenant ↔ management threads. Messages and photos are **append-only**: a BEFORE UPDATE trigger aborts; correct something by adding a message. `topic`: `money` (management only) | `repair` (also the caretaker; creates a linked `maintenance_issues` row via `issue_id`) | `other` (management only). `status`: `awaiting_reply` (tenant wrote last) | `replied` | `closed`; a tenant message reopens a closed conversation and a resolved repair. `ref_type`/`ref_id` point at the statement line asked about (`payment`|`charge`, validated against the tenant's own rows). Photos: Pillow re-encode (EXIF/GPS dropped, ≤1600 px, JPEG) into `<db dir>/message_photos/` — served only through ownership-checked routes, never `static/`. All writes go through `src/messaging/threads.py`.
 - **Per-tenant ledger** — `rent_charges`, `payments`, `payment_claims` each carry `tenant_id` (`migrate_add_ledger_tenant_id`). Debt follows the person, not the door. AFTER INSERT triggers (`trg_<table>_tenant`) stamp it when an insert leaves it NULL, from the unit's occupancy history (rules in `db.py` `_charge_tenant_sql` etc.): a month is charged to whoever occupied the unit in it (mid-month handover → outgoing tenant); a payment goes to its claim's tenant, else the occupant on `payment_date`; NULL = nobody matched (e.g. paid while the unit was empty) and needs a person. When the route knows the tenant (statement view, Daraja, tenant portal), pass `tenant_id` explicitly. Any query about one person's money filters `WHERE tenant_id = ?` — never `unit_id` + `move_in_date`, which shows the previous occupant's history.
 - `tenant_balances` VIEW — one row per tenant (any status, departed included). Use for a tenant's own balance. `unit_balances` VIEW — the unit's current active tenant's balance, read from `tenant_balances`; same columns as before.
 - `allocate_payment` settles only the paying tenant's own charges (`rc.tenant_id IS payment.tenant_id`). Allocations made before this could cross tenants; `scripts/tenant_ledger_report.py` lists them and `--execute` redoes them per unit (snapshot first). Editing `move_in_date` no longer moves debt between people — re-pointing rows is an explicit rebuild.
@@ -261,7 +263,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_tenant_pin_login`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_conversations`.
 
 ---
 
@@ -297,6 +299,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - `sent_by` attribution: `session.get('caretaker_name', 'Caretaker')` for owner inbox
 - Log Payment: parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission
 - Paths starting with `/caretaker` exempt from admin auth
+- Repairs: tenant-reported issues on the Issues tab link to their conversation (`/caretaker/<pid>/repairs/<conv_id>`); the Issues tab badge counts repairs awaiting a reply. The caretaker never sees `money`/`other` conversations. Marking a linked issue fixed adds a system message to the conversation and closes it (no separate notice). New caretaker routes check `session['caretaker_property_id']` (`_own_property_only`).
 
 ### Caretaker Management (/caretakers)
 - Replace workflow: create new → brief them → delete old. Deletion immediately revokes sessions.
@@ -305,6 +308,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - Auth: phone + 4-digit PIN on `persons` (`pin_hash`, separate from owner `password_hash`). The token in the URL (`tenants.access_token`, reached via `/t/<short_code>` from SMS) only identifies the tenancy — `require_tenant_sign_in` (tenant_bp.before_request) requires `session['tenant_person_id'] == tenants.person_id` for every `/tenant/<token>/...` page. A forwarded link is not enough.
 - First sign-in and forgotten PIN: `/tenant/verify` sends a 6-digit SMS code to the phone on record (hashed in `persons.otp_code`, 10 min, 5 tries, one per 60 s), then the tenant chooses a PIN. Helpers in `src/utils/tenant_auth.py` — never inline PIN/OTP logic in routes. Unknown numbers get the same response (no enumeration).
 - `departed` tenants can sign in (to see and pay their debt); `inactive` cannot (no access_token).
+- Messages: `/tenant/<token>/messages` lists conversations + notices; `/messages/new?topic=&ref=payment:<id>|charge:<id>`; `/messages/<conv_id>` read/reply. The statement's "Ask about this" links pre-fill `ref`. Maintenance "Report a repair" goes through the same form (topic=repair).
 - `/tenant` and `/t/` (`short_link`) paths are exempt from admin auth.
 - `_get_tenant_by_token(conn, token)` in `tenant_routes.py` → (tenant, unit, property) or None
 - Documents: `/tenant/<token>/statement` (every charge + payment, running balance, newest first), `/invoice/<YYYY-MM>` (brought forward + month's charges − month's payments), `/receipt/<payment_id>` (amount, M-Pesa code, what it settled, account balance today). All printable (`window.print()`), all built from `get_tenant_statement` via `tenant_documents.py`. A receipt shows "balance today", never "balance after this payment" — charges fall due on their own dates, so a mid-ledger balance is ambiguous.
@@ -348,6 +352,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 ## Messaging (Admin)
 
 - Scope: current property only
+- Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed with the organisation's name, logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
 - `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications

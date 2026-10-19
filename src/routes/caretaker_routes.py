@@ -6,9 +6,10 @@ import json
 import os
 import re
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash
+from flask import Blueprint, render_template, request, redirect, url_for, session, abort, flash, send_from_directory
 
 from src.database.db import get_connection, generate_id, allocate_payment, apply_unallocated_credit
+from src.messaging import threads
 from src.reconciliation.unassigned import get_unassigned_credits
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
@@ -21,9 +22,10 @@ def inject_caretaker_counts():
     """Inject flagged claims count and pending tenant claim count into all caretaker templates."""
     property_id = request.view_args.get('property_id') if request.view_args else None
     if not property_id:
-        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0}
     try:
         with get_connection() as conn:
+            repairs_waiting = threads.awaiting_count(conn, property_id, caretaker=True)
             flagged = conn.execute(
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND status = 'flagged' AND caretaker_confirmed = 0 AND admin_cleared = 0",
                 (property_id,)
@@ -32,9 +34,10 @@ def inject_caretaker_counts():
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND source = 'tenant' AND status = 'pending'",
                 (property_id,)
             ).fetchone()[0]
-        return {'ct_flagged_count': flagged, 'ct_tenant_pending_count': tenant_pending}
+        return {'ct_flagged_count': flagged, 'ct_tenant_pending_count': tenant_pending,
+                'ct_repairs_waiting': repairs_waiting}
     except Exception:
-        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0}
 
 
 def _has_db_caretakers():
@@ -920,9 +923,11 @@ def issues(property_id):
 
         open_issues = conn.execute(
             """
-            SELECT m.*, u.unit_number
+            SELECT m.*, u.unit_number, c.id AS conversation_id, c.status AS conversation_status,
+                   (SELECT COUNT(*) FROM conversation_photos ph WHERE ph.conversation_id = c.id) AS photo_count
             FROM maintenance_issues m
             LEFT JOIN units u ON m.unit_id = u.id
+            LEFT JOIN conversations c ON c.issue_id = m.id
             WHERE m.property_id = ? AND m.status = 'open'
             ORDER BY m.created_at DESC
             """,
@@ -931,9 +936,11 @@ def issues(property_id):
 
         resolved_issues = conn.execute(
             """
-            SELECT m.*, u.unit_number
+            SELECT m.*, u.unit_number, c.id AS conversation_id, c.status AS conversation_status,
+                   (SELECT COUNT(*) FROM conversation_photos ph WHERE ph.conversation_id = c.id) AS photo_count
             FROM maintenance_issues m
             LEFT JOIN units u ON m.unit_id = u.id
+            LEFT JOIN conversations c ON c.issue_id = m.id
             WHERE m.property_id = ? AND m.status = 'resolved'
             ORDER BY m.resolved_at DESC, m.created_at DESC
             """,
@@ -1255,7 +1262,19 @@ def resolve_issue(property_id, issue_id):
             (resolved_note, issue_id, property_id),
         )
 
-        if issue['source'] == 'tenant' and issue['raised_by_tenant_id']:
+        conv = conn.execute("SELECT id FROM conversations WHERE issue_id = ?", (issue_id,)).fetchone()
+        if conv:
+            # Reported through a conversation: the update goes into it, so the
+            # tenant reads it where they reported the problem (and can reply).
+            done_by = session.get('caretaker_name', 'Caretaker')
+            threads.add_message(conn, conv['id'], 'system', done_by,
+                                f"Marked as fixed by the caretaker ({done_by})."
+                                + (f"\n\nNote: {resolved_note}" if resolved_note else ""))
+            threads.close(conn, conv['id'], done_by)
+            full, _ = threads.thread(conn, conv['id'])
+            threads.notify_tenant_of_reply(full, os.environ.get('APP_BASE_URL') or request.host_url,
+                                           what='an update on')
+        elif issue['source'] == 'tenant' and issue['raised_by_tenant_id']:
             msg_id = generate_id('MSG')
             conn.execute(
                 """
@@ -1280,6 +1299,52 @@ def resolve_issue(property_id, issue_id):
 
     flash('Issue marked as resolved.', 'success')
     return redirect(url_for('caretaker.issues', property_id=property_id))
+
+
+def _own_property_only(property_id):
+    """A named caretaker sees only the property their account belongs to."""
+    own = session.get('caretaker_property_id')
+    if own and own != property_id:
+        abort(403)
+
+
+@caretaker_bp.route('/<property_id>/repairs/<conv_id>', methods=['GET', 'POST'])
+def repair_thread(property_id, conv_id):
+    """A tenant's repair report and the conversation about it. Repairs only —
+    questions about money stay between the tenant and management."""
+    _own_property_only(property_id)
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        conv, msgs = threads.thread(conn, conv_id)
+        if not prop or not conv or conv['property_id'] != property_id or conv['topic'] != 'repair':
+            abort(404)
+        if request.method == 'POST':
+            body = (request.form.get('body') or '').strip()
+            if body:
+                name = session.get('caretaker_name', 'Caretaker')
+                threads.add_message(conn, conv_id, 'caretaker', name, body, request.files.getlist('photos'))
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('conversation_reply', 'conversation', conv_id,
+                     f"Unit {conv['unit_number']} | {conv['subject'][:60]}", f'caretaker:{name}'))
+                threads.notify_tenant_of_reply(conv, os.environ.get('APP_BASE_URL') or request.host_url)
+            return redirect(url_for('caretaker.repair_thread', property_id=property_id, conv_id=conv_id))
+        threads.mark_read(conn, conv_id, 'staff')
+    return render_template('caretaker/repair_thread.html', property=prop, conv=conv, msgs=msgs,
+                           active_tab='issues')
+
+
+@caretaker_bp.route('/<property_id>/repairs/photo/<photo_id>')
+def repair_photo(property_id, photo_id):
+    _own_property_only(property_id)
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT ph.file_name FROM conversation_photos ph JOIN conversations c ON c.id = ph.conversation_id
+            WHERE ph.id = ? AND c.property_id = ? AND c.topic = 'repair'
+        """, (photo_id, property_id)).fetchone()
+    if not row:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
 
 
 @caretaker_bp.route('/<property_id>/flagged-claims')

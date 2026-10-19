@@ -1,38 +1,45 @@
 {% extends "tenant/base_tenant.html" %}
-{% block title %}Messages — {{ property.name }}{% endblock %}
-{% set active_tab = 'messages' %}
+{% block title %}Messages — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
-{% if messages %}
-<div class="surface-card">
-  <div class="surface-card-header">
-    <h6>Messages</h6>
-  </div>
-  {% for m in messages %}
-  <div class="data-row" style="{% if not m.read_at %}background: var(--bg);{% endif %}">
-    <div class="d-flex justify-content-between align-items-start mb-1">
-      <div class="data-row-unit" style="{% if not m.read_at %}font-weight: 700;{% endif %}">{{ m.subject }}</div>
-      {% if not m.read_at %}
-      <span class="status-pending" style="flex-shrink: 0; margin-left: 12px;">New</span>
-      {% endif %}
-    </div>
-    <div class="data-row-meta mb-2">
-      {{ m.created_at[:10] if m.created_at else '' }}
-      {% if m.message_type == 'reminder' %} · Reminder
-      {% elif m.message_type == 'maintenance_status' or m.message_type == 'notice' %} · Notice
-      {% endif %}
-    </div>
-    <div style="font-size: 13px; color: var(--ink-2); line-height: 1.55; white-space: pre-wrap;">{{ m.body }}</div>
-  </div>
-  {% endfor %}
+<div class="doc">
+  <h2>Write to management</h2>
+  <div class="muted" style="margin-bottom:12px">Every message is kept with its date. Nothing can be edited or deleted — by you or by management.</div>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='money') }}">💰 {{ topics.money }}</a>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">🔧 {{ topics.repair }}</a>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='other') }}">✉️ {{ topics.other }}</a>
 </div>
-{% else %}
-<div class="surface-card">
-  <div class="surface-card-header">
-    <h6>Messages</h6>
-  </div>
-  <div class="data-row">
-    <span style="font-size: 13px; color: var(--ink-3);">No messages from the property management team yet.</span>
-  </div>
+
+<div class="doc">
+  <h2>Your conversations</h2>
+  {% if conversations %}
+  <table>
+    {% for c in conversations %}
+    <tr>
+      <td>
+        <a href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}"><b>{{ c.subject }}</b></a>
+        {% if c.unread %}<span class="chip" style="padding:1px 8px;margin:0 0 0 6px;background:#1b1b1a;color:#fff;border-color:#1b1b1a">New reply</span>{% endif %}
+        <div class="muted">{{ topics[c.topic] }} · {{ (c.last_message_at or '')[:10] }} ·
+          {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}</div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="muted">No conversations yet.</div>
+  {% endif %}
+</div>
+
+{% if notices %}
+<div class="doc">
+  <h2>Notices</h2>
+  <table>
+    {% for m in notices %}
+    <tr><td>
+      <b>{{ m.subject }}</b> <span class="muted">· {{ (m.created_at or '')[:10] }}</span>
+      <div style="font-size:13px;white-space:pre-wrap;margin-top:4px">{{ m.body }}</div>
+    </td></tr>
+    {% endfor %}
+  </table>
 </div>
 {% endif %}
 {% endblock %}

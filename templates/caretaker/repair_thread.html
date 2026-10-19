@@ -1,0 +1,41 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}{{ conv.subject }} — {{ conv.unit_number }}{% endblock %}
+{% block extra_css %}
+<style>
+  .bubble { max-width: 85%; padding: 10px 12px; border-radius: 14px; margin-bottom: 10px; font-size: 14px; }
+  .body { white-space: pre-wrap; }
+  .tenant { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .staff { margin-left: auto; background: #1b1b1a; color: #fff; border-bottom-right-radius: 4px; }
+  .sys { margin: 0 auto 10px; background: var(--bg); color: var(--ink-2); font-size: 12px; text-align: center; }
+  .meta { font-size: 11px; opacity: .7; margin-top: 4px; white-space: normal; }
+  .photos img { max-width: 260px; width: 100%; border-radius: 10px; margin-top: 8px; display: block; }
+  .card2 { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+</style>
+{% endblock %}
+{% block content %}
+<a href="{{ url_for('caretaker.issues', property_id=property.id) }}" style="font-size:14px">← Issues</a>
+<div class="card2" style="margin-top:10px">
+  <div style="font-size:19px;font-weight:700">{{ conv.subject }}</div>
+  <div style="font-size:13px;color:var(--ink-3)">Unit {{ conv.unit_number }} · {{ conv.tenant_name|title }} · {{ conv.tenant_phone }}
+    · {{ (conv.issue_category or 'general')|replace('_', ' ') }} · {{ 'fixed' if conv.issue_status == 'resolved' else 'open' }}</div>
+</div>
+{% for m in msgs %}
+<div class="bubble {{ 'tenant' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'staff') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('caretaker.repair_photo', property_id=property.id, photo_id=p.id) }}" target="_blank"><img src="{{ url_for('caretaker.repair_photo', property_id=property.id, photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
+  <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}Management · {{ m.sender_name }}{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+</div>
+{% endfor %}
+<div class="card2">
+  <form method="POST" enctype="multipart/form-data">
+    <textarea name="body" class="form-control mb-2" rows="3" placeholder="Reply — e.g. when you will come to look. The tenant gets an SMS." required></textarea>
+    <input type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
+    <button type="submit" class="btn btn-dark">Send reply</button>
+  </form>
+  {% if conv.issue_status != 'resolved' %}
+  <form method="POST" action="{{ url_for('caretaker.resolve_issue', property_id=property.id, issue_id=conv.issue_id) }}" class="d-flex gap-2" style="margin-top:12px">
+    <input type="text" name="resolved_note" class="form-control form-control-sm" placeholder="What was done (optional)">
+    <button type="submit" class="btn btn-success btn-sm" style="white-space:nowrap">Mark fixed</button>
+  </form>
+  {% endif %}
+  <div style="font-size:12px;color:var(--ink-3);margin-top:10px">Messages cannot be edited or deleted. Management can read this conversation.</div>
+</div>
+{% endblock %}

@@ -224,6 +224,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
         description = f"Opening arrears — {label}" if is_arrears else f"{label} — {c['period']}"
         rows.append({
             'row_type':    'charge',
+            'charge_id':   c['id'],
             'charge_type': c['charge_type'],
             'row_date':    (tenant.get('move_in_date') or c['row_date']) if is_arrears else c['row_date'],
             'period':      c['period'],

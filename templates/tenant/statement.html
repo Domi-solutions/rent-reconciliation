@@ -40,6 +40,7 @@
           {{ {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water'}.get(r.charge_type, r.charge_type|title) }} — {{ period_label(r.period) }}
           <div class="muted">due {{ (r.row_date or '')[:10] }}</div>
         {% endif %}
+        <a class="no-print" style="font-size:12px" href="{{ url_for('tenant.message_new', token=token, topic='money', ref=('payment:' ~ r.payment_id) if r.row_type == 'payment' else ('charge:' ~ r.charge_id)) }}">Ask about this</a>
       </td>
       <td class="num">{% if r.row_type == 'payment' %}<span class="credit">−{{ "{:,.0f}".format(r.credit) }}</span>{% else %}{{ "{:,.0f}".format(r.debit) }}{% endif %}</td>
       <td class="num muted">{{ "{:,.0f}".format(r.running_balance) }}</td>

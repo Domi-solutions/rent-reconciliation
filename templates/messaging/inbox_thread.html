@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ conv.subject }} — {{ conv.unit_number }}{% endblock %}
+{% block extra_css %}
+<style>
+  .th { max-width: 760px; margin: 0 auto; }
+  .bubble { max-width: 80%; padding: 10px 12px; border-radius: 14px; margin-bottom: 10px; font-size: 14px; }
+  .body { white-space: pre-wrap; }
+  .tenant { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .staff { margin-left: auto; background: #1b1b1a; color: #fff; border-bottom-right-radius: 4px; }
+  .sys { margin: 0 auto 10px; background: var(--bg); color: var(--ink-2); font-size: 12px; text-align: center; }
+  .meta { font-size: 11px; opacity: .7; margin-top: 4px; white-space: normal; }
+  .photos img { max-width: 260px; width: 100%; border-radius: 10px; margin-top: 8px; display: block; }
+  .card2 { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; margin-bottom: 14px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="th">
+  <a href="{{ url_for('messaging.inbox') }}" style="font-size:14px">← Tenant inbox</a>
+  <div class="card2" style="margin-top:10px">
+    <div style="font-size:19px;font-weight:700">{{ conv.subject }}</div>
+    <div style="font-size:13px;color:var(--ink-3)">Unit {{ conv.unit_number }} · {{ conv.tenant_name|title }} · {{ conv.tenant_phone }} · {{ topics[conv.topic] }}
+      {% if conv.topic == 'repair' %} · visible to caretaker · repair {{ 'fixed' if conv.issue_status == 'resolved' else 'open' }}{% endif %}</div>
+    {% if ref_text %}<div style="font-size:13px;margin-top:6px">About: <b>{{ ref_text }}</b>
+      · <a href="{{ url_for('reports.tenant_evidence', tenant_id=conv.tenant_id) }}">statement of account</a></div>{% endif %}
+  </div>
+  {% for m in msgs %}
+  <div class="bubble {{ 'tenant' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'staff') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" target="_blank"><img src="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
+    <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}{{ m.sender_name }}{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+  </div>
+  {% endfor %}
+  <div class="card2">
+    <form method="POST" enctype="multipart/form-data">
+      <textarea name="body" class="form-control mb-2" rows="3" placeholder="Reply — the tenant gets an SMS that a reply is waiting" required></textarea>
+      <input type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
+      <div class="d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-dark">Send reply</button>
+        <label style="font-size:13px"><input type="checkbox" name="close" value="1"> and close the conversation</label>
+      </div>
+    </form>
+    {% if conv.status != 'closed' %}
+    <form method="POST" action="{{ url_for('messaging.inbox_close', conv_id=conv.id) }}" style="margin-top:10px">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">Close without replying</button>
+    </form>
+    {% endif %}
+    <div style="font-size:12px;color:var(--ink-3);margin-top:10px">Messages cannot be edited or deleted. Replies are signed with your organisation's name.</div>
+  </div>
+</div>
+{% endblock %}

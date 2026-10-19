@@ -1,0 +1,40 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}{{ conv.subject }} — Unit {{ unit.unit_number }}{% endblock %}
+{% block extra_css %}
+<style>
+  .bubble { max-width: 85%; padding: 10px 12px; border-radius: 14px; margin-bottom: 10px; font-size: 14px; }
+  .body { white-space: pre-wrap; }
+  .me { margin-left: auto; background: #1b1b1a; color: #fff; border-bottom-right-radius: 4px; }
+  .them { background: #fff; border: 1px solid #e7e6e1; border-bottom-left-radius: 4px; }
+  .sys { margin: 0 auto 10px; background: #f0efe9; color: #5b5b57; font-size: 12px; text-align: center; }
+  .meta { font-size: 11px; opacity: .7; margin-top: 4px; white-space: normal; }
+  .photos img { width: 100%; max-width: 260px; border-radius: 10px; margin-top: 8px; display: block; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex;justify-content:space-between;margin-bottom:12px">
+  <a href="{{ url_for('tenant.messages', token=token) }}">← Messages</a>
+  <button class="print-btn" onclick="window.print()">Print</button>
+</div>
+<div class="doc">
+  <h2>{{ conv.subject }}</h2>
+  <div class="muted">{{ topics[conv.topic] }} · started {{ (conv.created_at or '')[:10] }}
+    {% if conv.topic == 'repair' and conv.issue_status %} · repair {{ 'fixed' if conv.issue_status == 'resolved' else 'open' }}{% endif %}
+    {% if conv.status == 'closed' %} · closed{% endif %}</div>
+</div>
+{% if rejected %}<div class="alert alert-warning py-2">{{ rejected }} file(s) were not photos and were not attached.</div>{% endif %}
+<div>
+  {% for m in msgs %}
+  <div class="bubble {{ 'me' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'them') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('tenant.conversation_photo', token=token, conv_id=conv.id, photo_id=p.id) }}" target="_blank"><img src="{{ url_for('tenant.conversation_photo', token=token, conv_id=conv.id, photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
+    <div class="meta">{% if m.sender_type == 'tenant' %}You{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}Management{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="doc no-print" style="margin-top:8px">
+  <form method="POST" enctype="multipart/form-data">
+    <textarea name="body" class="form-control mb-2" rows="3" placeholder="Write a reply{% if conv.status == 'closed' %} — this reopens the conversation{% endif %}" required></textarea>
+    <input type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
+    <button type="submit" class="btn btn-dark w-100" style="padding:10px;border-radius:12px;font-weight:600">Send</button>
+  </form>
+</div>
+{% endblock %}
