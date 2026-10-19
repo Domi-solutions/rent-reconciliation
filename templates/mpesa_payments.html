@@ -9,6 +9,26 @@
     A payment whose account number named nobody waits here until you name the tenant.
   </div>
 </div>
+{% if property %}
+<div class="card border-0 shadow-sm mb-4" style="max-width:640px">
+  <div class="card-body" style="padding:20px">
+    <h6 style="font-weight:700;margin-bottom:4px">Where tenants pay — {{ property.name|title }}</h6>
+    <div style="font-size:13px;color:#718096;margin-bottom:12px">
+      Shown on every tenant's Pay page as the only account rent goes to. Changing it is reported to the owners and to Domi.
+    </div>
+    <form method="POST" action="{{ url_for('mpesa_admin.save_instructions') }}" class="row g-2"
+          onsubmit="return confirm('Every tenant will be told to pay here. Save?')">
+      <div class="col-sm-3"><label class="form-label" style="font-size:12px">Paybill</label>
+        <input name="pay_paybill" class="form-control" value="{{ property.pay_paybill or '' }}" inputmode="numeric" placeholder="e.g. 625625" required></div>
+      <div class="col-sm-5"><label class="form-label" style="font-size:12px">Account number</label>
+        <input name="pay_account" class="form-control" value="{{ property.pay_account or '' }}" placeholder="bank account; {unit} adds the unit" required></div>
+      <div class="col-sm-4"><label class="form-label" style="font-size:12px">Account name (as M-Pesa shows it)</label>
+        <input name="pay_account_name" class="form-control" value="{{ property.pay_account_name or '' }}" placeholder="e.g. MOWIN GAS SUPPLY"></div>
+      <div class="col-12"><button class="btn btn-sm btn-primary">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0" style="overflow-x:auto">
     <table class="table mb-0" style="font-size:13px">

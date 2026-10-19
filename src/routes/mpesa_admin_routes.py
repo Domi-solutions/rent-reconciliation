@@ -10,6 +10,7 @@ other. Exempt from nothing: admin auth applies.
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from src.database.db import get_connection
+from src.platform.guardian import notify_owner_change, platform_log, raise_alert
 from src.payments import daraja, mpesa
 from src.utils import staff
 
@@ -45,8 +46,49 @@ def payments():
             WHERE t.status IN ('active', 'departed') AND p.organization_id IS ?
             ORDER BY p.name, u.unit_number, t.status
         """, (org_id,)).fetchall()
-    return render_template('mpesa_payments.html', rows=rows, tenants=tenants,
+        prop = conn.execute("SELECT * FROM properties WHERE id = ? AND organization_id IS ?",
+                            (session.get('property_id'), org_id)).fetchone()
+    return render_template('mpesa_payments.html', rows=rows, tenants=tenants, property=prop,
                            live=daraja.configured(), active_nav='payments')
+
+
+@mpesa_admin_bp.route('/instructions', methods=['POST'])
+def save_instructions():
+    """Where tenants are told to pay. This redirects every tenant's rent, so a
+    change is logged where the agency cannot edit it, raised to the platform and
+    SMSed to the owners — the same treatment as an owner's payout number."""
+    paybill = ''.join(ch for ch in request.form.get('pay_paybill', '') if ch.isdigit())
+    account = ' '.join(request.form.get('pay_account', '').split())
+    name = ' '.join(request.form.get('pay_account_name', '').split())
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ? AND organization_id IS ?",
+                            (session.get('property_id'), session.get('org_id'))).fetchone()
+        if not prop:
+            flash('Select a property first.', 'error')
+            return redirect(url_for('mpesa_admin.payments'))
+        if not (5 <= len(paybill) <= 7) or not account:
+            flash('Enter the paybill number (5–7 digits) and the account number.', 'error')
+            return redirect(url_for('mpesa_admin.payments'))
+        old = (prop['pay_paybill'], prop['pay_account'], prop['pay_account_name'])
+        if old == (paybill, account, name):
+            return redirect(url_for('mpesa_admin.payments'))
+        conn.execute("UPDATE properties SET pay_paybill = ?, pay_account = ?, pay_account_name = ? WHERE id = ?",
+                     (paybill, account, name, prop['id']))
+        details = (f"Paybill {old[0] or '-'} / {old[1] or '-'} → {paybill} / {account}"
+                   + (f" ({name})" if name else ''))
+        conn.execute(
+            "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+            ('payment_instructions_changed', 'property', prop['id'], details, staff.actor()))
+        platform_log(conn, 'payment_instructions_changed', 'property', prop['id'], details,
+                     org_id=session.get('org_id'), property_id=prop['id'], actor=staff.actor())
+        if old[0]:      # first-time setup is not an alert; a change of destination is
+            raise_alert(conn, 'payment_instructions_changed', details, org_id=session.get('org_id'),
+                        property_id=prop['id'], severity='critical')
+            notify_owner_change(conn, prop['id'], 'Rent payment details changed',
+                                f"{prop['name'].title()}: tenants are now told to pay to Paybill {paybill}, "
+                                f"account {account}. If you did not expect this, contact Domi.")
+    flash('Payment details saved. Every tenant now sees these on their Pay page.', 'success')
+    return redirect(url_for('mpesa_admin.payments'))
 
 
 @mpesa_admin_bp.route('/<txn_id>/assign', methods=['POST'])

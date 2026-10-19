@@ -129,6 +129,7 @@ from src.database.db import (
     migrate_add_conversations,
     migrate_add_admin_users,
     migrate_add_mpesa_fields,
+    migrate_add_payment_instructions,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -188,6 +189,7 @@ migrate_add_tenant_pin_login()
 migrate_add_conversations()
 migrate_add_admin_users()
 migrate_add_mpesa_fields()
+migrate_add_payment_instructions()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp

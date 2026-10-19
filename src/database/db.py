@@ -1903,3 +1903,19 @@ def migrate_add_mpesa_fields():
                 conn.execute(f"ALTER TABLE payment_transactions ADD COLUMN {name} {decl}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ptxn_mpesa_ref ON payment_transactions(mpesa_ref)")
         print("Migration complete: payment_transactions M-Pesa check fields ready.")
+
+
+def migrate_add_payment_instructions():
+    """Where tenants are told to pay, per property. Idempotent.
+
+    Shown on every tenant's Pay page and in SMS. Changing it redirects every
+    tenant's rent, so the change route alerts the platform and SMSes owners.
+    pay_account may contain {unit} for banks that take a reference after the
+    account number (e.g. '0140000505#{unit}').
+    """
+    with get_connection() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()}
+        for name in ('pay_paybill', 'pay_account', 'pay_account_name'):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE properties ADD COLUMN {name} TEXT")
+        print("Migration complete: properties payment instructions ready.")

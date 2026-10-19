@@ -27,7 +27,8 @@ def _get_tenant_by_token(conn, token):
     row = conn.execute("""
         SELECT t.id AS tenant_id, t.name AS tenant_name, t.phone AS tenant_phone, t.unit_id,
                u.id AS unit_id, u.unit_number, u.property_id,
-               p.id AS property_id, p.name AS property_name
+               p.id AS property_id, p.name AS property_name, p.organization_id,
+               p.pay_paybill, p.pay_account, p.pay_account_name, t.short_code
         FROM tenants t
         JOIN units u ON t.unit_id = u.id
         JOIN properties p ON u.property_id = p.id
@@ -35,9 +36,14 @@ def _get_tenant_by_token(conn, token):
     """, (token.strip(),)).fetchone()
     if not row:
         return None
-    tenant = {'id': row['tenant_id'], 'name': row['tenant_name'], 'phone': row['tenant_phone'], 'unit_id': row['unit_id']}
+    tenant = {'id': row['tenant_id'], 'name': row['tenant_name'], 'phone': row['tenant_phone'], 'unit_id': row['unit_id'],
+              'short_code': row['short_code']}
     unit = {'id': row['unit_id'], 'unit_number': row['unit_number'], 'property_id': row['property_id']}
-    prop = {'id': row['property_id'], 'name': row['property_name']}
+    # organization_id: report_payment's bank check is org-scoped (it used to be missing here,
+    # so the check silently fell back to property-scoped statements only).
+    prop = {'id': row['property_id'], 'name': row['property_name'], 'organization_id': row['organization_id'],
+            'pay_paybill': row['pay_paybill'], 'pay_account': row['pay_account'],
+            'pay_account_name': row['pay_account_name']}
     return (tenant, unit, prop)
 
 
@@ -674,9 +680,17 @@ def pay(token):
 
     success = request.args.get('success')
     error = request.args.get('error')
+    from src.payments import daraja
+    how = None
+    if prop.get('pay_paybill') and prop.get('pay_account'):
+        how = {'paybill': prop['pay_paybill'],
+               'account': prop['pay_account'].replace('{unit}', unit['unit_number']),
+               'name': prop.get('pay_account_name') or ''}
 
     return render_template(
         'tenant/pay.html',
+        how=how,
+        stk_enabled=daraja.configured(),
         token=token,
         tenant=tenant,
         unit=unit,

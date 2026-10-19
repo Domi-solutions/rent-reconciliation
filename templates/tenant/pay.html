@@ -2,36 +2,91 @@
 {% block title %}Payments — {{ unit.unit_number }}{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-  <div class="viewer-section-title">Report a Payment</div>
-  <p class="text-muted" style="font-size: 0.9rem;">
-    Already paid via M-Pesa? Paste your confirmation SMS below and we will match it to your account.
-  </p>
+{% if success %}<div class="alert alert-success py-2 mb-3">{{ success }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-2 mb-3">{{ error }}</div>{% endif %}
+
+<div class="card shadow-sm mb-3" style="max-width: 480px;">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-center">
+      <span class="text-muted" style="font-size: 0.875rem;">Balance on your account</span>
+      <strong style="font-size: 1.1rem;">KES {{ "{:,.0f}".format(balance) }}</strong>
+    </div>
+    <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every charge and payment</a></div>
+  </div>
 </div>
 
-{% if success %}
-<div class="alert alert-success py-2 mb-3">{{ success }}</div>
+{% if stk_enabled %}
+<div class="card shadow-sm mb-3" style="max-width: 480px; border: 2px solid #16a34a;">
+  <div class="card-body p-4">
+    <div class="viewer-section-title" style="margin-bottom:4px">Pay with M-Pesa now</div>
+    <p class="text-muted" style="font-size: 0.85rem;">A prompt appears on your phone; enter your M-Pesa PIN there. Your receipt shows here within seconds.</p>
+    <form id="stk-form">
+      <label class="form-label fw-semibold" style="font-size:0.85rem">Amount (KES)</label>
+      <input name="amount" type="number" min="1" step="1" class="form-control mb-2" inputmode="numeric" required
+             value="{{ '%d' % balance if balance > 0 else '' }}">
+      <label class="form-label fw-semibold" style="font-size:0.85rem">M-Pesa phone number</label>
+      <input name="phone" type="tel" class="form-control mb-3" value="{{ tenant.phone or '' }}" required>
+      <button type="submit" class="btn btn-success w-100" style="padding:10px;font-weight:600">Pay</button>
+    </form>
+    <div id="stk-msg" class="mt-3" style="font-size:0.9rem"></div>
+  </div>
+</div>
+<script>
+(function () {
+  const form = document.getElementById('stk-form'), msg = document.getElementById('stk-msg');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button'); btn.disabled = true;
+    msg.textContent = 'Sending the prompt to your phone…';
+    const r = await fetch('{{ url_for("tenant.pay_stk", token=token) }}', {method: 'POST', body: new FormData(form)});
+    const j = await r.json().catch(() => ({success: false, error: 'Please try again.'}));
+    if (!j.success) { msg.textContent = j.error || 'Could not send the prompt.'; btn.disabled = false; return; }
+    msg.textContent = 'Check your phone and enter your M-Pesa PIN. Waiting for M-Pesa…';
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      const s = await (await fetch('{{ url_for("tenant.pay_status", token=token, checkout_request_id="__ID__") }}'.replace('__ID__', j.checkout_request_id))).json();
+      if (s.status === 'completed') {
+        clearInterval(poll);
+        msg.innerHTML = '<div class="alert alert-success py-2 mb-0">' + s.message + (s.receipt_url ? ' <a href="' + s.receipt_url + '">See receipt</a>' : '') + '</div>';
+      } else if (s.status === 'failed' || tries > 60) {
+        clearInterval(poll); btn.disabled = false;
+        msg.innerHTML = '<div class="alert alert-warning py-2 mb-0">' + (s.status === 'failed' ? s.message : 'No answer from M-Pesa yet. If money left your phone, it will show here shortly.') + '</div>';
+      }
+    }, 3000);
+  });
+})();
+</script>
 {% endif %}
-{% if error %}
-<div class="alert alert-danger py-2 mb-3">{{ error }}</div>
+
+{% if how %}
+<div class="card shadow-sm mb-3" style="max-width: 480px;">
+  <div class="card-body p-4">
+    <div class="viewer-section-title" style="margin-bottom:8px">{{ 'Or pay from the M-Pesa menu' if stk_enabled else 'How to pay rent' }}</div>
+    <ol style="font-size:0.9rem;padding-left:1.2rem;margin-bottom:10px">
+      <li>M-Pesa → Lipa na M-Pesa → <b>Pay Bill</b></li>
+      <li>Business number: <b style="font-size:1.05rem">{{ how.paybill }}</b></li>
+      <li>Account number: <b style="font-size:1.05rem">{{ how.account }}</b></li>
+    </ol>
+    {% if how.name %}<div style="font-size:0.85rem">Before you enter your PIN, M-Pesa shows the name <b>{{ how.name }}</b>.</div>{% endif %}
+    <div class="alert alert-warning py-2 mt-2 mb-0" style="font-size:0.82rem">
+      This is the only account for rent at {{ property.name|title }}. Rent sent to any other till, paybill or phone number
+      does not reach your account here, whoever asks for it.
+    </div>
+  </div>
+</div>
 {% endif %}
 
 <div class="card shadow-sm mb-4" style="max-width: 480px;">
   <div class="card-body p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <span class="text-muted" style="font-size: 0.875rem;">Outstanding balance</span>
-      <strong style="font-size: 1.1rem;">KES {{ "{:,.0f}".format(balance) }}</strong>
-    </div>
-    <hr class="my-3">
+    <div class="viewer-section-title" style="margin-bottom:4px">Already paid? Add the M-Pesa code</div>
+    <p class="text-muted" style="font-size: 0.85rem;">
+      Paste the M-Pesa confirmation SMS (or just its code). It is checked against the bank record and shows on your statement once it matches.
+    </p>
     <form method="POST" action="{{ url_for('tenant.report_payment', token=token) }}">
-      <div class="mb-3">
-        <label class="form-label fw-semibold">M-Pesa confirmation SMS</label>
-        <textarea name="mpesa_sms" class="form-control" rows="4"
-                  placeholder="Paste the full M-Pesa confirmation message here e.g. Confirmed. Ksh18,000 sent to..."
-                  required></textarea>
-        <div class="form-text">You can also paste just the transaction code e.g. <em>RKX4A2B1C0</em>.</div>
-      </div>
-      <button type="submit" class="btn btn-primary w-100">Report payment</button>
+      <textarea name="mpesa_sms" class="form-control mb-2" rows="4"
+                placeholder="e.g. UJK9G289GY Confirmed. Ksh18,000.00 sent to ..." required></textarea>
+      <button type="submit" class="btn btn-primary w-100">Send</button>
     </form>
   </div>
 </div>
