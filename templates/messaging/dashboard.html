@@ -13,7 +13,10 @@
     <div class="page-title">Messaging</div>
     <div class="page-meta">Broadcasts, templates, and reminders.</div>
   </div>
+  <div class="d-flex gap-2">
+  <a href="{{ url_for('messaging.invite') }}" class="btn btn-outline-secondary">Invite tenants to sign in</a>
   <a href="{{ url_for('messaging.broadcast') }}" class="btn btn-primary">Send Broadcast</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">

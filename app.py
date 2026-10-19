@@ -32,6 +32,8 @@ from src.reconciliation.matcher import enrich_with_suggestions
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 from src.utils import staff
+from src.messaging import delivery as sms_delivery
+from src.payments import daraja
 from src.parsers.excel_parser import parse_tenant_excel
 from src.parsers.water_parser import parse_water_excel
 from src.routes.test_routes import test_bp
@@ -233,9 +235,10 @@ def health_check():
         'scheduler_jobs': [],
         'services': {
             'smtp_email':    bool(os.environ.get('SMTP_HOST')),
-            'sms_at':        bool(os.environ.get('AT_API_KEY')),
+            'sms':           sms_delivery.configured(),
+            'sms_provider':  sms_delivery.provider(),
             'anthropic_llm': bool(os.environ.get('ANTHROPIC_API_KEY')),
-            'daraja_mpesa':  bool(os.environ.get('DARAJA_CONSUMER_KEY')),
+            'daraja_mpesa':  daraja.configured(),
             'maintainer_email': bool(os.environ.get('MAINTAINER_EMAIL')),
         },
     }

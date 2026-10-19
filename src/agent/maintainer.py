@@ -14,8 +14,10 @@ import traceback
 from datetime import datetime, timedelta
 
 from src.database.db import get_connection
+from src.messaging import delivery as sms_delivery
 from src.messaging.email import send_email
 from src.messaging.outbox import log_outbox
+from src.payments import daraja
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +133,9 @@ def build_maintainer_digest(conn):
     # --- Services configured ---
     svc = {
         'SMTP email':   bool(os.environ.get('SMTP_HOST')),
-        'SMS (AT)':     bool(os.environ.get('AT_API_KEY')),
+        'SMS':          sms_delivery.configured(),
         'Anthropic AI': bool(os.environ.get('ANTHROPIC_API_KEY')),
-        'M-Pesa Daraja': bool(os.environ.get('DARAJA_CONSUMER_KEY')),
+        'M-Pesa Daraja': daraja.configured(),
     }
     missing = [k for k, v in svc.items() if not v]
     if missing:

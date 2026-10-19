@@ -8,6 +8,7 @@ from flask import Blueprint, abort, render_template, request, redirect, url_for,
 from src.utils import staff
 from src.database.db import get_connection, generate_id
 from src.messaging import threads
+from src.utils.phone import normalize_to_e164 as _normalize_phone
 
 messaging_bp = Blueprint('messaging', __name__, url_prefix='/messages')
 
@@ -71,10 +72,11 @@ def _build_variables(conn, tenant, prop, base_url=None):
         (tenant['unit_id'],)
     ).fetchone() if tenant['unit_id'] else None
 
+    # The person's own balance — a departed tenant must not be shown the new occupant's.
     bal_row = conn.execute(
-        "SELECT balance, total_paid FROM unit_balances WHERE unit_id = ?",
-        (tenant['unit_id'],)
-    ).fetchone() if tenant['unit_id'] else None
+        "SELECT balance, total_paid FROM tenant_balances WHERE tenant_id = ?",
+        (tenant['id'],)
+    ).fetchone()
 
     caretaker = conn.execute(
         "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL ORDER BY created_at LIMIT 1",
@@ -624,3 +626,64 @@ def inbox_photo(photo_id):
     if not row:
         abort(404)
     return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
+
+
+# ── Sign-in invitations ──────────────────────────────────────────────────────
+
+INVITE_TEXT = {
+    'en': ("{property}: your rent account is now online. See your balance and receipts, "
+           "and message management, at {link} - sign in with this phone number."),
+    'sw': ("{property}: akaunti yako ya kodi sasa iko mtandaoni. Angalia salio na risiti, "
+           "na uwasiliane na usimamizi, hapa {link} - ingia kwa nambari hii ya simu."),
+}
+
+
+def _invite_rows(conn, pid):
+    return [dict(r) for r in conn.execute("""
+        SELECT t.id, t.name, t.phone, t.short_code, t.status, t.language_preference, u.unit_number,
+               (p.pin_hash IS NOT NULL) AS signed_up,
+               (SELECT MAX(m.created_at) FROM messages m
+                WHERE m.tenant_id = t.id AND m.message_type = 'invite') AS invited_at
+        FROM tenants t
+        JOIN units u ON u.id = t.unit_id
+        LEFT JOIN persons p ON p.id = t.person_id
+        WHERE t.property_id = ? AND t.status IN ('active', 'departed') AND t.access_token IS NOT NULL
+        ORDER BY t.status, u.unit_number
+    """, (pid,)).fetchall()]
+
+
+@messaging_bp.route('/invite', methods=['GET', 'POST'])
+def invite():
+    """SMS tenants their sign-in link. Each tenant signs up with their own phone
+    (SMS code, then a PIN), so the link alone opens nothing."""
+    from src.messaging.delivery import plain_sms, sms_parts, send_sms_async
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        base = (os.environ.get('APP_BASE_URL') or request.host_url).rstrip('/')
+        rows = _invite_rows(conn, prop['id'])
+        for r in rows:
+            lang = 'sw' if (r['language_preference'] or '').lower() in ('sw', 'kiswahili', 'swahili') else 'en'
+            r['text'] = plain_sms(INVITE_TEXT[lang].format(property=prop['name'].title(), link=f"{base}/t/{r['short_code']}"))
+            r['parts'] = sms_parts(r['text'])
+            r['phone_ok'] = bool(_normalize_phone(r['phone']))
+        if request.method == 'POST':
+            chosen = set(request.form.getlist('tenant_id'))
+            sent = 0
+            for r in rows:
+                if r['id'] not in chosen or not r['phone_ok']:
+                    continue
+                conn.execute("""
+                    INSERT INTO messages (id, property_id, tenant_id, subject, body, message_type, delivery_channel, delivery_status)
+                    VALUES (?, ?, ?, 'Sign-in link', ?, 'invite', 'sms', 'sent')
+                """, (generate_id('MSG'), prop['id'], r['id'], r['text']))
+                send_sms_async([r['phone']], r['text'])
+                sent += 1
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                ('tenants_invited', 'property', prop['id'], f'Sign-in link sent to {sent} tenant(s)', staff.actor()))
+            flash(f'Sign-in link sent to {sent} tenant(s).', 'success')
+            return redirect(url_for('messaging.invite'))
+    return render_template('messaging/invite.html', property=prop, rows=rows,
+                           signed_up=sum(1 for r in rows if r['signed_up']), active_nav='messages')
