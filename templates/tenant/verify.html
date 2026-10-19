@@ -1,0 +1,24 @@
+{% extends "tenant/auth_base.html" %}
+{% block title %}Get a code{% endblock %}
+{% block content %}
+  {% if entry %}
+    <h1>Welcome</h1>
+    <div class="who">{{ entry.property_name|title }} · Unit {{ entry.unit_number }}<br><b>{{ entry.name|title }}</b></div>
+    <p class="lead">We will send a 6-digit code by SMS to <b>{{ masked }}</b>. Then you choose a 4-digit PIN for next time.</p>
+    <form method="POST"><button type="submit" class="btn btn-dark btn-go">Send code</button></form>
+  {% else %}
+    <h1>Get a code</h1>
+    <p class="lead">Enter the phone number your landlord has for you. We will send a 6-digit code by SMS, then you choose a 4-digit PIN.</p>
+    <form method="POST" autocomplete="off">
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Phone number</label>
+        <input type="tel" class="form-control form-control-lg" name="phone" placeholder="07xx xxx xxx" inputmode="tel" required autofocus>
+      </div>
+      <button type="submit" class="btn btn-dark btn-go">Send code</button>
+    </form>
+  {% endif %}
+{% endblock %}
+{% block below %}
+  <div class="alt"><a href="{{ url_for('tenant.login') }}">I already have a PIN</a></div>
+  <div class="alt text-muted" style="font-size:13px">Number changed? Ask your caretaker or landlord to update it.</div>
+{% endblock %}

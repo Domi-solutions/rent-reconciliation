@@ -448,6 +448,16 @@
 
 ---
 
+### Tenant short links went to the admin login
+**File(s):** `app.py` (`require_admin_auth`, `short_link`)
+**Root cause:** The admin auth gate exempts by path prefix (`/tenant`, `/caretaker`, …). `/t/<code>` was added later as a public tenant entry point but its prefix is not `/tenant`, so it fell under admin auth.
+**What Cursor did:** Added the `/t/<code>` redirect route without adding it to the exemptions — every short link in tenant SMS opened the admin sign-in page.
+**What it should do:** Any new public route (tenant, owner, webhook) must be exempted explicitly in `require_admin_auth` — by endpoint name, not by hoping its path shares a prefix. Test it with a fresh client that has no session.
+**Why it matters:** Tenants are reached almost only by SMS; a broken link means they never see their account.
+**Spotted:** 2026-10-19 (Session 25)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

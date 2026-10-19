@@ -1,0 +1,25 @@
+{% extends "tenant/auth_base.html" %}
+{% block title %}Enter code{% endblock %}
+{% block content %}
+  <h1>Enter the code</h1>
+  <p class="lead">If {{ masked }} is the number on record, a 6-digit code was sent to it by SMS. It works for 10 minutes.</p>
+  {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+  <form method="POST" autocomplete="off">
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Code from SMS</label>
+      <input type="text" class="form-control form-control-lg code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Choose a 4-digit PIN</label>
+      <input type="password" class="form-control form-control-lg pin" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required>
+    </div>
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Type the PIN again</label>
+      <input type="password" class="form-control form-control-lg pin" name="pin_confirm" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required>
+    </div>
+    <button type="submit" class="btn btn-dark btn-go">Continue</button>
+  </form>
+{% endblock %}
+{% block below %}
+  <div class="alt"><a href="{{ url_for('tenant.verify') }}">Send a new code</a></div>
+{% endblock %}

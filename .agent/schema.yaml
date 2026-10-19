@@ -34,8 +34,15 @@ tables:
       activation_token: {type: TEXT, unique: true, note: "Short-lived token sent in activation link. Cleared after activation."}
       otp_code: {type: TEXT, note: "6-digit email OTP in transit. Cleared after verification."}
       otp_expires_at: {type: TIMESTAMP, note: "OTP expiry (10 minutes). After expiry, owner must resend."}
-      phone_verified: {type: INTEGER, default: 0}
+      phone_verified: {type: INTEGER, default: 0, note: "Set to 1 when a tenant enters the SMS code sent to this phone"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      phone: {type: TEXT, note: "E.164. Tenant sign-in identity (persons rows are shared by owners and tenants)"}
+      pin_hash: {type: TEXT, added_by: migrate_add_tenant_pin_login, note: "Tenant 4-digit PIN (werkzeug hash). Separate from password_hash (owner password)"}
+      pin_failed_attempts: {type: INTEGER, default: 0, added_by: migrate_add_tenant_pin_login, note: "5 wrong PINs → pin_locked_until = now + 15 min"}
+      pin_locked_until: {type: TIMESTAMP, added_by: migrate_add_tenant_pin_login}
+      otp_attempts: {type: INTEGER, default: 0, added_by: migrate_add_tenant_pin_login, note: "Wrong SMS codes; 5 → code unusable, request a new one"}
+      otp_last_sent_at: {type: TIMESTAMP, added_by: migrate_add_tenant_pin_login, note: "One SMS code per 60 s per person"}
+      otp_purpose: {type: TEXT, added_by: migrate_add_tenant_pin_login, note: "'tenant_pin' for tenant SMS codes (otp_code holds its hash); keeps tenant and owner OTPs apart"}
 
   properties:
     status: live

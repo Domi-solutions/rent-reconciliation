@@ -73,6 +73,7 @@ src/database/db.py             # get_connection(), generate_id(), allocate_payme
 src/utils/phone.py             # normalize_to_e164(), normalize_to_daraja() — ONLY phone normalization
 src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_income(), get_months_behind()
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
+src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
@@ -257,7 +258,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_ledger_tenant_id`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_tenant_pin_login`.
 
 ---
 
@@ -266,7 +267,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`)
 - **Property Owner**: Primary login at `/login` (email + password) or direct token link `/owner/l/<token>` (password only). Person account via `persons` table. Also has legacy view-only `/view/*` access bridged from person session.
 - **Caretaker**: `/caretaker/<property_id>`; named account (name+password) or `CARETAKER_PASSWORD` fallback
-- **Tenant**: Read-only `/tenant/<token>`; token in URL, no session
+- **Tenant**: `/tenant/<token>` after signing in with phone + PIN (SMS code to set/reset); departed tenants included
 
 ---
 
@@ -298,7 +299,10 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - Replace workflow: create new → brief them → delete old. Deletion immediately revokes sessions.
 
 ### Tenant Portal (/tenant/*)
-- Auth: token in URL (`tenants.access_token`); no session; `/tenant` paths exempt from admin auth
+- Auth: phone + 4-digit PIN on `persons` (`pin_hash`, separate from owner `password_hash`). The token in the URL (`tenants.access_token`, reached via `/t/<short_code>` from SMS) only identifies the tenancy — `require_tenant_sign_in` (tenant_bp.before_request) requires `session['tenant_person_id'] == tenants.person_id` for every `/tenant/<token>/...` page. A forwarded link is not enough.
+- First sign-in and forgotten PIN: `/tenant/verify` sends a 6-digit SMS code to the phone on record (hashed in `persons.otp_code`, 10 min, 5 tries, one per 60 s), then the tenant chooses a PIN. Helpers in `src/utils/tenant_auth.py` — never inline PIN/OTP logic in routes. Unknown numbers get the same response (no enumeration).
+- `departed` tenants can sign in (to see and pay their debt); `inactive` cannot (no access_token).
+- `/tenant` and `/t/` (`short_link`) paths are exempt from admin auth.
 - `_get_tenant_by_token(conn, token)` in `tenant_routes.py` → (tenant, unit, property) or None
 
 ### Monthly Reports (/reports/*)

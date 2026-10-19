@@ -6,7 +6,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
+from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone
+from src.utils.tenant_auth import (
+    check_otp, check_pin, issue_otp, mask_phone, person_for_phone, set_pin,
+    tenancies_for_phone, valid_pin,
+)
 
 tenant_bp = Blueprint('tenant', __name__, url_prefix='/tenant')
 
@@ -32,54 +37,168 @@ def _get_tenant_by_token(conn, token):
     return (tenant, unit, prop)
 
 
+# ── Sign-in ──────────────────────────────────────────────────────────────────
+#
+# Every page behind /tenant/<token> needs the tenant signed in as the person the
+# tenancy belongs to. The token alone (an SMS link that may have been forwarded)
+# only tells us who they claim to be; the SMS code or their PIN proves it.
+
+_PUBLIC = {'tenant.login', 'tenant.logout', 'tenant.verify', 'tenant.verify_code'}
+_JSON = {'tenant.pay_stk', 'tenant.pay_status'}
+
+
+def _sign_in(person_id, name):
+    session.permanent = True                      # stay signed in on their own phone
+    session['tenant_person_id'] = person_id
+    session['tenant_person_name'] = name
+
+
+@tenant_bp.before_request
+def require_tenant_sign_in():
+    if request.endpoint in _PUBLIC or not request.endpoint:
+        return None
+    token = (request.view_args or {}).get('token')
+    if not token:
+        return None if session.get('tenant_person_id') else redirect(url_for('tenant.login'))
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT t.person_id, p.pin_hash FROM tenants t
+            LEFT JOIN persons p ON p.id = t.person_id
+            WHERE t.access_token = ? AND t.unit_id IS NOT NULL
+        """, (token.strip(),)).fetchone()
+    if not row:
+        return None                               # the route renders invalid_token
+    if row['person_id'] and session.get('tenant_person_id') == row['person_id']:
+        session[f'pay_auth_{token}'] = True       # signed in counts as PIN-verified for paying
+        return None
+    if request.endpoint in _JSON:
+        return jsonify({'success': False, 'status': 'error', 'error': 'Please sign in again'}), 401
+    session['tenant_entry_token'] = token
+    session['tenant_next'] = request.path
+    return redirect(url_for('tenant.login' if row['pin_hash'] else 'tenant.verify'))
+
+
+def _entry_tenancy(conn):
+    """The tenancy the tenant arrived through via their SMS link, if any."""
+    token = session.get('tenant_entry_token')
+    if not token:
+        return None
+    row = conn.execute("""
+        SELECT t.id, t.name, t.phone, t.person_id, u.unit_number, p.name AS property_name
+        FROM tenants t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = t.property_id
+        WHERE t.access_token = ?
+    """, (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def _after_sign_in(conn, person_id):
+    """Where to go once signed in: the page they asked for, their one tenancy, or the list."""
+    nxt = session.pop('tenant_next', None)
+    session.pop('tenant_entry_token', None)
+    tenancies = conn.execute("""
+        SELECT access_token FROM tenants
+        WHERE person_id = ? AND status IN ('active', 'departed') AND access_token IS NOT NULL
+    """, (person_id,)).fetchall()
+    tokens = {t['access_token'] for t in tenancies}
+    if nxt and any(nxt.startswith(f'/tenant/{t}') for t in tokens):
+        return redirect(nxt)
+    if len(tokens) == 1:
+        return redirect(url_for('tenant.portal', token=tokens.pop()))
+    return redirect(url_for('tenant.dashboard'))
+
+
 @tenant_bp.route("/login", methods=["GET", "POST"])
 def login():
-    """Persons-based login: phone + password → find linked tenant records."""
+    """Phone + 4-digit PIN. Arriving from an SMS link, only the PIN is asked for."""
     error = None
+    with get_connection() as conn:
+        entry = _entry_tenancy(conn)
+        if request.method == "POST":
+            phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
+            pin = (request.form.get("pin") or "").strip()
+            tenancies = tenancies_for_phone(conn, phone)
+            person_id = next((t['person_id'] for t in tenancies if t['person_id']), None)
+            result, minutes = check_pin(conn, person_id, pin) if person_id else ('no_pin', 0)
+            if result == 'ok':
+                person = conn.execute("SELECT name FROM persons WHERE id = ?", (person_id,)).fetchone()
+                _sign_in(person_id, person['name'])
+                return _after_sign_in(conn, person_id)
+            if result == 'locked':
+                error = f"Too many wrong PINs. Try again in {minutes} minutes, or reset your PIN."
+            elif result == 'no_pin':
+                error = "This number has no PIN yet. Tap \"First time or forgot PIN\" below."
+            else:
+                error = "That PIN is not correct."
+    return render_template("tenant/login.html", error=error, entry=entry,
+                           masked=mask_phone(entry['phone']) if entry else None)
+
+
+@tenant_bp.route("/verify", methods=["GET", "POST"])
+def verify():
+    """Send a 6-digit code to the phone on record — first-time setup and forgotten PINs."""
+    with get_connection() as conn:
+        entry = _entry_tenancy(conn)
+        if request.method == "POST":
+            phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
+            tenancies = tenancies_for_phone(conn, phone)
+            session['tenant_verify_person'] = None
+            if tenancies:
+                person_id = person_for_phone(conn, phone, tenancies)
+                session['tenant_verify_person'] = person_id
+                code = issue_otp(conn, person_id)
+                if code:
+                    send_sms_async([phone],
+                                   f"Your {(tenancies[0]['property_name'] or '').title()} tenant code is {code}. "
+                                   f"It expires in 10 minutes. Do not share it.")
+            # Same answer whether or not the number is a tenant's, so the page
+            # cannot be used to find out who rents where.
+            session['tenant_verify_masked'] = mask_phone(phone)
+            return redirect(url_for('tenant.verify_code'))
+    return render_template("tenant/verify.html", entry=entry,
+                           masked=mask_phone(entry['phone']) if entry else None)
+
+
+@tenant_bp.route("/verify/code", methods=["GET", "POST"])
+def verify_code():
+    """Enter the SMS code and choose a PIN."""
+    error = None
+    masked = session.get('tenant_verify_masked')
+    if not masked:
+        return redirect(url_for('tenant.verify'))
     if request.method == "POST":
-        raw_phone = request.form.get("phone", "").strip()
-        password = request.form.get("password", "")
-        phone_norm = _normalize_phone(raw_phone)
-
-        with get_connection() as conn:
-            person = conn.execute(
-                "SELECT id, name, password_hash FROM persons WHERE phone = ? OR phone = ?",
-                (raw_phone, phone_norm),
-            ).fetchone()
-
-        if not person or not person["password_hash"]:
-            error = "No Domi account found for this phone number."
-        elif not check_password_hash(person["password_hash"], password):
-            error = "Incorrect password."
+        code = (request.form.get("code") or "").strip()
+        pin = (request.form.get("pin") or "").strip()
+        pin2 = (request.form.get("pin_confirm") or "").strip()
+        person_id = session.get('tenant_verify_person')
+        if not valid_pin(pin):
+            error = "Your PIN must be exactly 4 digits."
+        elif pin != pin2:
+            error = "The two PINs do not match."
+        elif not person_id:
+            error = "That code is not correct."
         else:
             with get_connection() as conn:
-                tenants = conn.execute(
-                    """SELECT t.access_token, t.id, u.unit_number, p.name AS property_name, p.id AS property_id
-                       FROM tenants t
-                       JOIN units u ON t.unit_id = u.id
-                       JOIN properties p ON u.property_id = p.id
-                       WHERE t.person_id = ? AND t.status = 'active'
-                       ORDER BY p.name, u.unit_number""",
-                    (person["id"],),
-                ).fetchall()
-
-            if len(tenants) == 0:
-                error = "No active tenancy found for this account."
-            elif len(tenants) == 1 and tenants[0]["access_token"]:
-                return redirect(url_for("tenant.portal", token=tenants[0]["access_token"]))
-            else:
-                session["tenant_person_id"] = person["id"]
-                session["tenant_person_name"] = person["name"]
-                return redirect(url_for("tenant.dashboard"))
-
-    return render_template("tenant/login.html", error=error)
+                result = check_otp(conn, person_id, code)
+                if result == 'ok':
+                    set_pin(conn, person_id, pin)
+                    person = conn.execute("SELECT name FROM persons WHERE id = ?", (person_id,)).fetchone()
+                    session.pop('tenant_verify_person', None)
+                    session.pop('tenant_verify_masked', None)
+                    _sign_in(person_id, person['name'])
+                    return _after_sign_in(conn, person_id)
+            error = {'wrong': "That code is not correct.",
+                     'expired': "That code has expired. Request a new one.",
+                     'too_many': "Too many wrong codes. Request a new one."}[result]
+    return render_template("tenant/verify_code.html", error=error, masked=masked)
 
 
 @tenant_bp.route("/logout")
 def logout():
-    """Clear tenant person session."""
-    session.pop("tenant_person_id", None)
-    session.pop("tenant_person_name", None)
+    """Sign out of this phone."""
+    for key in ('tenant_person_id', 'tenant_person_name', 'tenant_entry_token', 'tenant_next'):
+        session.pop(key, None)
+    for key in [k for k in session.keys() if k.startswith('pay_auth_')]:
+        session.pop(key, None)
     return redirect(url_for("tenant.login"))
 
 
@@ -103,7 +222,7 @@ def dashboard():
                JOIN units u ON t.unit_id = u.id
                JOIN properties p ON u.property_id = p.id
                LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
-               WHERE t.person_id = ? AND t.status = 'active'
+               WHERE t.person_id = ? AND t.status IN ('active', 'departed')
                ORDER BY p.name, u.unit_number""",
             (person_id,),
         ).fetchall()

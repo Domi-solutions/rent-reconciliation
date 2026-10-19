@@ -1726,3 +1726,24 @@ def migrate_add_ledger_tenant_id():
         """)
         print("Migration complete: ledger rows carry tenant_id; balances keyed on tenant.")
     migrate_allocate_existing_payments()
+
+
+def migrate_add_tenant_pin_login():
+    """Tenant sign-in by phone + 4-digit PIN, set/reset with an SMS code. Idempotent.
+
+    The PIN is kept apart from persons.password_hash (owner passwords): one person
+    can be both an owner and a tenant.
+    """
+    with get_connection() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(persons)").fetchall()]
+        for col, ddl in (
+            ('pin_hash', 'TEXT'),
+            ('pin_failed_attempts', 'INTEGER DEFAULT 0'),
+            ('pin_locked_until', 'TIMESTAMP'),
+            ('otp_attempts', 'INTEGER DEFAULT 0'),
+            ('otp_last_sent_at', 'TIMESTAMP'),
+            ('otp_purpose', 'TEXT'),
+        ):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE persons ADD COLUMN {col} {ddl}")
+        print("Migration complete: tenant PIN sign-in fields on persons.")

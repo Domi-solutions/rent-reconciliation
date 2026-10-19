@@ -122,6 +122,7 @@ from src.database.db import (
     migrate_add_tenant_short_code,
     migrate_add_owner_org_id,
     migrate_add_ledger_tenant_id,
+    migrate_add_tenant_pin_login,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -177,6 +178,7 @@ migrate_rename_office_to_owner_use()
 migrate_add_tenant_short_code()
 migrate_add_owner_org_id()
 migrate_add_ledger_tenant_id()
+migrate_add_tenant_pin_login()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
@@ -330,7 +332,8 @@ def require_admin_auth():
     """Require admin login for all org admin routes."""
     if request.endpoint is None:
         return None
-    exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome', 'health_check')
+    exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome', 'health_check',
+              'short_link')  # /t/<code> is the tenant's SMS link; the tenant sign-in gate takes over
     if request.endpoint in exempt:
         return None
     if request.path.startswith('/view'):
