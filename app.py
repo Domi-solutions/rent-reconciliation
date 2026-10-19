@@ -601,6 +601,16 @@ def inject_property_context():
                 "inbox_awaiting_count": 0, "mpesa_unmatched_count": 0}
 
 
+@app.context_processor
+def inject_page_guide():
+    """The "what is this page" box (partials/guide.html) — text in src/utils/guides.py."""
+    from src.utils import guides
+    try:
+        return {'guide': guides.for_endpoint(request.endpoint, guides.current_lang())}
+    except Exception:
+        return {'guide': None}
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def admin_login():
     """Unified login for org admins and property owners.

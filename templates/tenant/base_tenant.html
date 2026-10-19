@@ -29,19 +29,20 @@
         <div class="viewer-prop-name">{{ property.name|title }}</div>
         <div class="viewer-prop-label">Unit {{ unit.unit_number }} — {{ tenant.name|title }}</div>
       </div>
-      <nav style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
+      <nav style="display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 8px;">
         <a class="viewer-nav-tab {% if active_tab == 'portal' %}active{% endif %}" href="{{ url_for('tenant.portal', token=token) }}">Overview</a>
+        <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}" style="font-weight:600">Pay</a>
         <a class="viewer-nav-tab {% if active_tab == 'statement' %}active{% endif %}" href="{{ url_for('tenant.statement', token=token) }}">Statement</a>
+        <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">Messages</a>
+        <a class="viewer-nav-tab {% if active_tab == 'maintenance' %}active{% endif %}" href="{{ url_for('tenant.maintenance', token=token) }}">Repairs</a>
         <a class="viewer-nav-tab {% if active_tab == 'charges' %}active{% endif %}" href="{{ url_for('tenant.charges', token=token) }}">Charges</a>
         <a class="viewer-nav-tab {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('tenant.payments', token=token) }}">Payments</a>
-        <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">Messages</a>
-        <a class="viewer-nav-tab {% if active_tab == 'maintenance' %}active{% endif %}" href="{{ url_for('tenant.maintenance', token=token) }}">Maintenance</a>
-        <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}">Pay</a>
         <a class="viewer-nav-tab" style="margin-left:auto" href="{{ url_for('tenant.logout') }}">Sign out</a>
       </nav>
     </div>
   </header>
   <main style="max-width: 860px; margin: 0 auto; padding: 24px 20px 48px;">
+    {% include 'partials/guide.html' %}
     {% block content %}{% endblock %}
   </main>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
