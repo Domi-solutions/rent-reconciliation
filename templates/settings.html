@@ -4,32 +4,46 @@
 
 <div class="mb-4">
   <h4 class="mb-1">Account Settings</h4>
-  <div style="font-size: 13px; color: #718096;">Manage your organisation's login credentials.</div>
+  <div style="font-size: 13px; color: #718096;">Your own account. Other administrators are managed under <a href="{{ url_for('team.team') }}">Team</a>.</div>
 </div>
 
-{% if not org %}
+{% if not account %}
 <div class="card border-0 shadow-sm">
   <div class="card-body py-5 text-center" style="color: #718096; font-size: 14px;">
-    No organisation is associated with this session.<br>
-    Log in with your organisation email and password to manage account settings.
+    This session has no personal account (master key or platform access).<br>
+    Sign in with your own email and password to change your account.
   </div>
 </div>
 {% else %}
 
 <div style="max-width: 560px;">
 
+  {# ── Name ─────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body" style="padding: 24px;">
+      <h6 style="font-weight: 700; margin-bottom: 4px;">Your name</h6>
+      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+        What the activity log records you as. Tenants and owners see the organisation's name, not yours.
+      </div>
+      <form method="POST" action="{{ url_for('account_name', next=url_for('org_settings')) }}">
+        <div class="mb-3"><input name="name" class="form-control" value="{{ account.name }}" required></div>
+        <button type="submit" class="btn btn-primary btn-sm">Update name</button>
+      </form>
+    </div>
+  </div>
+
   {# ── Login email ─────────────────────────────────────────────── #}
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body" style="padding: 24px;">
-      <h6 style="font-weight: 700; margin-bottom: 4px;">Login email</h6>
+      <h6 style="font-weight: 700; margin-bottom: 4px;">Sign-in email</h6>
       <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
-        This is the email address used to sign in to Domi.
+        The email address you sign in to Domi with.
       </div>
       <form method="POST" action="{{ url_for('settings_update_email') }}">
         <div class="mb-3">
           <label class="form-label" style="font-size: 13px; font-weight: 600;">Email address</label>
           <input type="email" name="email" class="form-control"
-                 value="{{ org.contact_email or '' }}"
+                 value="{{ account.email }}"
                  placeholder="you@agency.co.ke" required>
         </div>
         <button type="submit" class="btn btn-primary btn-sm">Update email</button>
@@ -74,7 +88,7 @@
       </div>
       <div style="font-size: 14px;">
         <span style="font-weight: 600; color: #4a5568;">Name:</span>
-        <span style="margin-left: 8px;">{{ org.name }}</span>
+        <span style="margin-left: 8px;">{{ org.name if org else '—' }}</span>
       </div>
     </div>
   </div>

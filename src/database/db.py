@@ -1834,3 +1834,53 @@ def migrate_add_conversations():
                 BEGIN SELECT RAISE(ABORT, 'messages are never edited — add a new message instead'); END
             """)
         print("Migration complete: conversations, conversation_messages, conversation_photos ready.")
+
+
+def migrate_add_admin_users():
+    """One sign-in per administrator. Idempotent.
+
+    Until now an organisation had one shared email + password, so every admin
+    action was recorded as 'admin'. Each person now has their own account under
+    the organisation; tenants and owners still see only the organisation's name,
+    while the record keeps who acted. Accounts are switched off, never deleted,
+    so a former admin's name stays on what they did.
+
+    The organisation's existing login becomes its first (lead) account, with no
+    name yet — the first sign-in asks for one. Actions before this migration stay
+    attributed to the shared login: who did them is not known.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id TEXT PRIMARY KEY,
+                org_id TEXT NOT NULL REFERENCES organizations(id),
+                name TEXT NOT NULL DEFAULT '',          -- '' until the person enters it at first sign-in
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'admin',     -- lead (manages the team) | admin
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT,
+                last_login_at TIMESTAMP,
+                deactivated_at TIMESTAMP,
+                deactivated_by TEXT
+            )
+        """)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(LOWER(email))")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_admin_users_org ON admin_users(org_id)")
+        orgs = conn.execute("""
+            SELECT o.id, o.contact_email, o.admin_password_hash FROM organizations o
+            WHERE o.contact_email IS NOT NULL AND o.contact_email != '' AND o.admin_password_hash IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM admin_users a WHERE a.org_id = o.id)
+              AND NOT EXISTS (SELECT 1 FROM admin_users a WHERE LOWER(a.email) = LOWER(o.contact_email))
+        """).fetchall()
+        for o in orgs:
+            conn.execute("""
+                INSERT INTO admin_users (id, org_id, email, password_hash, role, created_by)
+                VALUES (?, ?, LOWER(?), ?, 'lead', 'migration: organisation login')
+            """, (generate_id('ADM'), o['id'], o['contact_email'], o['admin_password_hash']))
+        # Which account wrote a staff message (ADM-… or CTKR-…). Tenants see sender_name only.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(conversation_messages)").fetchall()}
+        if cols and 'sender_account_id' not in cols:
+            conn.execute("ALTER TABLE conversation_messages ADD COLUMN sender_account_id TEXT")
+        print(f"Migration complete: admin_users ready ({len(orgs)} organisation login(s) converted).")

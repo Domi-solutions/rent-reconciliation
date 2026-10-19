@@ -25,7 +25,7 @@
   </div>
   {% for m in msgs %}
   <div class="bubble {{ 'tenant' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'staff') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" target="_blank"><img src="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
-    <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}{{ m.sender_name }}{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+    <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}{{ m.sender_name }} · by {{ m.account_name or ('shared login' if not m.sender_account_id else m.sender_account_id) }}{% endif %} · {{ (m.created_at or '')[:16] }}</div>
   </div>
   {% endfor %}
   <div class="card2">
@@ -42,7 +42,7 @@
       <button type="submit" class="btn btn-sm btn-outline-secondary">Close without replying</button>
     </form>
     {% endif %}
-    <div style="font-size:12px;color:var(--ink-3);margin-top:10px">Messages cannot be edited or deleted. Replies are signed with your organisation's name.</div>
+    <div style="font-size:12px;color:var(--ink-3);margin-top:10px">Messages cannot be edited or deleted. The tenant sees your organisation's name; this page and the activity log show who replied.</div>
   </div>
 </div>
 {% endblock %}

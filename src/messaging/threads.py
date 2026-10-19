@@ -61,13 +61,16 @@ def _store_photo(upload):
     return name, img.width, img.height, os.path.getsize(path)
 
 
-def add_message(conn, conversation_id, sender_type, sender_name, body, photos=()):
-    """Append a message (and up to MAX_PHOTOS photos). Returns (message_id, photos_saved, photos_rejected)."""
+def add_message(conn, conversation_id, sender_type, sender_name, body, photos=(), account_id=None):
+    """Append a message (and up to MAX_PHOTOS photos). Returns (message_id, photos_saved, photos_rejected).
+
+    sender_name is what the tenant sees (the organisation's name for admins);
+    account_id (ADM-… or CTKR-…) records which person wrote it."""
     msg_id = generate_id('CMSG')
     conn.execute("""
-        INSERT INTO conversation_messages (id, conversation_id, sender_type, sender_name, body)
-        VALUES (?, ?, ?, ?, ?)
-    """, (msg_id, conversation_id, sender_type, sender_name, body.strip()))
+        INSERT INTO conversation_messages (id, conversation_id, sender_type, sender_name, body, sender_account_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (msg_id, conversation_id, sender_type, sender_name, body.strip(), account_id))
     saved = rejected = 0
     for upload in [p for p in photos if p and p.filename][:MAX_PHOTOS]:
         stored = _store_photo(upload)
@@ -137,7 +140,9 @@ def thread(conn, conversation_id):
     if not conv:
         return None, []
     msgs = [dict(m) for m in conn.execute("""
-        SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, rowid
+        SELECT m.*, a.name AS account_name
+        FROM conversation_messages m LEFT JOIN admin_users a ON a.id = m.sender_account_id
+        WHERE m.conversation_id = ? ORDER BY m.created_at, m.rowid
     """, (conversation_id,)).fetchall()]
     photos = {}
     for p in conn.execute("SELECT * FROM conversation_photos WHERE conversation_id = ? ORDER BY rowid",

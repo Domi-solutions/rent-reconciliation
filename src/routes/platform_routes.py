@@ -538,8 +538,11 @@ def impersonate(org_id):
     if not org:
         flash("Organisation not found.", "danger")
         return redirect(url_for("platform.dashboard"))
+    for k in ("admin_user_id", "admin_name", "admin_role", "admin_master"):
+        session.pop(k, None)
     session["org_id"] = org["id"]
     session["admin_authenticated"] = True
+    session["admin_via_platform"] = True     # recorded as 'platform (as organisation)'
     session["org_selection_done"] = True
     session.pop("property_id", None)
     flash(f"Now viewing as {org['name']}. Return to /platform to switch.", "info")

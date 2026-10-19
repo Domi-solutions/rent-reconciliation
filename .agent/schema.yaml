@@ -14,7 +14,7 @@ tables:
       id: {type: TEXT, pk: true}
       name: {type: TEXT, required: true}
       slug: {type: TEXT, unique: true, nullable: true, note: "URL-safe identifier; auto-generated at creation if not provided"}
-      contact_email: {type: TEXT, unique: true, nullable: true, note: "Org admin login email. Login query: WHERE LOWER(contact_email) = ? AND is_active = 1. Editable via /platform/orgs/<id>/edit or /platform/orgs/<id>/set-email."}
+      contact_email: {type: TEXT, unique: true, nullable: true, note: "Organisation contact. Signs in only while the org has no admin_users (first sign-in converts it to the lead account). Was: org admin login email. Login query: WHERE LOWER(contact_email) = ? AND is_active = 1. Editable via /platform/orgs/<id>/edit or /platform/orgs/<id>/set-email."}
       contact_phone: {type: TEXT, nullable: true}
       admin_password_hash: {type: TEXT, nullable: true, note: "Org admin login password. Set via /platform/orgs/<id>/set-password. NULL = no password set yet."}
       platform_fee_rate: {type: REAL, default: 0.01, note: "Domi fee; silent in float; never shown in org admin UI"}
@@ -407,9 +407,28 @@ tables:
       id: {type: TEXT, pk: true}
       conversation_id: {type: TEXT, fk: conversations.id, required: true}
       sender_type: {type: TEXT, values: [tenant, admin, caretaker, system]}
-      sender_name: {type: TEXT}
+      sender_name: {type: TEXT, notes: "what the tenant sees — the organisation's name for admin replies"}
       body: {type: TEXT}
+      sender_account_id: {type: TEXT, notes: "ADM-… (admin_users) or CTKR-… (caretakers): who actually wrote it. Added by migrate_add_admin_users. NULL = before personal accounts / tenant / system"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+
+  admin_users:
+    status: live
+    migration: migrate_add_admin_users
+    notes: "One account per administrator under an organisation. Never deleted — is_active=0 switches off and keeps the name on the record. Migration turned each organisation's contact_email + admin_password_hash into a lead account with name ''; the first sign-in asks for the name. Once an org has any account, the organisation password opens nothing. All logic in src/utils/staff.py."
+    columns:
+      id: {type: TEXT, pk: true, notes: "ADM-…"}
+      org_id: {type: TEXT, fk: organizations.id, required: true}
+      name: {type: TEXT, default: "''", notes: "unique per org (case-insensitive); audit_log.user_id = 'admin:<name>'"}
+      email: {type: TEXT, required: true, unique: "LOWER(email), across all orgs"}
+      password_hash: {type: TEXT, required: true}
+      role: {type: TEXT, default: admin, values: [lead, admin], notes: "lead manages the team; an org always keeps one active lead"}
+      is_active: {type: INTEGER, default: 1}
+      created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
+      created_by: {type: TEXT}
+      last_login_at: {type: TIMESTAMP}
+      deactivated_at: {type: TIMESTAMP}
+      deactivated_by: {type: TEXT}
 
   conversation_photos:
     status: live

@@ -75,6 +75,8 @@ src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
 src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
 src/utils/tenant_documents.py  # build_invoice(), build_receipt() — cut from get_tenant_statement so statement/invoice/receipt never disagree
+src/utils/staff.py             # admin accounts: actor() (who acted), find_login/sign_in/sign_out, current_account
+src/routes/team_routes.py      # /team — lead admin adds/switches off administrators
 src/messaging/threads.py       # tenant ↔ management conversations + photos: start_conversation, add_message, thread, list_for_staff, awaiting_count
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
@@ -192,6 +194,15 @@ result = quick_verify_ref(conn, text, unit_id, org_id)
 #   tenant['pending_total']     — sum of claimed_amount for status='pending' open claims only
 ```
 
+**Who acted — never write the literal `'admin'`:**
+```python
+from src.utils import staff
+conn.execute("INSERT INTO audit_log (..., user_id) VALUES (?, ?, ?, ?, ?)", (..., staff.actor()))
+# → 'admin:<name>' for a personal account, 'admin:master key', 'platform (as organisation)';
+#   rows before personal accounts say 'admin' (shared login — person unknown).
+# Conversation replies also pass account_id=session['admin_user_id'] to threads.add_message.
+```
+
 **ID generation:**
 ```python
 from src.database.db import generate_id
@@ -263,13 +274,13 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_conversations`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_admin_users`.
 
 ---
 
 ## User Roles
 
-- **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`)
+- **Agency Admin**: Full CRUD, main routes. Manages owners (`/owners`), caretakers (`/caretakers`). One account per person (`admin_users`, `/team`); a lead admin adds and switches off accounts. Tenants and owners see only the organisation's name; the record keeps the person.
 - **Property Owner**: Primary login at `/login` (email + password) or direct token link `/owner/l/<token>` (password only). Person account via `persons` table. Also has legacy view-only `/view/*` access bridged from person session.
 - **Caretaker**: `/caretaker/<property_id>`; named account (name+password) or `CARETAKER_PASSWORD` fallback
 - **Tenant**: `/tenant/<token>` after signing in with phone + PIN (SMS code to set/reset); departed tenants included
@@ -295,11 +306,11 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 
 ### Caretaker Portal (/caretaker/*)
 - Auth priority: 1) `caretakers` table (name+password); 2) `CARETAKER_PASSWORD` env var; 3) open in dev
-- `before_request` verifies `caretaker_id` still exists in DB — deletion revokes immediately
+- `before_request` verifies `caretaker_id` still exists in DB — deletion revokes immediately — and that the URL's `property_id` is the account's own (`caretakers.property_id`, read from the DB): one caretaker, one property → 403 otherwise. Legacy `CARETAKER_PASSWORD` sessions have no property binding.
 - `sent_by` attribution: `session.get('caretaker_name', 'Caretaker')` for owner inbox
 - Log Payment: parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission
 - Paths starting with `/caretaker` exempt from admin auth
-- Repairs: tenant-reported issues on the Issues tab link to their conversation (`/caretaker/<pid>/repairs/<conv_id>`); the Issues tab badge counts repairs awaiting a reply. The caretaker never sees `money`/`other` conversations. Marking a linked issue fixed adds a system message to the conversation and closes it (no separate notice). New caretaker routes check `session['caretaker_property_id']` (`_own_property_only`).
+- Repairs: tenant-reported issues on the Issues tab link to their conversation (`/caretaker/<pid>/repairs/<conv_id>`); the Issues tab badge counts repairs awaiting a reply. The caretaker never sees `money`/`other` conversations. Marking a linked issue fixed adds a system message to the conversation and closes it (no separate notice).
 
 ### Caretaker Management (/caretakers)
 - Replace workflow: create new → brief them → delete old. Deletion immediately revokes sessions.

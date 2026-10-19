@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta, date as _date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from src.utils import staff
 from src.database.db import get_connection, generate_id
 from src.reports.arrears_report import generate_arrears_report
 from src.reconciliation.unassigned import get_unassigned_credits, group_by_sender
@@ -91,7 +92,7 @@ def generate_for_period():
                 INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)
                 VALUES (?, ?, ?, ?, ?)
             """, ('report_generated', 'report', report_id,
-                  f"Generated report for {prop['name']}: {period_start} to {period_end}", 'admin'))
+                  f"Generated report for {prop['name']}: {period_start} to {period_end}", staff.actor()))
             try:
                 from src.messaging.owner_notify import notify_property_owners
                 _base = request.host_url.rstrip('/')
@@ -158,7 +159,7 @@ def generate_report():
                     INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)
                     VALUES (?, ?, ?, ?, ?)
                 """, ('report_generated', 'report', report_id,
-                      f"Generated report for {prop['name']}: {period_start} to {period_end}", 'admin'))
+                      f"Generated report for {prop['name']}: {period_start} to {period_end}", staff.actor()))
 
                 try:
                     from src.messaging.owner_notify import notify_property_owners
@@ -291,7 +292,7 @@ def refresh_report(report_id):
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
             ('report_force_refreshed', 'report', report_id,
              f'Period {report_row["period_start"]} to {report_row["period_end"]} | Manually refreshed by admin',
-             'admin')
+             staff.actor())
         )
         flash('Report updated with latest data.', 'success')
     return redirect(url_for('reports.preview_report', report_id=report_id))
@@ -391,7 +392,7 @@ def send_arrears_report():
                 "VALUES (?, ?, ?, ?, ?)",
                 ('arrears_report_sent', 'property', prop['id'],
                  f"Arrears report sent: KES {summary['total_outstanding']:,.0f} across "
-                 f"{summary['units_in_arrears']} unit(s)", 'admin')
+                 f"{summary['units_in_arrears']} unit(s)", staff.actor())
             )
             flash('Arrears report sent to the property owners.', 'success')
         except Exception as exc:  # noqa: BLE001
@@ -423,7 +424,7 @@ def tenant_evidence(tenant_id):
             ('statement_of_account_generated', 'tenant', tenant_id,
              f"Statement of account generated for {report['tenant']['name']} "
              f"(balance KES {report['totals']['balance']:,.0f}, "
-             f"hash {report['integrity_hash'][:12]})", 'admin')
+             f"hash {report['integrity_hash'][:12]})", staff.actor())
         )
 
     return render_template('reports/statement_of_account.html',

@@ -456,6 +456,14 @@
 **Why it matters:** Tenants are reached almost only by SMS; a broken link means they never see their account.
 **Spotted:** 2026-10-19 (Session 25)
 
+### Every admin action was recorded as 'admin'
+**File(s):** `app.py`, `src/routes/*` (audit_log inserts), `src/routes/caretaker_routes.py` (`require_caretaker_auth`)
+**Root cause:** One shared login per organisation, and `audit_log.user_id` hard-coded to `'admin'` in ~60 places. When administrators changed, nobody could tell who did what. Separately, the caretaker gate checked only that the account existed, not that the URL's property was theirs.
+**What Cursor did:** Wrote the literal `'admin'` as the actor in each new route.
+**What it should do:** Use `staff.actor()` (`src/utils/staff.py`) for every "who did this" value. Authorisation that depends on an account's scope (caretaker → property, admin → org) is read from the DB on each request, never trusted from the session.
+**Why it matters:** The record is evidence. A rent dispute or a staff handover needs to know which person acted.
+**Spotted:** 2026-10-19 (Session 25)
+
 ---
 
 ### Payment credit stayed unapplied when charges were created later

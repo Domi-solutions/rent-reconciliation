@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Team — Domi{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <h4 class="mb-1">Team</h4>
+  <div style="font-size: 13px; color: #718096; max-width: 640px;">
+    Everyone who signs in to manage the organisation has their own account. Tenants and owners see only the
+    organisation's name; the activity log records which person acted. Accounts are switched off, never deleted —
+    a former admin's name stays on what they did.
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" style="max-width: 900px;">
+  <div class="card-body p-0">
+    <table class="table mb-0" style="font-size: 14px;">
+      <thead><tr><th style="padding-left:20px">Name</th><th>Email</th><th>Role</th><th>Last sign-in</th><th>Actions recorded</th>{% if can_manage %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr style="{% if not r.is_active %}opacity:.55{% endif %}">
+        <td style="padding-left:20px">
+          <b>{{ r.name or '(name not entered yet)' }}</b>{% if r.id == me %} <span class="badge bg-light text-dark">you</span>{% endif %}
+          {% if not r.is_active %}<div style="font-size:12px">switched off {{ (r.deactivated_at or '')[:10] }} by {{ r.deactivated_by }}</div>{% endif %}
+        </td>
+        <td>{{ r.email }}</td>
+        <td>{{ 'Lead admin' if r.role == 'lead' else 'Admin' }}</td>
+        <td>{{ (r.last_login_at or '—')[:16] }}</td>
+        <td>{{ r.actions }}</td>
+        {% if can_manage %}
+        <td style="white-space:nowrap">
+          {% if r.id != me %}
+          <details>
+            <summary style="font-size:13px;cursor:pointer">Manage</summary>
+            <div style="padding:8px 0;display:flex;flex-direction:column;gap:6px;min-width:220px">
+              {% if r.is_active %}
+              <form method="POST" action="{{ url_for('team.deactivate', account_id=r.id) }}"
+                    onsubmit="return confirm('Switch off {{ r.name or r.email }}? They will be signed out at once.')">
+                <button class="btn btn-sm btn-outline-danger w-100">Switch off</button></form>
+              {% else %}
+              <form method="POST" action="{{ url_for('team.reactivate', account_id=r.id) }}">
+                <button class="btn btn-sm btn-outline-secondary w-100">Switch back on</button></form>
+              {% endif %}
+              <form method="POST" action="{{ url_for('team.set_role', account_id=r.id) }}" class="d-flex gap-1">
+                <select name="role" class="form-select form-select-sm">
+                  {% for k, v in roles.items() %}<option value="{{ k }}" {% if r.role == k %}selected{% endif %}>{{ v.split(' —')[0] }}</option>{% endfor %}
+                </select>
+                <button class="btn btn-sm btn-outline-secondary">Set</button></form>
+              <form method="POST" action="{{ url_for('team.set_password', account_id=r.id) }}" class="d-flex gap-1">
+                <input type="text" name="password" class="form-control form-control-sm" placeholder="Temporary password" minlength="{{ min_password }}" required autocomplete="off">
+                <button class="btn btn-sm btn-outline-secondary">Set</button></form>
+            </div>
+          </details>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:20px;color:#718096">No accounts yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_manage %}
+<div class="card border-0 shadow-sm" style="max-width: 560px;">
+  <div class="card-body" style="padding: 24px;">
+    <h6 style="font-weight: 700; margin-bottom: 4px;">Add an administrator</h6>
+    <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+      Choose a temporary password and give it to them in person, not by SMS or email. They change it under Account Settings.
+    </div>
+    <form method="POST" action="{{ url_for('team.add') }}">
+      <div class="mb-2"><input name="name" class="form-control" placeholder="Full name" required></div>
+      <div class="mb-2"><input name="email" type="email" class="form-control" placeholder="Email they sign in with" required></div>
+      <div class="mb-2"><input name="password" type="text" class="form-control" placeholder="Temporary password (at least {{ min_password }} characters)" minlength="{{ min_password }}" required autocomplete="off"></div>
+      <div class="mb-3">
+        <select name="role" class="form-select">
+          {% for k, v in roles.items() %}<option value="{{ k }}" {% if k == 'admin' %}selected{% endif %}>{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm">Add</button>
+    </form>
+  </div>
+</div>
+{% else %}
+<div style="font-size:13px;color:#718096">Only a lead admin can add or switch off accounts.</div>
+{% endif %}
+{% endblock %}

@@ -31,6 +31,7 @@ from src.parsers.sms_parser import parse_mpesa_message
 from src.reconciliation.matcher import enrich_with_suggestions
 from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
+from src.utils import staff
 from src.parsers.excel_parser import parse_tenant_excel
 from src.parsers.water_parser import parse_water_excel
 from src.routes.test_routes import test_bp
@@ -124,6 +125,7 @@ from src.database.db import (
     migrate_add_ledger_tenant_id,
     migrate_add_tenant_pin_login,
     migrate_add_conversations,
+    migrate_add_admin_users,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -181,9 +183,11 @@ migrate_add_owner_org_id()
 migrate_add_ledger_tenant_id()
 migrate_add_tenant_pin_login()
 migrate_add_conversations()
+migrate_add_admin_users()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
+from src.routes.team_routes import team_bp
 from src.messaging.reminders import generate_due_reminders
 
 if os.environ.get('ENVIRONMENT') != 'production':
@@ -198,6 +202,7 @@ app.register_blueprint(payment_bp)
 app.register_blueprint(inbound_bp)
 app.register_blueprint(platform_bp)
 app.register_blueprint(owner_bp)
+app.register_blueprint(team_bp)
 
 
 @app.route('/t/<code>')
@@ -351,6 +356,20 @@ def require_admin_auth():
     if request.path.startswith('/owner'):
         return None
     if not session.get('admin_authenticated'):
+        return redirect(url_for('admin_login', next=request.url))
+    if session.get('admin_user_id'):
+        # Re-checked every request: switching an account off ends its sessions at once.
+        with get_connection() as conn:
+            account = staff.current_account(conn)
+        if not account:
+            staff.sign_out()
+            return redirect(url_for('admin_login'))
+        session['admin_name'], session['admin_role'] = account['name'], account['role']
+        if not account['name'].strip() and request.endpoint != 'account_name':
+            return redirect(url_for('account_name'))
+    elif not (session.get('admin_master') or session.get('admin_via_platform')):
+        # A session from the shared organisation login, before personal accounts.
+        staff.sign_out()
         return redirect(url_for('admin_login', next=request.url))
     if not session.get('org_selection_done'):
         return redirect(url_for('org_select'))
@@ -587,16 +606,15 @@ def admin_login():
 
         if email:
             with get_connection() as conn:
-                # 1. Org admin login
-                org = conn.execute(
-                    "SELECT id, name, admin_password_hash FROM organizations WHERE LOWER(contact_email) = ? AND is_active = 1",
-                    (email,),
-                ).fetchone()
-                if org and org['admin_password_hash'] and check_password_hash(org['admin_password_hash'], password):
-                    session['admin_authenticated'] = True
-                    session['org_id'] = org['id']
-                    session['org_selection_done'] = True
-                    session.pop('property_id', None)
+                # 1. Admin — each person's own account (src/utils/staff.py)
+                user = staff.find_login(conn, email, password)
+                if user:
+                    staff.sign_in(conn, user)
+                    conn.execute(
+                        "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                        ('admin_signed_in', 'admin_user', user['id'], user['email'], staff.actor()))
+                    if not user['name'].strip():
+                        return redirect(url_for('account_name', next=next_url))
                     return redirect(next_url or url_for('dashboard'))
 
                 # 2. Owner (person) login — always goes to owner dashboard, never org admin routes
@@ -613,7 +631,9 @@ def admin_login():
         # 3. Master key fallback (dev mode / emergency access)
         global_pw = os.environ.get('ADMIN_PASSWORD')
         if global_pw and password == global_pw:
+            staff.sign_out()
             session['admin_authenticated'] = True
+            session['admin_master'] = True
             return redirect(next_url or url_for('dashboard'))
 
         return render_template('login.html', error='Incorrect email or password.')
@@ -624,94 +644,96 @@ def admin_login():
 @app.route('/logout')
 def admin_logout():
     """Clear admin session and redirect to login."""
-    session.pop('admin_authenticated', None)
-    session.pop('org_id', None)
-    session.pop('org_selection_done', None)
-    session.pop('property_id', None)
+    staff.sign_out()
     return redirect(url_for('admin_login'))
 
 
 @app.route('/settings', methods=['GET'])
 def org_settings():
-    """Organisation account settings — email and password."""
-    org_id = session.get('org_id')
-    org = None
-    if org_id:
-        with get_connection() as conn:
-            org = conn.execute(
-                "SELECT id, name, contact_email, contact_phone FROM organizations WHERE id = ?",
-                (org_id,),
-            ).fetchone()
-    return render_template('settings.html', org=org)
+    """Your own account — name, sign-in email, password — and the organisation."""
+    with get_connection() as conn:
+        account = staff.current_account(conn)
+        org = conn.execute("SELECT id, name, contact_email, contact_phone FROM organizations WHERE id = ?",
+                           (session.get('org_id'),)).fetchone()
+    return render_template('settings.html', org=org, account=account)
+
+
+@app.route('/account/name', methods=['GET', 'POST'])
+def account_name():
+    """Asked once, at first sign-in: the name your actions are recorded under."""
+    error = None
+    with get_connection() as conn:
+        account = staff.current_account(conn)
+        if not account:
+            return redirect(url_for('dashboard'))
+        if request.method == 'POST':
+            name = ' '.join(request.form.get('name', '').split())
+            if len(name) < 2:
+                error = 'Please enter your name.'
+            elif staff.name_taken(conn, account['org_id'], name, account['id']):
+                error = 'Someone in your organisation already uses that name — add a surname or initial.'
+            else:
+                conn.execute("UPDATE admin_users SET name = ? WHERE id = ?", (name, account['id']))
+                session['admin_name'] = name
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('admin_name_set', 'admin_user', account['id'],
+                     f"Name: {account['name'] or '(none)'} → {name}", staff.actor()))
+                return redirect(request.args.get('next') or url_for('dashboard'))
+    return render_template('account_name.html', account=account, error=error)
 
 
 @app.route('/settings/email', methods=['POST'])
 def settings_update_email():
-    """Change the org's login email address."""
-    org_id = session.get('org_id')
-    if not org_id:
-        flash('No organisation selected.', 'error')
-        return redirect(url_for('org_settings'))
+    """Change your own sign-in email."""
     new_email = request.form.get('email', '').strip().lower()
-    if not new_email:
-        flash('Email cannot be empty.', 'error')
-        return redirect(url_for('org_settings'))
     with get_connection() as conn:
-        org = conn.execute("SELECT name, contact_email FROM organizations WHERE id = ?", (org_id,)).fetchone()
-        if not org:
-            flash('Organisation not found.', 'error')
+        account = staff.current_account(conn)
+        if not account:
+            flash('Sign in with your own account to change this.', 'error')
             return redirect(url_for('org_settings'))
-        conflict = conn.execute(
-            "SELECT id FROM organizations WHERE LOWER(contact_email) = ? AND id != ?",
-            (new_email, org_id),
-        ).fetchone()
-        if conflict:
-            flash(f"Email '{new_email}' is already used by another organisation.", 'error')
+        if '@' not in new_email:
+            flash('Enter a valid email address.', 'error')
             return redirect(url_for('org_settings'))
-        conn.execute("UPDATE organizations SET contact_email = ? WHERE id = ?", (new_email, org_id))
+        if staff.email_taken(conn, new_email, account['id']):
+            flash('That email is already used by another account.', 'error')
+            return redirect(url_for('org_settings'))
+        conn.execute("UPDATE admin_users SET email = ? WHERE id = ?", (new_email, account['id']))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
-            ('org_email_changed', 'organization', org_id,
-             f"Email changed from {org['contact_email']} to {new_email}", 'admin'),
+            ('admin_email_changed', 'admin_user', account['id'],
+             f"Email changed from {account['email']} to {new_email}", staff.actor()),
         )
-    flash('Login email updated.', 'success')
+    flash('Sign-in email updated.', 'success')
     return redirect(url_for('org_settings'))
 
 
 @app.route('/settings/password', methods=['POST'])
 def settings_update_password():
-    """Change the org's login password."""
+    """Change your own password."""
     from werkzeug.security import check_password_hash, generate_password_hash
-    org_id = session.get('org_id')
-    if not org_id:
-        flash('No organisation selected.', 'error')
-        return redirect(url_for('org_settings'))
     current_pw = request.form.get('current_password', '')
     new_pw = request.form.get('new_password', '').strip()
     confirm_pw = request.form.get('confirm_password', '').strip()
-    if len(new_pw) < 8:
-        flash('New password must be at least 8 characters.', 'error')
+    if len(new_pw) < staff.MIN_PASSWORD:
+        flash(f'New password must be at least {staff.MIN_PASSWORD} characters.', 'error')
         return redirect(url_for('org_settings'))
     if new_pw != confirm_pw:
         flash('Passwords do not match.', 'error')
         return redirect(url_for('org_settings'))
     with get_connection() as conn:
-        org = conn.execute(
-            "SELECT name, admin_password_hash FROM organizations WHERE id = ?", (org_id,)
-        ).fetchone()
-        if not org:
-            flash('Organisation not found.', 'error')
+        account = staff.current_account(conn)
+        if not account:
+            flash('Sign in with your own account to change this.', 'error')
             return redirect(url_for('org_settings'))
-        if org['admin_password_hash'] and not check_password_hash(org['admin_password_hash'], current_pw):
+        if not check_password_hash(account['password_hash'], current_pw):
             flash('Current password is incorrect.', 'error')
             return redirect(url_for('org_settings'))
-        conn.execute(
-            "UPDATE organizations SET admin_password_hash = ? WHERE id = ?",
-            (generate_password_hash(new_pw), org_id),
-        )
+        conn.execute("UPDATE admin_users SET password_hash = ? WHERE id = ?",
+                     (generate_password_hash(new_pw), account['id']))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
-            ('org_password_changed', 'organization', org_id, 'Password changed by org admin', 'admin'),
+            ('admin_password_changed', 'admin_user', account['id'], 'Password changed by its owner', staff.actor()),
         )
     flash('Password updated.', 'success')
     return redirect(url_for('org_settings'))
@@ -867,7 +889,7 @@ def delete_property(property_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
             ('property_deletion_requested', 'property', property_id,
-             f'Deletion requested: {prop["name"]}', 'admin'))
+             f'Deletion requested: {prop["name"]}', staff.actor()))
 
         if session.get('property_id') == property_id:
             session.pop('property_id', None)
@@ -1132,7 +1154,7 @@ def setup_property():
                 details += f' | Address: {address}'
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('property_created', 'property', property_id, details, 'admin'),
+                ('property_created', 'property', property_id, details, staff.actor()),
             )
         session['property_id'] = property_id
         flash(f'Property "{name}" created successfully!', 'success')
@@ -1268,7 +1290,7 @@ def set_unit_status(unit_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('unit_status_changed', 'unit', unit_id,
-             f"Unit: {unit['unit_number']} | {old_status} → {new_status}", 'admin'),
+             f"Unit: {unit['unit_number']} | {old_status} → {new_status}", staff.actor()),
         )
     flash(f"Unit {unit['unit_number']} is now {_UNIT_STATUS_LABELS.get(new_status, new_status)}.", 'success')
     return redirect(url_for('manage_units'))
@@ -1317,7 +1339,7 @@ def edit_unit_field(unit_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('unit_field_edited', 'unit', unit_id,
-             f"Unit {unit['unit_number']} | {field}: {old_value} → {value}", 'admin'),
+             f"Unit {unit['unit_number']} | {field}: {old_value} → {value}", staff.actor()),
         )
         from src.platform.guardian import platform_log, raise_alert, notify_owner_change
         org_id = property_row['organization_id']
@@ -1364,7 +1386,7 @@ def edit_tenant_field(tenant_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('tenant_field_edited', 'tenant', tenant_id,
-             f"Tenant {tenant['name']} | {field}: {old_value} → {value}", 'admin'),
+             f"Tenant {tenant['name']} | {field}: {old_value} → {value}", staff.actor()),
         )
     return jsonify(ok=True, value=value)
 
@@ -1398,7 +1420,7 @@ def add_unit():
                 )
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                    ('unit_created', 'unit', unit_id, f'Unit {unit_number}, Rent: {monthly_rent}', 'admin'),
+                    ('unit_created', 'unit', unit_id, f'Unit {unit_number}, Rent: {monthly_rent}', staff.actor()),
                 )
             except sqlite3.IntegrityError:
                 flash(f'Unit {unit_number} already exists for this property.', 'error')
@@ -1492,13 +1514,13 @@ def add_tenant():
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('tenant_moved_in', 'tenant', tenant_id,
                  f'Tenant: {name} | Unit: {unit_number} | Move-in: {move_in_date}{deposit_str}',
-                 'admin'),
+                 staff.actor()),
             )
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('tenant_token_generated', 'tenant', tenant_id,
                  f'Tenant: {name} | Unit: {unit_number} | Portal link auto-generated at move-in',
-                 'admin'),
+                 staff.actor()),
             )
 
             # Welcome SMS if phone provided
@@ -1557,7 +1579,7 @@ def generate_tenant_token(tenant_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('tenant_token_generated', 'tenant', tenant_id,
-             f"Tenant: {tenant['name']} | Unit: {unit_number} | Portal link generated", 'admin'),
+             f"Tenant: {tenant['name']} | Unit: {unit_number} | Portal link generated", staff.actor()),
         )
     flash('Portal link generated. Copy the link from the tenant row.', 'success')
     return redirect(url_for('manage_tenants'))
@@ -1584,7 +1606,7 @@ def revoke_tenant_token(tenant_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('tenant_token_revoked', 'tenant', tenant_id,
-             f"Tenant: {tenant['name']} | Unit: {unit_number} | Portal link revoked", 'admin'),
+             f"Tenant: {tenant['name']} | Unit: {unit_number} | Portal link revoked", staff.actor()),
         )
     flash('Portal link revoked.', 'success')
     return redirect(url_for('manage_tenants'))
@@ -1671,7 +1693,7 @@ def tenant_quick_assign(tenant_id, txn_id):
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_manual_assigned', 'payment', payment_id,
              f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):,.0f} | "
-             f"Assigned to {tenant['name']} from statement view", 'admin')
+             f"Assigned to {tenant['name']} from statement view", staff.actor())
         )
 
     flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
@@ -1718,7 +1740,7 @@ def link_tenant_person(tenant_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('tenant_linked_person', 'tenant', tenant_id,
-             f"Tenant: {tenant['name']} | Phone: {phone_norm}", 'admin'),
+             f"Tenant: {tenant['name']} | Phone: {phone_norm}", staff.actor()),
         )
     flash(f"Domi Login linked for {tenant['name']}.", 'success')
     return redirect(url_for('manage_tenants'))
@@ -1840,14 +1862,14 @@ def move_out_tenant(unit_id):
                 ('tenant_moved_out', 'tenant', unit['tenant_id'],
                  f"Tenant: {unit['tenant_name']} | Unit: {unit['unit_number']} | "
                  f"Moved out {departure_date} | Arrears: KES {arrears:,.0f} | "
-                 f"Deposit: KES {deposit_held:,.0f}{debt_note}", 'admin'),
+                 f"Deposit: KES {deposit_held:,.0f}{debt_note}", staff.actor()),
             )
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('departure_record_created', 'tenant_departure', dep_id,
                  f"Tenant: {unit['tenant_name']} | Unit: {unit['unit_number']} | "
                  f"Balance: KES {current_balance:,.0f} | Deposit: KES {deposit_held:,.0f} | "
-                 f"Debt status: {debt_status}", 'admin'),
+                 f"Debt status: {debt_status}", staff.actor()),
             )
 
             platform_log(conn, 'tenant_moved_out', 'tenant', unit['tenant_id'],
@@ -1978,7 +2000,7 @@ def create_owner():
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('owner_created', 'owner', owner_id,
-             f"Owner: {name}" + (f" | Activation link generated for {email}" if activation_token else ""), 'admin'),
+             f"Owner: {name}" + (f" | Activation link generated for {email}" if activation_token else ""), staff.actor()),
         )
         from src.platform.guardian import platform_log, raise_alert
         _org_id = session.get('org_id')
@@ -2049,7 +2071,7 @@ def edit_owner(owner_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('owner_edited', 'owner', owner_id,
-             f"Name: {name} | Phone: {new_phone or '—'}", 'admin'),
+             f"Name: {name} | Phone: {new_phone or '—'}", staff.actor()),
         )
         _org_id = session.get('org_id')
         platform_log(conn, 'owner_phone_changed', 'owner', owner_id,
@@ -2079,7 +2101,7 @@ def generate_owner_token(owner_id):
         conn.execute("UPDATE owners SET access_token = ? WHERE id = ?", (token, owner_id))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('owner_token_generated', 'owner', owner_id, f"Owner: {owner['name']} | New portal link", 'admin'),
+            ('owner_token_generated', 'owner', owner_id, f"Owner: {owner['name']} | New portal link", staff.actor()),
         )
     flash(f"New access link generated for {owner['name']}.", 'success')
     return redirect(url_for('manage_owners'))
@@ -2141,7 +2163,7 @@ def set_owner_password(owner_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('owner_password_set', 'owner', owner_id, f"Owner: {owner['name']} | Initial portal password set by admin", 'admin'),
+            ('owner_password_set', 'owner', owner_id, f"Owner: {owner['name']} | Initial portal password set by admin", staff.actor()),
         )
         from src.platform.guardian import platform_log
         platform_log(conn, 'owner_password_set', 'owner', owner_id,
@@ -2182,7 +2204,7 @@ def assign_property_to_owner(owner_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('property_assigned', 'owner', owner_id,
-             f"Property '{prop['name']}' assigned to {owner['name']} (primary={is_primary})", 'admin'),
+             f"Property '{prop['name']}' assigned to {owner['name']} (primary={is_primary})", staff.actor()),
         )
         from src.platform.guardian import platform_log, raise_alert
         from src.messaging.delivery import send_sms
@@ -2243,7 +2265,7 @@ def delete_owner(owner_id):
         conn.execute("DELETE FROM owners WHERE id = ?", (owner_id,))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('owner_deleted', 'owner', owner_id, f"Owner: {owner['name']} | Deleted", 'admin'),
+            ('owner_deleted', 'owner', owner_id, f"Owner: {owner['name']} | Deleted", staff.actor()),
         )
     flash(f"Owner '{owner['name']}' deleted. Their properties are now unassigned.", 'success')
     return redirect(url_for('manage_owners'))
@@ -2287,7 +2309,7 @@ def remove_property_from_owner(owner_id, property_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('property_unassigned', 'owner', owner_id,
-             f"Property '{prop_name}' removed from owner '{owner_name}'. Reason: {reason}", 'admin'),
+             f"Property '{prop_name}' removed from owner '{owner_name}'. Reason: {reason}", staff.actor()),
         )
         from src.platform.guardian import platform_log, raise_alert
         from src.messaging.delivery import send_sms
@@ -2366,7 +2388,7 @@ def create_caretaker():
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('caretaker_created', 'caretaker', caretaker_id, f"Caretaker: {name} | Property: {prop['name']}", 'admin'),
+            ('caretaker_created', 'caretaker', caretaker_id, f"Caretaker: {name} | Property: {prop['name']}", staff.actor()),
         )
     flash(f"Caretaker '{name}' created.", 'success')
     return redirect(url_for('manage_caretakers'))
@@ -2391,7 +2413,7 @@ def set_caretaker_password(caretaker_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('caretaker_password_set', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Password updated", 'admin'),
+            ('caretaker_password_set', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Password updated", staff.actor()),
         )
     flash(f"Password updated for {c['name']}.", 'success')
     return redirect(url_for('manage_caretakers'))
@@ -2418,7 +2440,7 @@ def edit_caretaker(caretaker_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('caretaker_updated', 'caretaker', caretaker_id, f"Caretaker: {name} | Updated", 'admin'),
+            ('caretaker_updated', 'caretaker', caretaker_id, f"Caretaker: {name} | Updated", staff.actor()),
         )
     flash(f"Caretaker '{name}' updated.", 'success')
     return redirect(url_for('manage_caretakers'))
@@ -2435,7 +2457,7 @@ def delete_caretaker(caretaker_id):
         conn.execute("DELETE FROM caretakers WHERE id = ?", (caretaker_id,))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('caretaker_deleted', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Deleted", 'admin'),
+            ('caretaker_deleted', 'caretaker', caretaker_id, f"Caretaker: {c['name']} | Deleted", staff.actor()),
         )
     flash(f"Caretaker '{c['name']}' deleted.", 'success')
     return redirect(url_for('manage_caretakers'))
@@ -2461,7 +2483,7 @@ def update_rent_due_day():
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('rent_due_day_updated', 'property', property_row['id'],
-             f"rent_due_day set to {day}", 'admin'),
+             f"rent_due_day set to {day}", staff.actor()),
         )
     return redirect(url_for('generate_charges'))
 
@@ -2523,7 +2545,7 @@ def report_payment():
             amt_str = f'{amount:.2f}' if amount is not None else '-'
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('claim_created', 'claim', claim_id, f'Ref: {reference} | Unit: {unit_number} | Amount: {amt_str}', 'admin'),
+                ('claim_created', 'claim', claim_id, f'Ref: {reference} | Unit: {unit_number} | Amount: {amt_str}', staff.actor()),
             )
             flash(f'Payment claim recorded! Reference: {reference}', 'success')
             return redirect(url_for('dashboard'))
@@ -2738,7 +2760,7 @@ def upload_statement():
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                     ('statement_uploaded', 'statement', statement_id,
-                     f'File: {filename} | Format: {_bank_label(bank_format)} | {len(transactions)} txns | {paybill_count} rent | {len(parse_error_txns)} parse errors', 'admin'),
+                     f'File: {filename} | Format: {_bank_label(bank_format)} | {len(transactions)} txns | {paybill_count} rent | {len(parse_error_txns)} parse errors', staff.actor()),
                 )
 
                 # Detect frozen reports whose period overlaps with this statement's transactions
@@ -2932,7 +2954,7 @@ def reparse_statement(statement_id):
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('statement_reparsed', 'statement', statement_id,
-                 f'Format: {_bank_label(bank_format)} | Inserted: {inserted} | Skipped: {skipped} | Paybill: {paybill_count} | Parse errors: {len(parse_error_txns)}', 'admin'),
+                 f'Format: {_bank_label(bank_format)} | Inserted: {inserted} | Skipped: {skipped} | Paybill: {paybill_count} | Parse errors: {len(parse_error_txns)}', staff.actor()),
             )
 
         msg = f'Re-parsed ({_bank_label(bank_format)}): {inserted} transactions updated, {skipped} kept.'
@@ -3044,7 +3066,7 @@ def verify_payments(statement_id):
             details = f'Ref: {ref} | Amount: KES {amount_val:.2f} | Unit: {unit_number} | Tenant: {tenant_name}'
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('payment_verified', 'payment', payment_id, details, 'admin'),
+                ('payment_verified', 'payment', payment_id, details, staff.actor()),
             )
             # Amount mismatch — verify at bank amount (truth) but alert platform + admin + caretaker
             if claim['claimed_amount'] is not None and abs(float(bank_txn['amount']) - float(claim['claimed_amount'])) > 1:
@@ -3417,7 +3439,7 @@ def admin_clear_flag(claim_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('claim_flag_cleared', 'claim', claim_id,
-             f"Ref: {claim['mpesa_ref']} | Admin note: {note}", 'admin')
+             f"Ref: {claim['mpesa_ref']} | Admin note: {note}", staff.actor())
         )
 
         from src.platform.guardian import platform_log
@@ -3450,7 +3472,7 @@ def admin_delete_claim(claim_id):
             ('claim_deleted', 'claim', claim_id,
              f"Ref: {claim['mpesa_ref']} | Unit: {claim['unit_id']} | "
              f"Amount: {claim['claimed_amount']} | Status at deletion: {claim['status']} | "
-             f"Admin note: {note}", 'admin')
+             f"Admin note: {note}", staff.actor())
         )
 
         from src.platform.guardian import platform_log
@@ -3645,7 +3667,7 @@ def statement_auto_assign(statement_id, txn_id):
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_auto_hint_assigned', 'payment', payment_id,
              f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):.2f} | Unit: {unit['unit_number']} | Hint: {unit_hint} | Statement: {statement_id}",
-             'admin'),
+             staff.actor()),
         )
         try:
             _tenant = conn.execute(
@@ -3716,7 +3738,7 @@ def statement_assign_payment(statement_id, txn_id):
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_manual_assigned', 'payment', payment_id,
              f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):.2f} | Unit: {unit_number} | Reason: {reason} | Statement: {statement_id}",
-             'admin'),
+             staff.actor()),
         )
         try:
             _tenant = conn.execute(
@@ -3774,7 +3796,7 @@ def statement_correct_payment(statement_id, payment_id):
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_corrected', 'payment', payment_id,
              f"Unassigned | KES {old_amount:.2f} | Was: Unit {old_unit} | Reason: {reason} | Statement: {statement_id}",
-             'admin'),
+             staff.actor()),
         )
         from src.platform.guardian import platform_log as _plog
         _plog(conn, 'payment_corrected', 'payment', payment_id,
@@ -3817,7 +3839,7 @@ def statement_correct_payment(statement_id, payment_id):
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('payment_manual_assigned', 'payment', new_payment_id,
                  f"Correction reassign | Ref: {txn['mpesa_ref'] or '-'} | KES {old_amount:.2f} | From: Unit {old_unit} → Unit {new_unit_number} | Reason: {reason} | Statement: {statement_id}",
-                 'admin'),
+                 staff.actor()),
             )
 
     if new_unit_number:
@@ -3852,7 +3874,7 @@ def ignore_transaction(txn_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
-            ('txn_ignored', 'bank_transaction', txn_id, reason or 'No reason given', 'admin')
+            ('txn_ignored', 'bank_transaction', txn_id, reason or 'No reason given', staff.actor())
         )
     flash('Transaction ignored. It will not count toward unmatched credits.', 'info')
     return redirect(next_url)
@@ -3882,7 +3904,7 @@ def unignore_transaction(txn_id):
         )
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?,?,?,?,?)",
-            ('txn_unignored', 'bank_transaction', txn_id, 'Restored to unmatched pool', 'admin')
+            ('txn_unignored', 'bank_transaction', txn_id, 'Restored to unmatched pool', staff.actor())
         )
     flash('Transaction restored to unmatched pool.', 'success')
     return redirect(next_url)
@@ -3947,7 +3969,7 @@ def auto_assign_payment(txn_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_auto_hint_assigned', 'payment', payment_id,
-             f"Ref: {txn['mpesa_ref'] or '-'} | KES {amount:.2f} | Unit: {unit_number} | Hint: {unit_hint}", 'admin'),
+             f"Ref: {txn['mpesa_ref'] or '-'} | KES {amount:.2f} | Unit: {unit_number} | Hint: {unit_hint}", staff.actor()),
         )
 
         try:
@@ -4017,7 +4039,7 @@ def delete_payment(payment_id):
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('payment_deleted', 'payment', payment_id,
-             f"Deleted | KES {amount:.2f} | Unit: {unit_number} | Type: {payment['assignment_type'] or '-'}", 'admin'),
+             f"Deleted | KES {amount:.2f} | Unit: {unit_number} | Type: {payment['assignment_type'] or '-'}", staff.actor()),
         )
         from src.platform.guardian import platform_log
         platform_log(conn, 'payment_reversed', 'payment', payment_id,
@@ -4066,7 +4088,7 @@ def payment_add_note(payment_id):
         detail = f"Ref: {payment['mpesa_ref'] or '-'} | Note: {note}" if note else f"Ref: {payment['mpesa_ref'] or '-'} | Note cleared"
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('payment_note_updated', 'payment', payment_id, detail, 'admin')
+            ('payment_note_updated', 'payment', payment_id, detail, staff.actor())
         )
         from src.platform.guardian import platform_log
         platform_log(conn, 'admin_payment_note', 'payment', payment_id,
@@ -4132,7 +4154,7 @@ def assign_payment(txn_id):
             details = f'Ref: {mpesa_ref} | Amount: KES {txn["amount"]:.2f} | Unit: {unit_number} | Reason: {reason}'
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('payment_manual_assigned', 'payment', payment_id, details, 'admin'),
+                ('payment_manual_assigned', 'payment', payment_id, details, staff.actor()),
             )
             try:
                 _tenant = conn.execute(
@@ -4274,7 +4296,7 @@ def assign_group():
             details = f"Ref: {mpesa_ref} | Amount: KES {txn['amount']:.2f} | Unit: {unit_number} | Reason: {reason}"
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('payment_manual_assigned', 'payment', payment_id, details, 'admin'),
+                ('payment_manual_assigned', 'payment', payment_id, details, staff.actor()),
             )
 
             try:
@@ -4313,7 +4335,7 @@ def assign_group():
             )
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-                ('group_assign', 'payment_group', unit_id, summary_details, 'admin'),
+                ('group_assign', 'payment_group', unit_id, summary_details, staff.actor()),
             )
             flash(f'Assigned {assigned_count} payments (KES {total_amount:.2f}) to unit {unit_number}.', 'success')
         else:
@@ -4377,7 +4399,7 @@ def generate_charges():
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('charges_generated', 'charge', period,
-                 f'Period: {period} | {rent_created} rent + {svc_created} service charges created', 'admin'),
+                 f'Period: {period} | {rent_created} rent + {svc_created} service charges created', staff.actor()),
             )
             try:
                 from src.messaging.owner_notify import notify_property_owners
@@ -4416,7 +4438,7 @@ def water_set_rate():
         conn.execute("UPDATE properties SET water_rate = ? WHERE id = ?", (rate, prop['id']))
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
-            ('water_rate_updated', 'property', prop['id'], f'Water rate set to KES {rate:,.0f}/unit', 'admin')
+            ('water_rate_updated', 'property', prop['id'], f'Water rate set to KES {rate:,.0f}/unit', staff.actor())
         )
     flash(f'Water rate updated to KES {rate:,.0f}/unit.', 'success')
     return redirect(url_for('water_uploads_list'))
@@ -4589,7 +4611,7 @@ def upload_water_charges():
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('water_charges_uploaded', 'charge', period,
-                 f'Period: {period} | {created} water charges created | {skipped} skipped (existing) | Total: KES {result["total_water_charges"]:,.0f}', 'admin')
+                 f'Period: {period} | {created} water charges created | {skipped} skipped (existing) | Total: KES {result["total_water_charges"]:,.0f}', staff.actor())
             )
 
             msg = f'Uploaded {created} water charges for {period}.'
@@ -4772,7 +4794,7 @@ def export_current_state():
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('export_generated', 'export', 'current-state',
-             f'Export: Current State | Property: {property_row["name"]}', 'admin')
+             f'Export: Current State | Property: {property_row["name"]}', staff.actor())
         )
 
     output = io.BytesIO()
@@ -4841,7 +4863,7 @@ def export_activity():
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('export_generated', 'export', 'activity',
-             f'Export: Activity Log | Period: {date_from} to {date_to} | {len(logs)} entries', 'admin')
+             f'Export: Activity Log | Period: {date_from} to {date_to} | {len(logs)} entries', staff.actor())
         )
 
     output = io.BytesIO()
@@ -5002,7 +5024,7 @@ def export_payments():
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
             ('export_generated', 'export', 'payments',
-             f'Export: Payment Verification | Period: {date_from} to {date_to} | {len(payments)} payments', 'admin')
+             f'Export: Payment Verification | Period: {date_from} to {date_to} | {len(payments)} payments', staff.actor())
         )
 
     output = io.BytesIO()
@@ -5360,7 +5382,7 @@ def onboard_preview():
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                     ('property_onboarded', 'property', property_id,
-                     f"Onboarded {data['property_name']}: {units_created} units, {tenants_created} tenants, {charges_created} arrears charges, total arrears: {data['total_arrears']}", 'admin')
+                     f"Onboarded {data['property_name']}: {units_created} units, {tenants_created} tenants, {charges_created} arrears charges, total arrears: {data['total_arrears']}", staff.actor())
                 )
 
             session['property_id'] = property_id

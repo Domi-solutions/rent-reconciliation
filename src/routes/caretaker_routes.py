@@ -58,7 +58,7 @@ def require_caretaker_auth():
     if caretaker_id:
         with get_connection() as conn:
             still_exists = conn.execute(
-                "SELECT 1 FROM caretakers WHERE id = ?", (caretaker_id,)
+                "SELECT property_id FROM caretakers WHERE id = ?", (caretaker_id,)
             ).fetchone()
         if not still_exists:
             # Account was deleted — clear session and force re-login
@@ -66,6 +66,11 @@ def require_caretaker_auth():
             session.pop('caretaker_name', None)
             session.pop('caretaker_property_id', None)
             return redirect(url_for('caretaker.login'))
+        # A caretaker works one property: their account's, read from the DB (not the
+        # session), so moving them to another property takes effect at once.
+        url_property = (request.view_args or {}).get('property_id')
+        if url_property and url_property != still_exists['property_id']:
+            abort(403)
         return None
 
     # Legacy shared-password mode
@@ -125,8 +130,13 @@ def logout():
 
 @caretaker_bp.route('/')
 def index():
-    """Auto-select property if only one, else show picker."""
+    """A named caretaker goes straight to their property; otherwise auto-select if only one, else a picker."""
     with get_connection() as conn:
+        if session.get('caretaker_id'):
+            own = conn.execute("SELECT property_id FROM caretakers WHERE id = ?",
+                               (session['caretaker_id'],)).fetchone()
+            if own:
+                return redirect(url_for('caretaker.dashboard', property_id=own['property_id']))
         properties = conn.execute(
             "SELECT id, name FROM properties WHERE status = 'active' ORDER BY name"
         ).fetchall()
@@ -1269,7 +1279,8 @@ def resolve_issue(property_id, issue_id):
             done_by = session.get('caretaker_name', 'Caretaker')
             threads.add_message(conn, conv['id'], 'system', done_by,
                                 f"Marked as fixed by the caretaker ({done_by})."
-                                + (f"\n\nNote: {resolved_note}" if resolved_note else ""))
+                                + (f"\n\nNote: {resolved_note}" if resolved_note else ""),
+                                account_id=session.get('caretaker_id'))
             threads.close(conn, conv['id'], done_by)
             full, _ = threads.thread(conn, conv['id'])
             threads.notify_tenant_of_reply(full, os.environ.get('APP_BASE_URL') or request.host_url,
@@ -1301,18 +1312,10 @@ def resolve_issue(property_id, issue_id):
     return redirect(url_for('caretaker.issues', property_id=property_id))
 
 
-def _own_property_only(property_id):
-    """A named caretaker sees only the property their account belongs to."""
-    own = session.get('caretaker_property_id')
-    if own and own != property_id:
-        abort(403)
-
-
 @caretaker_bp.route('/<property_id>/repairs/<conv_id>', methods=['GET', 'POST'])
 def repair_thread(property_id, conv_id):
     """A tenant's repair report and the conversation about it. Repairs only —
     questions about money stay between the tenant and management."""
-    _own_property_only(property_id)
     with get_connection() as conn:
         prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
         conv, msgs = threads.thread(conn, conv_id)
@@ -1322,7 +1325,8 @@ def repair_thread(property_id, conv_id):
             body = (request.form.get('body') or '').strip()
             if body:
                 name = session.get('caretaker_name', 'Caretaker')
-                threads.add_message(conn, conv_id, 'caretaker', name, body, request.files.getlist('photos'))
+                threads.add_message(conn, conv_id, 'caretaker', name, body, request.files.getlist('photos'),
+                                    account_id=session.get('caretaker_id'))
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                     ('conversation_reply', 'conversation', conv_id,
@@ -1336,7 +1340,6 @@ def repair_thread(property_id, conv_id):
 
 @caretaker_bp.route('/<property_id>/repairs/photo/<photo_id>')
 def repair_photo(property_id, photo_id):
-    _own_property_only(property_id)
     with get_connection() as conn:
         row = conn.execute("""
             SELECT ph.file_name FROM conversation_photos ph JOIN conversations c ON c.id = ph.conversation_id

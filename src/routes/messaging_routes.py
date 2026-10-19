@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import calendar
 
 from flask import Blueprint, abort, render_template, request, redirect, url_for, flash, session, send_from_directory
+from src.utils import staff
 from src.database.db import get_connection, generate_id
 from src.messaging import threads
 
@@ -196,7 +197,7 @@ def thread(tenant_id):
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)"
                     " VALUES (?, ?, ?, ?, ?)",
                     ('message_sent', 'tenant', tenant_id,
-                     f"Subject: {subject[:50]} | Channel: {channel}", 'admin'),
+                     f"Subject: {subject[:50]} | Channel: {channel}", staff.actor()),
                 )
             return redirect(url_for('messaging.thread', tenant_id=tenant_id))
 
@@ -322,7 +323,7 @@ def broadcast():
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('broadcast_sent', 'message', batch_id,
-                 f"Subject: {subject[:50]} | Recipients: {len(recipient_ids)} | Channel: {delivery_channel}", 'admin'),
+                 f"Subject: {subject[:50]} | Recipients: {len(recipient_ids)} | Channel: {delivery_channel}", staff.actor()),
             )
 
             try:
@@ -591,13 +592,14 @@ def inbox_thread(conv_id):
         if request.method == 'POST':
             body = (request.form.get('body') or '').strip()
             if body:
-                threads.add_message(conn, conv_id, 'admin', _org_name(conn), body, request.files.getlist('photos'))
+                threads.add_message(conn, conv_id, 'admin', _org_name(conn), body, request.files.getlist('photos'),
+                                    account_id=session.get('admin_user_id'))
                 if request.form.get('close'):
-                    threads.close(conn, conv_id, _org_name(conn))
+                    threads.close(conn, conv_id, staff.actor())
                 conn.execute(
                     "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                     ('conversation_reply', 'conversation', conv_id,
-                     f"Unit {conv['unit_number']} | {conv['subject'][:60]}", 'admin'))
+                     f"Unit {conv['unit_number']} | {conv['subject'][:60]}", staff.actor()))
                 threads.notify_tenant_of_reply(conv, os.environ.get('APP_BASE_URL') or request.host_url)
             return redirect(url_for('messaging.inbox_thread', conv_id=conv_id))
         threads.mark_read(conn, conv_id, 'staff')
@@ -612,8 +614,9 @@ def inbox_close(conv_id):
         prop = get_current_property(conn)
         conv, _ = threads.thread(conn, conv_id)
         if prop and conv and conv['property_id'] == prop['id']:
-            threads.add_message(conn, conv_id, 'system', None, 'Conversation closed by management.')
-            threads.close(conn, conv_id, _org_name(conn))
+            threads.add_message(conn, conv_id, 'system', None, 'Conversation closed by management.',
+                                account_id=session.get('admin_user_id'))
+            threads.close(conn, conv_id, staff.actor())
     return redirect(url_for('messaging.inbox'))
 
 
