@@ -148,6 +148,7 @@
   </div>
 </div>
 
+{% if ct_money_tools %}
 {# ── Quick Verify ── #}
 <div class="ct-verify-box ct-no-print">
   <div style="font-size:13px; font-weight:700; color:var(--ink); margin-bottom:6px;">Verify a payment</div>
@@ -238,6 +239,7 @@
   }
 })();
 </script>
+{% endif %}
 
 {# ── Open claims ── #}
 {% if open_claims %}

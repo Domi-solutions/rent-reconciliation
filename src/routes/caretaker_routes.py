@@ -17,13 +17,25 @@ from src.utils.metrics import get_property_occupancy, get_months_behind
 
 caretaker_bp = Blueprint('caretaker', __name__, url_prefix='/caretaker')
 
+# Pages that move money or speak to tenants in the property's name. The caretaker's
+# job is following up arrears, water readings and repairs; matching money to
+# tenants and messaging them belongs to management. CARETAKER_MONEY_TOOLS=1 turns
+# these back on.
+_MONEY_TOOLS = {'caretaker.unassigned', 'caretaker.log_payment', 'caretaker.tenant_quick_verify',
+                'caretaker.tenant_quick_assign', 'caretaker.messages', 'caretaker.send_message'}
+
+
+def money_tools_on():
+    return os.environ.get('CARETAKER_MONEY_TOOLS') == '1'
+
 
 @caretaker_bp.context_processor
 def inject_caretaker_counts():
     """Inject flagged claims count and pending tenant claim count into all caretaker templates."""
     property_id = request.view_args.get('property_id') if request.view_args else None
     if not property_id:
-        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0,
+                'ct_money_tools': money_tools_on()}
     try:
         with get_connection() as conn:
             repairs_waiting = threads.awaiting_count(conn, property_id, caretaker=True)
@@ -36,9 +48,10 @@ def inject_caretaker_counts():
                 (property_id,)
             ).fetchone()[0]
         return {'ct_flagged_count': flagged, 'ct_tenant_pending_count': tenant_pending,
-                'ct_repairs_waiting': repairs_waiting}
+                'ct_repairs_waiting': repairs_waiting, 'ct_money_tools': money_tools_on()}
     except Exception:
-        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0}
+        return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0,
+                'ct_money_tools': money_tools_on()}
 
 
 def _has_db_caretakers():
@@ -52,6 +65,10 @@ def require_caretaker_auth():
     exempt = ('caretaker.login', 'caretaker.logout')
     if request.endpoint in exempt:
         return None
+    if request.endpoint in _MONEY_TOOLS and not money_tools_on():
+        flash('Payments are matched by management. Tenants add their own M-Pesa code on their Pay page.', 'error')
+        pid = (request.view_args or {}).get('property_id')
+        return redirect(url_for('caretaker.dashboard', property_id=pid) if pid else url_for('caretaker.index'))
 
     # DB-based auth: verify caretaker_id still exists in DB on every request.
     # This means deleting an account immediately revokes access even for active sessions.
@@ -280,6 +297,9 @@ def dashboard(property_id):
         unassigned = _unassigned_credits(conn, property_id)
         unassigned_total = sum(float(u['amount'] or 0) for u in unassigned)
         assignable_tenants = _assignable_tenants(conn, property_id)
+        this_month = _date.today().strftime('%Y-%m')
+        water_done = conn.execute("SELECT submitted_at FROM water_uploads WHERE property_id = ? AND reading_period = ?",
+                                  (property_id, this_month)).fetchone()
 
     return render_template('caretaker/dashboard.html',
                            unassigned=unassigned[:5],
@@ -296,6 +316,8 @@ def dashboard(property_id):
                            days_to_due=days_to_due,
                            recent_reminder=recent_reminder,
                            mismatches=mismatches,
+                           water_done=water_done,
+                           water_month=_date.today().strftime('%B'),
                            active_tab='overview')
 
 

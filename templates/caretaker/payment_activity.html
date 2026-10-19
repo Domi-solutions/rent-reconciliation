@@ -21,14 +21,16 @@
     <div style="font-size: 20px; font-weight: 700; color: var(--ink);">Payments</div>
     <div style="font-size: 13px; color: var(--ink-3);">All payment claims — logged by you or self-reported by tenants.</div>
   </div>
+  {% if ct_money_tools %}
   <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}"
      class="btn btn-sm btn-primary">+ Log Payment</a>
+  {% endif %}
 </div>
 
 {% if not claims %}
 <div style="text-align: center; padding: 48px 0; color: var(--ink-3);">
   <div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">No payments logged yet</div>
-  <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" class="btn btn-sm btn-primary mt-2">+ Log Payment</a>
+  {% if ct_money_tools %}<a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" class="btn btn-sm btn-primary mt-2">+ Log Payment</a>{% endif %}
 </div>
 {% else %}
 
