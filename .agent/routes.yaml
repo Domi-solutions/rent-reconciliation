@@ -48,6 +48,9 @@ blueprints:
       - "GET/POST /account/name — enter/change your name (unique per org); asked at first sign-in"
       - "GET /settings — your own account: name, sign-in email, password; POST /settings/email, /settings/password act on admin_users"
       - "GET /team — the organisation's admin accounts (blueprint team_bp, src/routes/team_routes.py)"
+      - "GET /mpesa — M-Pesa payments + where tenants pay (blueprint mpesa_admin_bp, src/routes/mpesa_admin_routes.py); POST /mpesa/<txn_id>/assign names the tenant for an unmatched paybill payment"
+      - "POST /mpesa/instructions — set properties.pay_paybill / pay_account / pay_account_name; a change raises a critical platform alert, writes the shadow log and SMSes owners"
+      - "GET/POST /messages/invite — SMS tenants their sign-in link (preview per tenant, part count, who has signed up)"
       - "POST /team/add | /team/<id>/deactivate | /team/<id>/reactivate | /team/<id>/password | /team/<id>/role — lead admin (or master key / platform) only; never your own switch-off; an org keeps one active lead; each writes audit_log + platform_shadow_log"
       - "GET /tools — monthly workflow (tools_index); period-aware (auto-detects earliest incomplete YYYY-MM period; accepts ?period= override; prev/next nav); each step scoped to selected period; step 5 checks landlord_reports not audit_log"
       - "POST /payments/ignore/<txn_id> — mark bank_transaction ignored=1; excluded from workflow unassigned count; row preserved; accepts optional reason form field"
@@ -201,7 +204,9 @@ blueprints:
     status: live
     exempt_from_admin_auth: true
     key_routes:
-      - "POST /inbound/payment/mpesa — Daraja C2B callback (write-and-return-200)"
+      - "POST /inbound/payment/mpesa?t=<token> — Daraja STK callback: recorded against its request, booked off-thread after an STK query (src/payments/mpesa.py)"
+      - "POST /inbound/payment/c2b/validation?t=<token> — accept known account numbers (tenant short code or unit), reject others (C2B00012)"
+      - "POST /inbound/payment/c2b/confirmation?t=<token> — paybill payment recorded and booked off-thread; unknown account → 'unmatched'"
       - "POST /inbound/payment/pesapal — Pesapal IPN (write-and-return-200)"
 
   platform:

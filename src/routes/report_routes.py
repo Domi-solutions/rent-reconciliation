@@ -163,7 +163,6 @@ def generate_report():
 
                 try:
                     from src.messaging.owner_notify import notify_property_owners
-                    from flask import request
                     _base = request.host_url.rstrip('/')
                     _owner_msg = (
                         f"Report generated: {prop['name']} ({period_start} to {period_end}).\n"

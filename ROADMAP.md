@@ -574,8 +574,14 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [ ] Admin attention-first panel — the inbox + who needs follow-up on one screen; tenants on track hidden
 - [x] Per-person admin accounts — `admin_users`, `/team` (lead adds/switches off; never deleted), name asked at first sign-in; activity log and conversation replies record the person while tenants see the organisation (`migrate_add_admin_users`, `src/utils/staff.py`)
 - [x] Caretaker locked to their account's property (checked against the DB on every request)
-- [ ] Caretaker page cut to: who's behind + water entry; statements held until water entered
-- [ ] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation (no 60s wait); Till support
+- [x] Caretaker page cut to arrears, water and repairs; money tools off (`CARETAKER_MONEY_TOOLS`); dashboard flags this month's water readings when missing
+- [ ] Statements held until water entered (hard gate in the monthly workflow)
+- [x] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation; callback token + STK query + amount check + one-receipt-once (`src/payments/mpesa.py`)
+- [x] Tenant Pay page: the property's one paybill/account, guarded (owner SMS + platform alert on change)
+- [x] SMS provider swappable (Africa's Talking / TextSMS), sender name passed, GSM-safe text; tenant sign-in invitations
+- [x] First-time guides on every tenant/caretaker/admin page (English + Kiswahili)
+- [ ] Till (Buy Goods) support for STK, if the property gets a till instead of a paybill
+- [ ] Own paybill + Daraja go-live; sender ID (MOWIN-APTS) — owner applications
 - [ ] Go live on own shortcode (Daraja Go-Live) → final "pay only here" SMS
 - [ ] **DECIDE BEFORE TENANT LINKS GO OUT (owners' meeting):** when is a month's rent due — in advance (April rent due 5 April) or in arrears (April rent due 5 May, current behaviour of generate_charges)? And when is water due (it is read after the month, so it is billed the month after)? Every invoice shows these due dates.
 

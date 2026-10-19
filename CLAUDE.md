@@ -85,10 +85,14 @@ scripts/tenant_ledger_report.py      # run against a prod copy before deploy; --
 src/reports/payment_lookup.py        # find_payer(), month_coverage() — admin page /reports/lookup (sidebar "Lookup") + the script below
 scripts/payment_coverage_check.py    # read-only: find a payer by name/phone; payments + statements per month per property
 src/reports/landlord_report.py # generate_report(), enrich_report_data()
-src/messaging/delivery.py      # send_sms(), send_sms_async() — logs to platform_outbox via _log_sms()
+src/messaging/delivery.py      # send_sms(), send_sms_async(); SMS_PROVIDER africastalking|textsms; SMS_SENDER_ID; plain_sms()/sms_parts() keep text GSM-7 (Unicode costs 2-3x)
 src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
 src/messaging/owner_notify.py  # notify_property_owners()
-src/payments/daraja.py         # STK Push (initiate), B2C (disburse)
+src/payments/daraja.py         # STK Push (initiate), stk_query (confirm), configured()
+src/payments/mpesa.py          # M-Pesa into the property paybill: record STK/C2B callbacks, confirm, de-duplicate, book(), assign_unmatched()
+src/routes/mpesa_admin_routes.py # /mpesa — payments into the paybill + where tenants pay
+src/utils/guides.py            # per-page "what is this page" text (EN + Kiswahili for tenants/caretaker), keyed by endpoint
+scripts/register_c2b_urls.py   # once after Daraja go-live: register paybill C2B URLs (with token)
 src/payments/pesapal.py        # card checkout
 src/payments/disbursements.py  # _get_confirmed_payout_owner() — hard blocks unsafe disbursements
 src/routes/viewer_routes.py, tenant_routes.py, messaging_routes.py, report_routes.py
@@ -274,7 +278,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_admin_users`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_instructions`.
 
 ---
 
@@ -311,6 +315,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - `sent_by` attribution: `session.get('caretaker_name', 'Caretaker')` for owner inbox
 - Log Payment: parses SMS via `sms_parser.parse_mpesa_message`, notifies owners on submission
 - Paths starting with `/caretaker` exempt from admin auth
+- Money tools are off for caretakers (`_MONEY_TOOLS`: Unassigned, Log Payment, quick-verify/assign, Messages) — they redirect to the dashboard. `CARETAKER_MONEY_TOOLS=1` re-enables. The dashboard leads with this month's water readings and repairs.
 - Repairs: tenant-reported issues on the Issues tab link to their conversation (`/caretaker/<pid>/repairs/<conv_id>`); the Issues tab badge counts repairs awaiting a reply. The caretaker never sees `money`/`other` conversations. Marking a linked issue fixed adds a system message to the conversation and closes it (no separate notice).
 
 ### Caretaker Management (/caretakers)
@@ -325,6 +330,8 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - `_get_tenant_by_token(conn, token)` in `tenant_routes.py` → (tenant, unit, property) or None
 - Documents: `/tenant/<token>/statement` (every charge + payment, running balance, newest first), `/invoice/<YYYY-MM>` (brought forward + month's charges − month's payments), `/receipt/<payment_id>` (amount, M-Pesa code, what it settled, account balance today). All printable (`window.print()`), all built from `get_tenant_statement` via `tenant_documents.py`. A receipt shows "balance today", never "balance after this payment" — charges fall due on their own dates, so a mid-ledger balance is ambiguous.
 - Overview shows the same bank-matched balance as the statement; reported-but-unmatched claims are shown beside it, never netted into it.
+- Every tenant/caretaker/admin page shows a guide box from `src/utils/guides.py` (keyed by endpoint; `?lang=sw` switches tenant/caretaker text to Kiswahili for the session). New page → add its guide there.
+- Pay page: payment instructions first; the STK "Pay" button only when `daraja.configured()`.
 
 ### Monthly Reports (/reports/*)
 - Always call `enrich_report_data()` before rendering — back-fills fields on old saved reports
@@ -366,6 +373,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 - Scope: current property only
 - Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed "Management" to the tenant (the replying person is stored in `conversation_messages.sender_account_id` and shown to admins only), logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
+- Sign-in invitations: `/messages/invite` — `messages.message_type='invite'`; signed up = `persons.pin_hash` set
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
 - `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications
 - Payment SMS wording: "payment confirmed" — never mention bank statements
@@ -419,6 +427,10 @@ Payment modules (`src/payments/`) never import from `src/agent/` or route files 
 - Owner sets `payout_mpesa` via portal OTP flow: OTP → SMS to submitted number (proves SIM ownership) → confirms → 48-hour hold
 - `_get_confirmed_payout_owner(conn, property_id)` enforces `payout_confirmed=1` AND `payout_active_at <= now()`; if no owner passes → `ValueError` + critical platform alert → disbursement blocked
 - On payout number change: SMS warning sent to previous number
+
+**M-Pesa rules (src/payments/mpesa.py):** never trust a callback alone. Callback URLs carry `?t=MPESA_CALLBACK_TOKEN` (production refuses all without it); an STK result is booked only if the paid amount equals the amount asked and Safaricom's STK query confirms it; one M-Pesa receipt is booked once (STK to a paybill also arrives as C2B). Paybill (C2B) account number = tenant short code or unit number; anything else is `unmatched` until an admin names the tenant at `/mpesa`. A tenant self-report of a receipt already booked creates no claim. Booking is instant (thread from the webhook); the 60 s worker is the safety net. Payments booked from M-Pesa have `payments.source='daraja'`, `assignment_reason` = receipt.
+
+**Where tenants pay:** `properties.pay_paybill/pay_account/pay_account_name`, shown on the tenant Pay page as the only rent account. A change is a fraud vector (redirects every tenant's rent): shadow log + critical platform alert + owner SMS.
 
 **FIFO transparency (required):** Confirmation SMS + portal must show allocation detail. "KES 10,000 confirmed — applied: KES 5,000 to Oct service charge, KES 5,000 to Nov rent." Data in `payment_allocations`.
 

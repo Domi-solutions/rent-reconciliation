@@ -84,11 +84,11 @@ jobs:
 
   process_payment_queue:
     status: live
-    function: src/agent/coordinator.py::process_payment_queue
+    function: src/agent/coordinator.py::process_payment_queue (delegates to src/payments/mpesa.py::book_pending)
     trigger: "interval, every 60 seconds"
-    owns: "Reads payment_transactions WHERE processing_status = 'pending'. Creates payment records, runs FIFO allocator, sends SMS confirmation."
-    description: "Background processor for Daraja and Pesapal payment callbacks."
-    note: "Includes deduplication check on external_reference before processing."
+    owns: "Books payment_transactions that are pending with a callback: confirms STK with Safaricom's query API, de-duplicates by M-Pesa receipt, creates the payment for the tenant, allocates, sends the SMS."
+    description: "Safety net — callbacks are normally booked at once on a background thread from the webhook. Also retries STK results Safaricom had not settled yet (up to 10 tries)."
+    note: "Statuses: pending → completed | failed | duplicate | unmatched (paybill account named nobody; an admin names the tenant at /mpesa)."
 
   disbursement_job:
     status: live

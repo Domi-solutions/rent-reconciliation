@@ -50,6 +50,9 @@ tables:
     columns:
       id: {type: TEXT, pk: true}
       name: {type: TEXT, required: true}
+      pay_paybill: {type: TEXT, note: "where tenants are told to pay (migrate_add_payment_instructions); changing it alerts the platform + SMSes owners"}
+      pay_account: {type: TEXT, note: "account number; {unit} is replaced with the tenant's unit"}
+      pay_account_name: {type: TEXT, note: "name M-Pesa shows before the PIN"}
       address: {type: TEXT}
       owner_name: {type: TEXT}
       owner_phone: {type: TEXT}
@@ -547,17 +550,23 @@ tables:
       property_id: {type: TEXT}
       unit_id: {type: TEXT, fk: units.id}
       tenant_id: {type: TEXT, fk: tenants.id}
-      source: {type: TEXT, required: true, values: [daraja, pesapal, manual]}
+      source: {type: TEXT, required: true, values: [daraja, c2b, pesapal, manual], note: "daraja = STK Push; c2b = paybill menu. Both book payments with payments.source='daraja'"}
       external_reference: {type: TEXT, unique: true, note: "checkout_request_id or Pesapal ref; deduplication key"}
       phone: {type: TEXT}
       amount: {type: REAL, required: true}
       currency: {type: TEXT, default: KES}
       raw_callback: {type: TEXT, note: "Full JSON blob from provider"}
       received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
-      processing_status: {type: TEXT, default: pending, values: [pending, completed, failed]}
+      processing_status: {type: TEXT, default: pending, values: [pending, completed, failed, duplicate, unmatched]}
       processed_at: {type: TIMESTAMP}
       error_detail: {type: TEXT}
       payment_id: {type: TEXT, fk: payments.id, note: "Set when processed successfully"}
+      mpesa_ref: {type: TEXT, note: "M-Pesa receipt; one receipt is booked once (migrate_add_mpesa_fields)"}
+      account_ref: {type: TEXT, note: "C2B BillRefNumber"}
+      paid_at: {type: TEXT}
+      callback_amount: {type: REAL, note: "what Safaricom says was paid; must equal amount for STK"}
+      attempts: {type: INTEGER, default: 0, note: "STK query retries"}
+      verified_via: {type: TEXT}
 
   disbursements:
     status: live
