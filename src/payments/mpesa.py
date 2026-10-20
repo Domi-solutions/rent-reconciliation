@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import threading
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 from src.database.db import allocate_payment, generate_id, get_connection
@@ -44,7 +45,8 @@ def callback_allowed(request):
     setting refuses everything rather than accepting anything."""
     expected = os.environ.get('MPESA_CALLBACK_TOKEN', '')
     if not expected:
-        return os.environ.get('DARAJA_ENV') != 'production'
+        return (os.environ.get('ENVIRONMENT') != 'production'
+                and os.environ.get('DARAJA_ENV') != 'production')
     given = request.args.get('t', '')
     if not hmac.compare_digest(given, expected):
         return False
@@ -225,11 +227,20 @@ def _confirm_with_safaricom(conn, txn):
     """'go' to book, 'wait' to ask again later, or 'stop' (failed)."""
     if txn['source'] != 'daraja':
         return 'go'                                         # C2B: the token-protected confirmation is the record
-    if txn['callback_amount'] is not None and round(float(txn['callback_amount'])) != round(float(txn['amount'])):
-        _fail(conn, txn['id'], f"amount mismatch: asked {txn['amount']:,.0f}, callback says {txn['callback_amount']:,.0f}")
+    try:
+        asked = Decimal(str(txn['amount']))
+        received = Decimal(str(txn['callback_amount']))
+        amounts_match = asked.is_finite() and received.is_finite() and asked > 0 and received == asked
+    except (InvalidOperation, TypeError, ValueError):
+        amounts_match = False
+    if not amounts_match:
+        _fail(conn, txn['id'], 'STK callback amount missing, invalid, or different from the request')
+        return 'stop'
+    if not txn['mpesa_ref']:
+        _fail(conn, txn['id'], 'STK callback has no M-Pesa receipt number')
         return 'stop'
     if not daraja.configured():
-        if os.environ.get('DARAJA_ENV') == 'production':
+        if os.environ.get('ENVIRONMENT') == 'production' or os.environ.get('DARAJA_ENV') == 'production':
             _fail(conn, txn['id'], 'Daraja not configured — cannot confirm with Safaricom')
             return 'stop'
         conn.execute("UPDATE payment_transactions SET verified_via = 'callback only (sandbox)' WHERE id = ?", (txn['id'],))
@@ -271,6 +282,16 @@ def book(txn_id, base_url=None):
         if decision != 'go':
             return None
 
+        try:
+            received_amount = Decimal(str(txn['callback_amount'] if txn['callback_amount'] is not None
+                                          else txn['amount']))
+            valid_amount = received_amount.is_finite() and received_amount > 0
+        except (InvalidOperation, TypeError, ValueError):
+            valid_amount = False
+        if not valid_amount:
+            _fail(conn, txn['id'], 'payment amount missing or invalid')
+            return None
+
         # One receipt, one payment — an STK payment can also arrive as a C2B confirmation.
         if txn['mpesa_ref']:
             dup = conn.execute("""
@@ -294,7 +315,7 @@ def book(txn_id, base_url=None):
             """, (txn['id'],))
             return None
 
-        amount = float(txn['callback_amount'] if txn['callback_amount'] is not None else txn['amount'])
+        amount = float(received_amount)
         paid_on = (txn['paid_at'] or datetime.utcnow().isoformat())[:10]
         payment_id = generate_id('PAY')
         conn.execute("""
@@ -314,11 +335,15 @@ def book(txn_id, base_url=None):
         if txn['mpesa_ref']:
             conn.execute("""
                 UPDATE payment_claims SET status = 'verified', verified_at = CURRENT_TIMESTAMP
-                WHERE mpesa_ref = ? AND status IN ('pending', 'flagged')
-            """, (txn['mpesa_ref'],))
-            conn.execute("UPDATE payments SET claim_id = (SELECT id FROM payment_claims WHERE mpesa_ref = ? LIMIT 1) "
-                         "WHERE id = ? AND EXISTS (SELECT 1 FROM payment_claims WHERE mpesa_ref = ?)",
-                         (txn['mpesa_ref'], payment_id, txn['mpesa_ref']))
+                WHERE property_id = ? AND tenant_id = ? AND mpesa_ref = ?
+                  AND status IN ('pending', 'flagged')
+            """, (txn['property_id'], tenant['id'], txn['mpesa_ref']))
+            claim = conn.execute("""
+                SELECT id FROM payment_claims
+                WHERE property_id = ? AND tenant_id = ? AND mpesa_ref = ? LIMIT 1
+            """, (txn['property_id'], tenant['id'], txn['mpesa_ref'])).fetchone()
+            if claim:
+                conn.execute("UPDATE payments SET claim_id = ? WHERE id = ?", (claim['id'], payment_id))
             if not conn.execute("SELECT 1 FROM payment_claims WHERE tenant_id = ? AND status = 'flagged'",
                                 (tenant['id'],)).fetchone():
                 conn.execute("UPDATE tenants SET flagged = 0 WHERE id = ?", (tenant['id'],))
@@ -335,7 +360,7 @@ def book(txn_id, base_url=None):
                 + (f", M-Pesa {txn['mpesa_ref']}" if txn['mpesa_ref'] else '') + '.'
                 + (f" Applied: {breakdown}." if breakdown else ' Held as credit for your next charges.'))
         base = base_url or os.environ.get('APP_BASE_URL')
-        if base and tenant['short_code']:
+        if base and tenant['short_code'] and tenant['access_token']:
             body += f" Receipt: {base.rstrip('/')}/t/{tenant['short_code']}"
         return {'phone': phone, 'body': body, 'property_id': txn['property_id']} if phone else None
 

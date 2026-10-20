@@ -37,7 +37,15 @@ export PATH="$HOME/.fly/bin:$PATH" && fly deploy              # deploy to Fly.io
 
 Sandbox testing: `AT_USERNAME=sandbox AT_API_KEY=<key> ./scripts/run_dev.sh` | `DARAJA_ENV=sandbox DARAJA_CONSUMER_KEY=... DARAJA_CONSUMER_SECRET=... ./scripts/run_dev.sh`
 
-There are no automated tests. Verification is manual: run the dev server, walk through the workflow, inspect DB state.
+Focused automated checks live in `tests/`:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 ./venv/bin/python -m unittest discover -s tests -v
+PYTHONDONTWRITEBYTECODE=1 ./venv/bin/python tests/test_pdf_parser.py
+```
+
+The SMS tests mock all provider calls; passing them does not prove real delivery.
+Also walk through the app and inspect a disposable database copy before release.
 
 ---
 
@@ -429,6 +437,8 @@ Payment modules (`src/payments/`) never import from `src/agent/` or route files 
 - On payout number change: SMS warning sent to previous number
 
 **M-Pesa rules (src/payments/mpesa.py):** never trust a callback alone. Callback URLs carry `?t=MPESA_CALLBACK_TOKEN` (production refuses all without it); an STK result is booked only if the paid amount equals the amount asked and Safaricom's STK query confirms it; one M-Pesa receipt is booked once (STK to a paybill also arrives as C2B). Paybill (C2B) account number = tenant short code or unit number; anything else is `unmatched` until an admin names the tenant at `/mpesa`. A tenant self-report of a receipt already booked creates no claim. Booking is instant (thread from the webhook); the 60 s worker is the safety net. Payments booked from M-Pesa have `payments.source='daraja'`, `assignment_reason` = receipt.
+
+Production means `ENVIRONMENT=production` even if `DARAJA_ENV` is still `sandbox`: a missing callback token rejects callbacks, and missing Daraja query credentials block STK booking. The callback must provide a positive, exactly matching amount and M-Pesa receipt. Only a claim with the same property and tenant as the booked payment is resolved. See `tests/test_mpesa_booking_boundaries.py`.
 
 **Where tenants pay:** `properties.pay_paybill/pay_account/pay_account_name`, shown on the tenant Pay page as the only rent account. A change is a fraud vector (redirects every tenant's rent): shadow log + critical platform alert + owner SMS.
 

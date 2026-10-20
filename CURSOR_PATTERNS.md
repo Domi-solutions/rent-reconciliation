@@ -490,6 +490,28 @@
 
 ---
 
+## Session 27 — 2026-10-20
+
+---
+
+### Payment receipt references are not tenant identities
+**File(s):** `src/payments/mpesa.py` (`book`)
+**Root cause:** The booking path treated `mpesa_ref` as sufficient to resolve a self-reported claim. `payment_claims` is unique by `(property_id, mpesa_ref)`, not by the reference alone, and a claim may belong to a different tenant or organisation.
+**What the code did:** `UPDATE payment_claims WHERE mpesa_ref = ?` could mark another person's claim verified; `SELECT ... LIMIT 1` could link that claim to the wrong payment.
+**What it should do:** Match `property_id`, `tenant_id`, and `mpesa_ref` together before resolving a claim or linking it to a booked payment. Test two properties with the same reference.
+**Why it matters:** A tenant could see a false payment confirmation or lose a flagged claim because another tenant's paybill transaction used the same reference.
+**Spotted:** 2026-10-20 (Codex offline preflight)
+
+### Production safety must use the app environment, not only Daraja's environment
+**File(s):** `src/payments/mpesa.py` (`callback_allowed`, `_confirm_with_safaricom`)
+**Root cause:** `DARAJA_ENV` defaults to sandbox while the Flask app can already be deployed with `ENVIRONMENT=production`.
+**What the code did:** With no callback token or query credentials, a production app still followed sandbox acceptance rules.
+**What it should do:** Either `ENVIRONMENT=production` or `DARAJA_ENV=production` makes callback authentication and STK query confirmation fail closed. Compare STK amounts exactly and require a receipt number before booking.
+**Why it matters:** Unfinished payment integration must never turn an unauthenticated callback into a recorded tenant payment.
+**Spotted:** 2026-10-20 (Codex offline preflight)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

@@ -577,6 +577,8 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [x] Caretaker page cut to arrears, water and repairs; money tools off (`CARETAKER_MONEY_TOOLS`); dashboard flags this month's water readings when missing
 - [ ] Statements held until water entered (hard gate in the monthly workflow)
 - [x] C2B confirmation + validation URLs (reject unknown account numbers); instant STK confirmation; callback token + STK query + amount check + one-receipt-once (`src/payments/mpesa.py`)
+- [x] Credential-free payment preflight: production callback/query fail-closed, exact STK amount + receipt, positive C2B amount, tenant-scoped claim resolution, one-receipt-once; offline regression tests
+- [ ] Before production rollout: backup, review and deliberately apply historical unallocated credit repair if approved. Oct 20 backup copy applied KES 121,600 from 15 payments without changing net tenant balances; no live repair was run.
 - [x] Tenant Pay page: the property's one paybill/account, guarded (owner SMS + platform alert on change)
 - [x] SMS provider swappable (Africa's Talking / TextSMS), sender name passed, GSM-safe text; tenant sign-in invitations
 - [x] First-time guides on every tenant/caretaker/admin page (English + Kiswahili)
