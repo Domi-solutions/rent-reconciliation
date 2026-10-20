@@ -476,6 +476,20 @@
 
 ---
 
+## Session 26 — 2026-10-20
+
+---
+
+### Payment confirmation must not restore revoked tenant portal access
+**File(s):** `app.py` payment-assignment routes, `src/routes/messaging_routes.py`
+**Root cause:** A missing `tenants.access_token` was treated as a setup gap and filled automatically while preparing a payment-confirmation SMS. The same `NULL` value is also how an administrator revokes portal access, so the payment workflow could silently undo that decision.
+**What the code did:** Five payment-assignment paths generated a new token whenever the active tenant had none. The invitation list also filtered those tenants out entirely, hiding the gap from administrators.
+**What it should do:** Payment confirmation may include a portal link only when a token already exists. A missing token stays missing until an explicit tenant-access action, and the invitation list shows the tenant as blocked and unselectable.
+**Why it matters:** Access control must not be changed by an unrelated money workflow. A revoked tenant could otherwise regain access on their next payment, and missing-token tenants could be omitted from onboarding without warning.
+**Spotted:** 2026-10-20 (Codex tenant-journey test)
+
+---
+
 ## How to Add New Entries (for Claude)
 
 **When to add:** After testing reveals a broken or missing integration — Claude diagnoses the root cause, then documents it here.

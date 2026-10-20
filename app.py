@@ -20,7 +20,7 @@ from decimal import Decimal
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
-from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Flask, abort, jsonify, render_template, request, redirect, url_for, flash, session, send_file
 from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -33,6 +33,7 @@ from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 from src.utils import staff
 from src.messaging import delivery as sms_delivery
+from src.messaging.tenant_payment import payment_confirmation_body
 from src.payments import daraja
 from src.parsers.excel_parser import parse_tenant_excel
 from src.parsers.water_parser import parse_water_excel
@@ -3694,12 +3695,7 @@ def statement_auto_assign(statement_id, txn_id):
                 "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
                 (unit['id'],)).fetchone()
             if _tenant and _tenant['phone']:
-                _token = _tenant['access_token'] or secrets.token_urlsafe(32)
-                if not _tenant['access_token']:
-                    conn.execute("UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                                 (_token, unit['id']))
-                _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
-                        f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
+                _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
                 from src.messaging.delivery import send_sms_async
                 send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
@@ -3765,12 +3761,7 @@ def statement_assign_payment(statement_id, txn_id):
                 "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
                 (unit_id,)).fetchone()
             if _tenant and _tenant['phone']:
-                _token = _tenant['access_token'] or secrets.token_urlsafe(32)
-                if not _tenant['access_token']:
-                    conn.execute("UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                                 (_token, unit_id))
-                _sms = (f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
-                        f"View your account: {request.host_url.rstrip('/')}/tenant/{_token}")
+                _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
                 from src.messaging.delivery import send_sms_async
                 send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
@@ -3998,19 +3989,7 @@ def auto_assign_payment(txn_id):
                 (unit_id,),
             ).fetchone()
             if _tenant and _tenant['phone']:
-                _token = _tenant['access_token']
-                if not _token:
-                    _token = secrets.token_urlsafe(32)
-                    conn.execute(
-                        "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                        (_token, unit_id),
-                    )
-                _base = request.host_url.rstrip('/')
-                _link = f"{_base}/tenant/{_token}"
-                _sms = (
-                    f"Hi {_tenant['name']}, KES {amount:,.0f} payment confirmed.\n"
-                    f"View your account: {_link}"
-                )
+                _sms = payment_confirmation_body(_tenant, amount, request.host_url)
                 from src.messaging.delivery import send_sms_async
                 send_sms_async([{'phone': _tenant['phone']}], _sms)
         except Exception:
@@ -4182,19 +4161,7 @@ def assign_payment(txn_id):
                     (unit_id,),
                 ).fetchone()
                 if _tenant and _tenant['phone']:
-                    _token = _tenant['access_token']
-                    if not _token:
-                        _token = secrets.token_urlsafe(32)
-                        conn.execute(
-                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                            (_token, unit_id),
-                        )
-                    _base = request.host_url.rstrip('/')
-                    _link = f"{_base}/tenant/{_token}"
-                    _sms = (
-                        f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
-                        f"View your account: {_link}"
-                    )
+                    _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
                     from src.messaging.delivery import send_sms_async
                     send_sms_async([{'phone': _tenant['phone']}], _sms)
             except Exception:
@@ -4325,19 +4292,7 @@ def assign_group():
                     (unit_id,),
                 ).fetchone()
                 if _tenant and _tenant['phone']:
-                    _token = _tenant['access_token']
-                    if not _token:
-                        _token = secrets.token_urlsafe(32)
-                        conn.execute(
-                            "UPDATE tenants SET access_token = ? WHERE unit_id = ? AND status = 'active'",
-                            (_token, unit_id),
-                        )
-                    _base = request.host_url.rstrip('/')
-                    _link = f"{_base}/tenant/{_token}"
-                    _sms = (
-                        f"Hi {_tenant['name']}, KES {float(txn['amount']):,.0f} payment confirmed.\n"
-                        f"View your account: {_link}"
-                    )
+                    _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
                     from src.messaging.delivery import send_sms_async
                     send_sms_async([{'phone': _tenant['phone']}], _sms)
             except Exception:

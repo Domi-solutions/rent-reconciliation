@@ -640,14 +640,15 @@ INVITE_TEXT = {
 
 def _invite_rows(conn, pid):
     return [dict(r) for r in conn.execute("""
-        SELECT t.id, t.name, t.phone, t.short_code, t.status, t.language_preference, u.unit_number,
+        SELECT t.id, t.name, t.phone, t.short_code, t.access_token, t.status,
+               t.language_preference, u.unit_number,
                (p.pin_hash IS NOT NULL) AS signed_up,
                (SELECT MAX(m.created_at) FROM messages m
                 WHERE m.tenant_id = t.id AND m.message_type = 'invite') AS invited_at
         FROM tenants t
         JOIN units u ON u.id = t.unit_id
         LEFT JOIN persons p ON p.id = t.person_id
-        WHERE t.property_id = ? AND t.status IN ('active', 'departed') AND t.access_token IS NOT NULL
+        WHERE t.property_id = ? AND t.status IN ('active', 'departed')
         ORDER BY t.status, u.unit_number
     """, (pid,)).fetchall()]
 
@@ -664,15 +665,20 @@ def invite():
         base = (os.environ.get('APP_BASE_URL') or request.host_url).rstrip('/')
         rows = _invite_rows(conn, prop['id'])
         for r in rows:
+            r['link_ready'] = bool(r['access_token'] and r['short_code'])
+            r['phone_ok'] = bool(_normalize_phone(r['phone']))
+            if not r['link_ready']:
+                r['text'] = ''
+                r['parts'] = 0
+                continue
             lang = 'sw' if (r['language_preference'] or '').lower() in ('sw', 'kiswahili', 'swahili') else 'en'
             r['text'] = plain_sms(INVITE_TEXT[lang].format(property=prop['name'].title(), link=f"{base}/t/{r['short_code']}"))
             r['parts'] = sms_parts(r['text'])
-            r['phone_ok'] = bool(_normalize_phone(r['phone']))
         if request.method == 'POST':
             chosen = set(request.form.getlist('tenant_id'))
             sent = 0
             for r in rows:
-                if r['id'] not in chosen or not r['phone_ok']:
+                if r['id'] not in chosen or not r['phone_ok'] or not r['link_ready']:
                     continue
                 conn.execute("""
                     INSERT INTO messages (id, property_id, tenant_id, subject, body, message_type, delivery_channel, delivery_status)
@@ -686,4 +692,5 @@ def invite():
             flash(f'Sign-in link sent to {sent} tenant(s).', 'success')
             return redirect(url_for('messaging.invite'))
     return render_template('messaging/invite.html', property=prop, rows=rows,
-                           signed_up=sum(1 for r in rows if r['signed_up']), active_nav='messages')
+                           signed_up=sum(1 for r in rows if r['signed_up']),
+                           missing_links=sum(1 for r in rows if not r['link_ready']), active_nav='messages')

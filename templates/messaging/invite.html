@@ -9,6 +9,13 @@
     Send only after their details and opening balance are confirmed.
   </div>
 </div>
+{% if missing_links %}
+<div class="alert alert-warning" role="alert">
+  {{ missing_links }} tenant{{ '' if missing_links == 1 else 's' }} cannot receive a sign-in link yet because portal access is not enabled.
+  Review the tenant records and generate links deliberately from <a href="{{ url_for('manage_tenants') }}">Tenants</a>.
+  These tenants are shown below but cannot be selected for SMS.
+</div>
+{% endif %}
 <form method="POST" onsubmit="return confirm('Send the sign-in SMS to the selected tenants?')">
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body p-0" style="overflow-x:auto">
@@ -20,16 +27,20 @@
       {% for r in rows %}
       <tr>
         <td style="padding-left:16px"><input type="checkbox" class="pick" name="tenant_id" value="{{ r.id }}"
-              {% if not r.phone_ok %}disabled{% elif not r.signed_up and not r.invited_at %}checked{% endif %}></td>
+              {% if not r.link_ready or not r.phone_ok %}disabled{% elif not r.signed_up and not r.invited_at %}checked{% endif %}></td>
         <td>{{ r.unit_number }}</td>
         <td>{{ r.name|title }}{% if r.status == 'departed' %} <span class="badge bg-light text-dark">moved out</span>{% endif %}</td>
         <td>{% if r.phone_ok %}{{ r.phone }}{% else %}<span style="color:#dc2626">{{ r.phone or 'no phone' }} — fix first</span>{% endif %}</td>
         <td style="white-space:nowrap">
-          {% if r.signed_up %}<span class="badge bg-success">signed up</span>
+          {% if not r.link_ready %}<span class="badge bg-warning text-dark">portal link off</span>
+          {% elif r.signed_up %}<span class="badge bg-success">signed up</span>
           {% elif r.invited_at %}<span class="badge bg-warning text-dark">invited {{ r.invited_at[:10] }}</span>
           {% else %}<span class="badge bg-light text-dark">not invited</span>{% endif %}
         </td>
-        <td style="max-width:420px;font-size:12px;color:#4a5568">{{ r.text }} <span style="color:#a0aec0">· {{ r.parts }} SMS</span></td>
+        <td style="max-width:420px;font-size:12px;color:#4a5568">
+          {% if r.link_ready %}{{ r.text }} <span style="color:#a0aec0">· {{ r.parts }} SMS</span>
+          {% else %}No sign-in link until portal access is enabled.{% endif %}
+        </td>
       </tr>
       {% endfor %}
       </tbody>

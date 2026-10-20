@@ -26,57 +26,48 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex (tenant payment review and fixes)
+**Who:** Codex (tenant onboarding safety and end-to-end walkthrough)
 **Date:** 2026-10-20
 
 ### What changed
 
-- Fetched Claude's current `origin/claude/tenant-portal-payments-mto5t5` branch at `bb8d14e`.
-  Earlier local ref `2efefcd` was stale; the current branch does include M-Pesa hardening,
-  invitations, guides, and caretaker restrictions. Work is isolated on
-  `codex/tenant-payment-fixes` in `/private/tmp/domi-review.jLTqNd/checkout`.
-- Fixed an STK callback race: Safaricom may call back before the initiating request has
-  returned its checkout ID. Early callbacks are held as `awaiting_request`, then linked
-  to the tenant and verified by the existing worker.
-- Scoped C2B payments to the organization identified by the callback's
-  `BusinessShortCode` and the configured property paybill. Unknown payments can only
-  be assigned by an admin of that organization; ambiguous paybills stay unassigned.
-- Added `payment_transactions.org_id` through an additive migration, updated the
-  schema registry, and added four focused regression tests. All pass. App import and
-  migrations also passed on a fresh copy of the 2026-10-20 production database.
+- Continued the isolated `codex/tenant-payment-fixes` branch, which already contains the
+  STK callback-race and C2B organization-boundary fixes from commit `852d69e`.
+  The branch is still separate from `main`.
+- Tested first-time tenant sign-in, OTP/PIN setup, statements, invoices, receipts,
+  payment-status access control, repair conversations, and logout/sign-in against a
+  disposable copy of the 2026-10-20 production backup: 22 checks passed. A broader
+  crawl rendered 371 pages across all 42 active tenants with zero failures, after
+  temporary portal tokens were added only in that copied database.
+- Found 8 of 42 active Mowin tenants lacked `access_token` despite having short
+  codes and phones. Their short links returned 500 because `app.py` called
+  `abort(404)` without importing it. All eight were created with the legacy
+  tenant batch on 2026-05-19; no generate/revoke audit events exist for them.
+  The exact reason for each missing token is not proven. Do not bulk-enable them.
+- Fixed the missing Flask import, made the invitation preview show blocked
+  tenant rows and prevent sending to them even if their IDs are forged in a POST.
+- Removed automatic portal-token generation from five payment-assignment paths.
+  Payment confirmation SMS still sends, but includes a portal link only if access
+  was already enabled. This preserves intentional revocation.
+- Added four focused onboarding/security regression tests. The full unittest
+  discovery run now passes 10 tests; copied-database invitation preview displays
+  all 8 blocked rows. See the new Session 26 note in `CURSOR_PATTERNS.md`.
 
-### Readiness findings
+### Release status and next steps
 
-- Production `AT_USERNAME` is `sandbox`. Real tenant SMS delivery is not ready.
-  No SMS was sent and no Fly secret was changed.
-- User prefers a cheaper SMS provider. TextSMS is implemented in this branch and
-  advertises KES 0.30 per SMS; live credentials and a one-phone delivery test
-  are still needed. Do not request API keys in chat.
-- Mowin's owners have not decided rent and water due dates. User confirmed this
-  remains in progress; tenant invitations must wait.
-- The copied database has 42 active tenants. All have phone numbers and short
-  portal codes; none has set a PIN. Ledger dry run found no active balance changes
-  or cross-tenant allocations, but two unattributed rows: unit 6C water charge
-  KES 1,200 (2026-04), and unit 6A payment KES 3,600 (2026-02-27). The latter
-  links to bank record UBRFV83Z7X, sender TEDDY WAMBUA SIKUKU, but no tenant
-  profile matches that name; the 6C charge has no tenant or matching water reading.
-- Production backup used for testing:
-  `backups/prod_2026-10-20_190452.db`. No merge, push, deploy, production DB write,
-  or ledger `--execute` was performed.
-
-### Pick up next
-
-1. Integrate `codex/tenant-payment-fixes` with current `main` when appropriate;
-   neither branch has been deployed with these changes.
-2. Identify the tenants behind the two unattributed ledger rows from source records
-   outside the current tenant table. Do not assign by unit number alone.
-3. User can create a TextSMS account. Obtain partner ID and API key through that
-   account, securely configure them, and prove delivery to the user's phone before
-   sending invitations. Resolve owners' rent and water due-date decision first.
-4. Keep Daraja live money disabled until the law-firm paybill arrangement is approved,
-   credentials and callback URLs are set, and real-money tests are reconciled.
-5. The claimed 26 M-Pesa checks and 116-page crawl from Claude's transcript were
-   not committed as runnable suites; rerun relevant live-branch checks before release.
+1. Review the eight tenant records with Mowin before deliberately generating any
+   missing portal tokens. The copied backup is evidence, not a live-state guarantee.
+2. Resolve owner-approved rent and water due dates, tenant opening balances, and
+   payment instructions before any invitation.
+3. Finish TextSMS account setup and a one-phone delivery test. Current production
+   Africa's Talking username is `sandbox`; no real SMS was sent here.
+4. Integrate this branch with newer `main` bank-reconciliation commits, retest,
+   and review before any deploy. No merge, push, deploy, production DB write,
+   live token generation, or M-Pesa transaction occurred this session.
+5. Keep Daraja live money disabled until the law-firm paybill arrangement,
+   credentials, callbacks, and real-money reconciliation are approved.
+6. The previous ledger dry run found two unattributed rows: 6C water KES 1,200
+   (2026-04) and 6A payment KES 3,600 (2026-02-27). Neither was reassigned.
 
 ---
 
