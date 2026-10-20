@@ -73,7 +73,7 @@ jobs:
     function: src/agent/coordinator.py::monthly_checkins_job
     trigger: "cron, day=1, hour=9, minute=0 (1st of month 9am EAT)"
     owns: "Writes to messages table (message_type='checkin'). Idempotent per tenant+period."
-    description: "Send monthly check-in SMS to all active tenants with phones: 'How is everything? Reply 1/2/3 + optional comment.'"
+    description: "Send monthly check-in SMS to all active tenants with phones: 'How is everything? Reply 1/2/3 + optional comment.' No tenant query or delivery occurs unless TENANT_OUTREACH_ENABLED=true."
 
   process_inbound_message (threaded):
     status: live

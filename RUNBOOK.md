@@ -22,7 +22,7 @@ through one of these — you should not need to be actively watching the app for
 All of the above land in `lincksmorara@gmail.com`. If that inbox goes unchecked for a while, you
 will not hear about problems — there's no second channel (SMS/Telegram) as of this writing.
 
-**healthchecks.io project:** the account is `lincksmorara@gmail.com` on healthchecks.io — 8 checks,
+**healthchecks.io project:** the account is `lincksmorara@gmail.com` on healthchecks.io — 9 checks,
 one per scheduled job (`daily_snapshot_job`, `anomaly_check_job`, `morning_briefings_job`,
 `maintainer_digest_job`, `weekly_digest_job`, `disbursement_job`, `monthly_checkins_job`,
 `process_payment_queue`, `backup_job`). Each check's expected schedule is set to match the actual
@@ -61,6 +61,23 @@ UTC, not EAT, despite older comments in this codebase claiming otherwise).
   automatic.
 - Both were real tests against production, not documentation copied from Fly's marketing — see
   git history around 2026-08-04 for the actual timestamps if you want to re-verify later.
+
+---
+
+## Tenant outreach hold before onboarding
+
+`TENANT_OUTREACH_ENABLED` defaults to false. While it is false, invitation sending,
+due-date reminders, and scheduled monthly check-ins do not contact tenants.
+The invitation page remains a preview. Set it to true only after the current
+tenant roll, opening balances, rent/water due dates, and payment instructions
+have been approved. Changing `SMS_PROVIDER` or adding TextSMS credentials does
+not lift this hold.
+
+This is not a global SMS kill switch: direct messages and a one-phone provider
+test use the normal delivery path. To prevent all real SMS while configuring
+the provider, set `AT_SMS_ENABLED=false` explicitly; its default is true. Verify
+this setting before entering real SMS credentials. Do not enable tenant outreach
+as part of a provider-only test.
 
 ---
 

@@ -4,6 +4,7 @@ import os
 from datetime import date
 
 from src.database.db import generate_id
+from src.messaging.outreach import enabled as outreach_enabled
 
 
 def _substitute(body_or_subject, variables):
@@ -20,6 +21,8 @@ def generate_due_reminders(conn, property_id):
     active tenant (with unit_id and balance > 0) that hasn't already received this
     reminder today. Uses batch_id 'reminder-{date}-{template_key}' for idempotency.
     """
+    if not outreach_enabled():
+        return
     today = date.today().isoformat()
 
     settings = conn.execute("""

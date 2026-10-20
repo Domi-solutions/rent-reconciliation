@@ -52,8 +52,18 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
   query credentials; STK callback amount must match exactly and include a receipt;
   zero/invalid amounts cannot book; claims resolve only for the paying tenant;
   receipt links are omitted when portal access is disabled.
-- Added offline TextSMS and payment regression tests. All 20 unittest cases and
-  9 parser regressions passed; no provider network calls were made.
+- Added offline TextSMS and payment regression tests; no provider network calls
+  were made. All 9 parser regressions passed.
+- Moved admin dashboard follow-up ahead of monthly bank upload: unanswered
+  tenant conversations (with the oldest three linked), flagged/pending claims,
+  unmatched payments, then recorded balances. Tested a synthetic waiting
+  conversation on a copied database and added two template regressions. The
+  due-date-specific "late" status was not added.
+- Added default-off `TENANT_OUTREACH_ENABLED` to prevent invitations, automatic
+  due-date reminders, and scheduled monthly check-ins until onboarding is
+  approved. The invitation preview remains visible but sending is disabled
+  both in the UI and on POST. Direct provider testing remains separate. All
+  26 unittest cases now pass.
 
 ### Release status and next steps
 
@@ -62,6 +72,8 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
    access or reassign money by inference.
 2. Owners must approve rent/water due dates, opening balances, and payment
    instructions before any invitation. Historical invoice due dates may change.
+   Keep `TENANT_OUTREACH_ENABLED` unset/false until this approval and a current
+   tenant roll are complete; changing SMS provider alone must not enable outreach.
 3. Before release, review the payment changes and run a fresh backup-first ledger
    preflight. The copied `--execute` result shows a potential repair, not approval
    to perform it on the live database.

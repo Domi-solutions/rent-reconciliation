@@ -571,7 +571,7 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [x] Tenant sign-in: SMS link → 6-digit SMS code → 4-digit PIN; phone + PIN after; reset by SMS code; lockout (`migrate_add_tenant_pin_login`, `src/utils/tenant_auth.py`)
 - [x] Tenant statement, monthly invoices, receipts (incl. app payments); printable; unallocated credit applied when charges are added
 - [x] Two-way auditable message thread between tenant and management — one conversation per question; topics money/repair/other; append-only (DB trigger); up to 3 photos per message, re-encoded with location data stripped; questions can point at a statement line; admin "Tenant inbox" (awaiting reply first); caretaker sees repairs only, replies, marks fixed; tenant SMS'd that a reply is waiting (`migrate_add_conversations`, `src/messaging/threads.py`)
-- [ ] Admin attention-first panel — the inbox + who needs follow-up on one screen; tenants on track hidden
+- [ ] Admin attention-first panel — dashboard now leads with unanswered tenant threads, flagged/pending claims, unmatched payments, and recorded outstanding balances; tenants with no recorded balance stay hidden. Due-date-specific late-payment follow-up waits for the owners' approved policy.
 - [x] Per-person admin accounts — `admin_users`, `/team` (lead adds/switches off; never deleted), name asked at first sign-in; activity log and conversation replies record the person while tenants see the organisation (`migrate_add_admin_users`, `src/utils/staff.py`)
 - [x] Caretaker locked to their account's property (checked against the DB on every request)
 - [x] Caretaker page cut to arrears, water and repairs; money tools off (`CARETAKER_MONEY_TOOLS`); dashboard flags this month's water readings when missing
@@ -581,6 +581,7 @@ Trigger: rent misdirected to an unauthorised till; heavy tenant turnover left ba
 - [ ] Before production rollout: backup, review and deliberately apply historical unallocated credit repair if approved. Oct 20 backup copy applied KES 121,600 from 15 payments without changing net tenant balances; no live repair was run.
 - [x] Tenant Pay page: the property's one paybill/account, guarded (owner SMS + platform alert on change)
 - [x] SMS provider swappable (Africa's Talking / TextSMS), sender name passed, GSM-safe text; tenant sign-in invitations
+- [x] Default-off tenant outreach gate — invitation POST/UI, automatic due reminders, and monthly check-ins stay paused until current roll and owner-approved policy are ready (`TENANT_OUTREACH_ENABLED`)
 - [x] First-time guides on every tenant/caretaker/admin page (English + Kiswahili)
 - [ ] Till (Buy Goods) support for STK, if the property gets a till instead of a paybill
 - [ ] Own paybill + Daraja go-live; sender ID (MOWIN-APTS) — owner applications

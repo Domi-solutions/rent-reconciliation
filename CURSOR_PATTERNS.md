@@ -510,6 +510,14 @@
 **Why it matters:** Unfinished payment integration must never turn an unauthenticated callback into a recorded tenant payment.
 **Spotted:** 2026-10-20 (Codex offline preflight)
 
+### A dashboard read can trigger tenant outreach
+**File(s):** `app.py` (`dashboard`), `src/messaging/reminders.py`, `src/agent/coordinator.py`, `src/routes/messaging_routes.py`
+**Root cause:** Due reminders ran inside a GET handler, monthly check-ins ran on a schedule, and invitations could be POSTed while rent dates and tenant identities were still being confirmed. Adding SMS credentials could activate all of this before onboarding approval.
+**What the code did:** It relied on provider readiness alone; there was no separate approval switch for bulk/proactive tenant contact.
+**What it should do:** Keep `TENANT_OUTREACH_ENABLED` default off. Check it on the server before invitations, due reminders, and monthly check-ins. Direct one-phone provider tests use a separate path and do not enable outreach.
+**Why it matters:** A technically working SMS integration can deliver inaccurate balances or due dates to the wrong people if the roll and billing policy are not approved first.
+**Spotted:** 2026-10-20 (Codex offline preflight)
+
 ---
 
 ## How to Add New Entries (for Claude)

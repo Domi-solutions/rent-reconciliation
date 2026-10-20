@@ -1002,6 +1002,9 @@ def dashboard():
             ORDER BY pc.created_at DESC
         """, (property_id,)).fetchall()
 
+        from src.messaging.threads import list_for_staff
+        awaiting_threads = list_for_staff(conn, property_id, status='awaiting_reply')[:3]
+
         _dash_org_id = (property_row['organization_id'] if property_row['organization_id'] else None) or session.get('org_id')
         _stmt_filter = "bs.org_id = ?" if _dash_org_id else "bs.property_id = ?"
         _stmt_param = _dash_org_id if _dash_org_id else property_id
@@ -1080,6 +1083,7 @@ def dashboard():
             stats=stats,
             arrears=arrears,
             pending=pending,
+            awaiting_threads=awaiting_threads,
             unassigned=unassigned,
             unassigned_stats=unassigned_stats,
             recent=recent,

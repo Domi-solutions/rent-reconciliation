@@ -96,6 +96,9 @@ def weekly_digest_job():
 
 def send_monthly_checkins_job(property_id):
     """Send one monthly tenant check-in message per active tenant."""
+    from src.messaging.outreach import enabled as outreach_enabled
+    if not outreach_enabled():
+        return
     period = datetime.utcnow().strftime("%Y-%m")
     outbound_messages = []
     with get_connection() as conn:

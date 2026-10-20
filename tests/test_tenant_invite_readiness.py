@@ -17,7 +17,10 @@ class TenantInviteReadiness(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.directory.name, 'invite.db')
-        self.env_patch = patch.dict(os.environ, {'DATABASE_PATH': self.db_path, 'APP_BASE_URL': 'https://example.test'})
+        self.env_patch = patch.dict(os.environ, {
+            'DATABASE_PATH': self.db_path, 'APP_BASE_URL': 'https://example.test',
+            'TENANT_OUTREACH_ENABLED': 'true',
+        })
         self.env_patch.start()
         conn = sqlite3.connect(self.db_path)
         conn.executescript("""
@@ -83,6 +86,27 @@ class TenantInviteReadiness(unittest.TestCase):
         count = conn.execute("SELECT COUNT(*) FROM messages WHERE message_type = 'invite'").fetchone()[0]
         conn.close()
         self.assertEqual(count, 1)
+
+    def test_paused_outreach_rejects_post_even_with_a_valid_tenant(self):
+        context = {}
+
+        def capture(template, **values):
+            context.update(values)
+            return 'preview'
+
+        with patch.dict(os.environ, {'TENANT_OUTREACH_ENABLED': 'false'}), \
+             patch('src.messaging.delivery.send_sms_async') as send, \
+             patch('src.routes.messaging_routes.render_template', side_effect=capture):
+            preview = self._client().get('/messages/invite')
+            response = self._client().post('/messages/invite', data={'tenant_id': ['READY']})
+        self.assertEqual(preview.status_code, 200)
+        self.assertFalse(context['outreach_enabled'])
+        self.assertEqual(response.status_code, 302)
+        send.assert_not_called()
+        conn = sqlite3.connect(self.db_path)
+        count = conn.execute("SELECT COUNT(*) FROM messages WHERE message_type = 'invite'").fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0)
 
 
 class PaymentConfirmationAccess(unittest.TestCase):

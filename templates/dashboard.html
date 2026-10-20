@@ -3,9 +3,8 @@
 
 {% block extra_css %}
 <style>
-  /* Phone first. One column, big tap targets, the primary action above the
-     fold. Everything else stays reachable from the sidebar rather than
-     competing for attention here. */
+  /* Phone first. People who need a reply or payment review come before
+     the monthly bank-upload workflow. */
   .ph-wrap { max-width: 620px; margin: 0 auto; }
 
   .ph-action {
@@ -70,16 +69,35 @@
     {% endif %}
   </div>
 
-  {# ---- The one thing an admin comes here to do ---- #}
-  <a href="{{ url_for('upload_statement') }}" class="ph-action">
-    <div class="ph-action-title">Upload bank statement</div>
-    <div class="ph-action-sub">Match payments to tenants automatically</div>
-  </a>
+  {# ---- Only items that need a person's attention appear here ---- #}
+  <div class="ph-section-title">Needs follow-up</div>
 
-  {% if show_generate_charges_hint %}
+  {% if inbox_awaiting_count %}
   <div class="ph-alert ph-warn">
-    No charges generated for {{ current_month }} yet.
-    <a href="{{ url_for('generate_charges') }}">Generate now →</a>
+    {{ inbox_awaiting_count }} tenant conversation{{ 's' if inbox_awaiting_count != 1 }} waiting for a reply.
+    <a href="{{ url_for('messaging.inbox') }}">Open inbox →</a>
+  </div>
+  <div class="ph-list" style="margin-bottom: 12px;">
+    {% for thread in awaiting_threads %}
+    <a class="ph-item" href="{{ url_for('messaging.inbox_thread', conv_id=thread.id) }}">
+      <div>
+        <div class="ph-unit">{{ thread.subject }}</div>
+        <div class="ph-name">{{ thread.unit_number or 'Unit not recorded' }} · {{ thread.tenant_name }}</div>
+      </div>
+      <div class="ph-months">
+        {% if (thread.hours_waiting or 0) >= 24 %}{{ thread.hours_waiting // 24 }} day{{ 's' if thread.hours_waiting // 24 != 1 }} waiting
+        {% elif (thread.hours_waiting or 0) >= 1 %}{{ thread.hours_waiting }} h waiting
+        {% else %}&lt; 1 h waiting{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if flagged_claims_count %}
+  <div class="ph-alert ph-warn">
+    {{ flagged_claims_count }} payment claim{{ 's' if flagged_claims_count != 1 }} flagged for review.
+    <a href="{{ url_for('flagged_claims_admin') }}">Review →</a>
   </div>
   {% endif %}
 
@@ -96,6 +114,10 @@
     {{ pending|length }} payment claim{{ 's' if pending|length != 1 }} awaiting confirmation.
     <a href="{{ url_for('review', tab='unconfirmed') }}">Review →</a>
   </div>
+  {% endif %}
+
+  {% if not inbox_awaiting_count and not flagged_claims_count and not (unassigned_stats and unassigned_stats.total_count) and not pending and not arrears %}
+  <div class="ph-alert ph-info">No tenant questions, payment exceptions, or outstanding balances recorded for this property.</div>
   {% endif %}
 
   {# ---- Who owes what ---- #}
@@ -136,6 +158,19 @@
     <div class="ph-item" style="color: var(--green-dark); font-weight: 600;">
       Every unit is settled.
     </div>
+  </div>
+  {% endif %}
+
+  <div class="ph-section-title">Monthly workflow</div>
+  <a href="{{ url_for('upload_statement') }}" class="ph-action">
+    <div class="ph-action-title">Upload bank statement</div>
+    <div class="ph-action-sub">Match payments to tenants automatically</div>
+  </a>
+
+  {% if show_generate_charges_hint %}
+  <div class="ph-alert ph-warn">
+    No charges generated for {{ current_month }} yet.
+    <a href="{{ url_for('generate_charges') }}">Generate now →</a>
   </div>
   {% endif %}
 

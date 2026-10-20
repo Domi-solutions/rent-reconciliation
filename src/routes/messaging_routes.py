@@ -658,6 +658,8 @@ def invite():
     """SMS tenants their sign-in link. Each tenant signs up with their own phone
     (SMS code, then a PIN), so the link alone opens nothing."""
     from src.messaging.delivery import plain_sms, sms_parts, send_sms_async
+    from src.messaging.outreach import enabled as outreach_enabled
+    can_send = outreach_enabled()
     with get_connection() as conn:
         prop = get_current_property(conn)
         if not prop:
@@ -675,6 +677,9 @@ def invite():
             r['text'] = plain_sms(INVITE_TEXT[lang].format(property=prop['name'].title(), link=f"{base}/t/{r['short_code']}"))
             r['parts'] = sms_parts(r['text'])
         if request.method == 'POST':
+            if not can_send:
+                flash('Tenant invitations are paused until onboarding is approved.', 'warning')
+                return redirect(url_for('messaging.invite'))
             chosen = set(request.form.getlist('tenant_id'))
             sent = 0
             for r in rows:
@@ -693,4 +698,5 @@ def invite():
             return redirect(url_for('messaging.invite'))
     return render_template('messaging/invite.html', property=prop, rows=rows,
                            signed_up=sum(1 for r in rows if r['signed_up']),
-                           missing_links=sum(1 for r in rows if not r['link_ready']), active_nav='messages')
+                           missing_links=sum(1 for r in rows if not r['link_ready']),
+                           outreach_enabled=can_send, active_nav='messages')
