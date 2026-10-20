@@ -1896,12 +1896,17 @@ def migrate_add_mpesa_fields():
     """
     with get_connection() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()}
-        for name, decl in (('mpesa_ref', 'TEXT'), ('account_ref', 'TEXT'), ('paid_at', 'TEXT'),
+        for name, decl in (('org_id', 'TEXT REFERENCES organizations(id)'),
+                           ('mpesa_ref', 'TEXT'), ('account_ref', 'TEXT'), ('paid_at', 'TEXT'),
                            ('callback_amount', 'REAL'), ('attempts', 'INTEGER DEFAULT 0'),
                            ('verified_via', 'TEXT')):
             if cols and name not in cols:
                 conn.execute(f"ALTER TABLE payment_transactions ADD COLUMN {name} {decl}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ptxn_mpesa_ref ON payment_transactions(mpesa_ref)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ptxn_org_status ON payment_transactions(org_id, processing_status)")
+        conn.execute("""UPDATE payment_transactions SET org_id =
+            (SELECT organization_id FROM properties WHERE id = payment_transactions.property_id)
+            WHERE org_id IS NULL AND property_id IS NOT NULL""")
         print("Migration complete: payment_transactions M-Pesa check fields ready.")
 
 

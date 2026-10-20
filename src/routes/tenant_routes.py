@@ -1006,31 +1006,11 @@ def pay_stk(token):
 
     if result['success']:
         checkout_request_id = result['checkout_request_id']
-        # Pre-create payment_transactions record so callback can update it
+        from src.payments import mpesa
         with get_connection() as conn:
-            existing = conn.execute(
-                "SELECT id FROM payment_transactions WHERE external_reference = ?",
-                (checkout_request_id,),
-            ).fetchone()
-            if not existing:
-                txn_id = generate_id('PTXN')
-                conn.execute(
-                    """
-                    INSERT INTO payment_transactions
-                        (id, property_id, unit_id, tenant_id, source,
-                         external_reference, phone, amount, processing_status)
-                    VALUES (?, ?, ?, ?, 'daraja', ?, ?, ?, 'pending')
-                    """,
-                    (
-                        txn_id,
-                        prop['id'],
-                        unit['id'],
-                        tenant['id'],
-                        checkout_request_id,
-                        phone,
-                        float(amount),
-                    ),
-                )
+            if not mpesa.link_stk_request(conn, checkout_request_id, prop['organization_id'],
+                                          prop['id'], unit['id'], tenant['id'], phone, amount):
+                return jsonify({'success': False, 'error': 'Payment request could not be recorded'}), 409
         return jsonify({'success': True, 'checkout_request_id': checkout_request_id})
 
     return jsonify({'success': False, 'error': result.get('error', 'Payment initiation failed')})

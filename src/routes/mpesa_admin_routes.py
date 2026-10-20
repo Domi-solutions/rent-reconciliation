@@ -21,8 +21,7 @@ def unmatched_count(conn, org_id):
     """Paybill payments waiting for a tenant name — for the sidebar badge."""
     return conn.execute("""
         SELECT COUNT(*) FROM payment_transactions
-        WHERE processing_status = 'unmatched'
-          AND (property_id IS NULL OR property_id IN (SELECT id FROM properties WHERE organization_id IS ?))
+        WHERE processing_status = 'unmatched' AND org_id = ?
     """, (org_id,)).fetchone()[0]
 
 
@@ -36,7 +35,7 @@ def payments():
             LEFT JOIN tenants t ON t.id = pt.tenant_id
             LEFT JOIN units u ON u.id = pt.unit_id
             WHERE pt.source IN ('daraja', 'c2b')
-              AND (pt.property_id IS NULL OR pt.property_id IN (SELECT id FROM properties WHERE organization_id IS ?))
+              AND pt.org_id = ?
             ORDER BY pt.processing_status = 'unmatched' DESC, pt.received_at DESC
             LIMIT 200
         """, (org_id,)).fetchall()
@@ -99,7 +98,7 @@ def assign(txn_id):
             SELECT t.name FROM tenants t JOIN properties p ON p.id = t.property_id
             WHERE t.id = ? AND p.organization_id IS ?
         """, (tenant_id, session.get('org_id'))).fetchone()
-        if t and mpesa.assign_unmatched(conn, txn_id, tenant_id):
+        if t and mpesa.assign_unmatched(conn, txn_id, tenant_id, session.get('org_id')):
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('mpesa_payment_assigned', 'payment_transaction', txn_id, f"Named tenant: {t['name']}", staff.actor()))

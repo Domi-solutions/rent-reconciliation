@@ -77,12 +77,16 @@ def record_stk_callback(body):
         row = conn.execute("SELECT id, processing_status FROM payment_transactions WHERE external_reference = ?",
                            (checkout_id,)).fetchone()
         if not row:
-            # Every STK Push we send is recorded first, so this is not ours (or forged).
+            # Safaricom can call back before the initiating request has returned
+            # its checkout ID. Keep the result until pay_stk links that request.
             conn.execute("""
                 INSERT INTO payment_transactions (id, source, external_reference, amount, raw_callback,
-                                                  processing_status, error_detail, processed_at)
-                VALUES (?, 'daraja', ?, 0, ?, 'failed', 'callback for an unknown request', CURRENT_TIMESTAMP)
-            """, (generate_id('PTXN'), checkout_id, raw))
+                                                  processing_status, error_detail, callback_amount,
+                                                  mpesa_ref, paid_at)
+                VALUES (?, 'daraja', ?, 0, ?, 'awaiting_request', ?, ?, ?, ?)
+            """, (generate_id('PTXN'), checkout_id, raw,
+                  None if parsed['result_code'] == 0 else (parsed['result_desc'] or 'Payment not completed'),
+                  parsed['amount'], parsed['mpesa_ref'], _mpesa_time(parsed['txn_date'])))
             return None
         if row['processing_status'] != 'pending':
             return None                                   # already decided; Safaricom retried
@@ -101,25 +105,61 @@ def record_stk_callback(body):
     return None
 
 
+def link_stk_request(conn, checkout_id, org_id, property_id, unit_id, tenant_id, phone, amount):
+    """Link an initiated push to its tenant, including an early callback."""
+    row = conn.execute("""SELECT id, processing_status FROM payment_transactions
+                          WHERE external_reference = ?""", (checkout_id,)).fetchone()
+    if row:
+        if row['processing_status'] != 'awaiting_request':
+            return False
+        conn.execute("""
+            UPDATE payment_transactions SET org_id = ?, property_id = ?, unit_id = ?, tenant_id = ?,
+                phone = ?, amount = ?, processing_status = CASE
+                    WHEN error_detail IS NULL THEN 'pending' ELSE 'failed' END,
+                processed_at = CASE WHEN error_detail IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END
+            WHERE id = ?
+        """, (org_id, property_id, unit_id, tenant_id, phone, float(amount), row['id']))
+        return True
+    conn.execute("""
+        INSERT INTO payment_transactions
+            (id, org_id, property_id, unit_id, tenant_id, source,
+             external_reference, phone, amount, processing_status)
+        VALUES (?, ?, ?, ?, ?, 'daraja', ?, ?, ?, 'pending')
+    """, (generate_id('PTXN'), org_id, property_id, unit_id, tenant_id,
+          checkout_id, phone, float(amount)))
+    return True
+
+
 def _clean_ref(value):
     return re.sub(r'[\s\-/#]', '', str(value or '')).upper()
 
 
-def resolve_account(conn, bill_ref):
+def collection_org(conn, shortcode):
+    """Return the sole organization configured for this receiving paybill."""
+    rows = conn.execute("""
+        SELECT DISTINCT organization_id FROM properties
+        WHERE pay_paybill = ? AND organization_id IS NOT NULL
+    """, (str(shortcode or '').strip(),)).fetchall()
+    return rows[0][0] if len(rows) == 1 else None
+
+
+def resolve_account(conn, bill_ref, org_id):
     """Whose payment an account number names: the tenant's short code, else a unit
     number with one active tenant. Returns (tenant, unit) rows or (None, None)."""
     ref = _clean_ref(bill_ref)
-    if not ref:
+    if not ref or not org_id:
         return None, None
     t = conn.execute("""
-        SELECT t.* FROM tenants t
-        WHERE UPPER(t.short_code) = ? AND t.status IN ('active', 'departed') AND t.unit_id IS NOT NULL
-    """, (ref,)).fetchone()
+        SELECT t.* FROM tenants t JOIN properties p ON p.id = t.property_id
+        WHERE UPPER(t.short_code) = ? AND p.organization_id = ?
+          AND t.status IN ('active', 'departed') AND t.unit_id IS NOT NULL
+    """, (ref, org_id)).fetchone()
     if not t:
         units = conn.execute("""
             SELECT u.id FROM units u JOIN properties p ON p.id = u.property_id
-            WHERE p.status = 'active' AND UPPER(REPLACE(REPLACE(u.unit_number, ' ', ''), '-', '')) = ?
-        """, (ref,)).fetchall()
+            WHERE p.status = 'active' AND p.organization_id = ?
+              AND UPPER(REPLACE(REPLACE(u.unit_number, ' ', ''), '-', '')) = ?
+        """, (org_id, ref)).fetchall()
         if len(units) != 1:
             return None, None                              # unknown, or ambiguous across properties
         t = conn.execute("SELECT * FROM tenants WHERE unit_id = ? AND status = 'active'",
@@ -136,7 +176,8 @@ def validate_c2b(body):
     validation is switched on for the shortcode). Unknown account numbers are
     turned away, so the money never lands without a name on it."""
     with get_connection() as conn:
-        tenant, _ = resolve_account(conn, body.get('BillRefNumber'))
+        org_id = collection_org(conn, body.get('BusinessShortCode'))
+        tenant, _ = resolve_account(conn, body.get('BillRefNumber'), org_id)
     if tenant:
         return {'ResultCode': '0', 'ResultDesc': 'Accepted'}
     return {'ResultCode': 'C2B00012', 'ResultDesc': 'Rejected'}       # invalid account number
@@ -155,14 +196,15 @@ def record_c2b_confirmation(body):
         if conn.execute("SELECT 1 FROM payment_transactions WHERE external_reference = ?",
                         (f'C2B:{trans_id}',)).fetchone():
             return None                                    # Safaricom retried
-        tenant, unit = resolve_account(conn, body.get('BillRefNumber'))
+        org_id = collection_org(conn, body.get('BusinessShortCode'))
+        tenant, unit = resolve_account(conn, body.get('BillRefNumber'), org_id)
         txn_id = generate_id('PTXN')
         conn.execute("""
             INSERT INTO payment_transactions
-                (id, property_id, unit_id, tenant_id, source, external_reference, phone, amount,
+                (id, org_id, property_id, unit_id, tenant_id, source, external_reference, phone, amount,
                  raw_callback, processing_status, error_detail, mpesa_ref, account_ref, paid_at, callback_amount)
-            VALUES (?, ?, ?, ?, 'c2b', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (txn_id, unit['property_id'] if unit else None, unit['id'] if unit else None,
+            VALUES (?, ?, ?, ?, ?, 'c2b', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (txn_id, org_id, unit['property_id'] if unit else None, unit['id'] if unit else None,
               tenant['id'] if tenant else None, f'C2B:{trans_id}', str(body.get('MSISDN') or ''), amount,
               json.dumps(body), 'pending' if tenant else 'unmatched',
               None if tenant else f"account number '{body.get('BillRefNumber') or ''}' not recognised",
@@ -319,12 +361,15 @@ def book_pending(base_url=None):
     return out
 
 
-def assign_unmatched(conn, txn_id, tenant_id):
+def assign_unmatched(conn, txn_id, tenant_id, org_id):
     """Admin names the tenant for a paybill payment whose account number was not
     recognised; it is then booked like any other. Returns True if re-queued."""
-    txn = conn.execute("SELECT * FROM payment_transactions WHERE id = ? AND processing_status = 'unmatched'",
-                       (txn_id,)).fetchone()
-    tenant = conn.execute("SELECT * FROM tenants WHERE id = ? AND unit_id IS NOT NULL", (tenant_id,)).fetchone()
+    txn = conn.execute("""SELECT * FROM payment_transactions
+                          WHERE id = ? AND org_id = ? AND processing_status = 'unmatched'""",
+                       (txn_id, org_id)).fetchone()
+    tenant = conn.execute("""SELECT t.* FROM tenants t JOIN properties p ON p.id = t.property_id
+                             WHERE t.id = ? AND t.unit_id IS NOT NULL AND p.organization_id = ?""",
+                          (tenant_id, org_id)).fetchone()
     if not txn or not tenant:
         return False
     unit = conn.execute("SELECT property_id FROM units WHERE id = ?", (tenant['unit_id'],)).fetchone()

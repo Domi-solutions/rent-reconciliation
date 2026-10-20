@@ -548,6 +548,7 @@ tables:
     columns:
       id: {type: TEXT, pk: true}
       property_id: {type: TEXT}
+      org_id: {type: TEXT, fk: organizations.id, note: "Receiving organization's identity; unmatched C2B payments stay hidden from org admins if ambiguous"}
       unit_id: {type: TEXT, fk: units.id}
       tenant_id: {type: TEXT, fk: tenants.id}
       source: {type: TEXT, required: true, values: [daraja, c2b, pesapal, manual], note: "daraja = STK Push; c2b = paybill menu. Both book payments with payments.source='daraja'"}
@@ -557,7 +558,7 @@ tables:
       currency: {type: TEXT, default: KES}
       raw_callback: {type: TEXT, note: "Full JSON blob from provider"}
       received_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
-      processing_status: {type: TEXT, default: pending, values: [pending, completed, failed, duplicate, unmatched]}
+      processing_status: {type: TEXT, default: pending, values: [awaiting_request, pending, completed, failed, duplicate, unmatched]}
       processed_at: {type: TIMESTAMP}
       error_detail: {type: TEXT}
       payment_id: {type: TEXT, fk: payments.id, note: "Set when processed successfully"}
