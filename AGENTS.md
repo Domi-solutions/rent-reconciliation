@@ -26,14 +26,15 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex (tenant onboarding safety and end-to-end walkthrough)
+**Who:** Codex (tenant onboarding safety and local main integration)
 **Date:** 2026-10-20
 
 ### What changed
 
-- Continued the isolated `codex/tenant-payment-fixes` branch, which already contains the
-  STK callback-race and C2B organization-boundary fixes from commit `852d69e`.
-  The branch is still separate from `main`.
+- Integrated the tenant branch (including STK callback-race and C2B
+  organization-boundary fixes from `852d69e`) with the four newer local `main`
+  bank-reconciliation commits. The combined parser retains both the broader
+  M-Pesa reference pattern and the new payer-name recovery logic.
 - Tested first-time tenant sign-in, OTP/PIN setup, statements, invoices, receipts,
   payment-status access control, repair conversations, and logout/sign-in against a
   disposable copy of the 2026-10-20 production backup: 22 checks passed. A broader
@@ -49,9 +50,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 - Removed automatic portal-token generation from five payment-assignment paths.
   Payment confirmation SMS still sends, but includes a portal link only if access
   was already enabled. This preserves intentional revocation.
-- Added four focused onboarding/security regression tests. The full unittest
-  discovery run now passes 10 tests; copied-database invitation preview displays
-  all 8 blocked rows. See the new Session 26 note in `CURSOR_PATTERNS.md`.
+- Added focused onboarding/security regression tests. The combined tree passed
+  10 unittest cases and 9 parser regressions. Copied-database smoke checks passed
+  the 22-step tenant journey, the invitation preview with 8 blocked rows, and
+  a 371-page crawl across 42 tenants. See Session 26 in `CURSOR_PATTERNS.md`.
 
 ### Release status and next steps
 
@@ -61,9 +63,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
    payment instructions before any invitation.
 3. Finish TextSMS account setup and a one-phone delivery test. Current production
    Africa's Talking username is `sandbox`; no real SMS was sent here.
-4. Integrate this branch with newer `main` bank-reconciliation commits, retest,
-   and review before any deploy. No merge, push, deploy, production DB write,
-   live token generation, or M-Pesa transaction occurred this session.
+4. The combined work is now on local `main` but has not been pushed or deployed.
+   Review it before release. No production DB write, live token generation,
+   real SMS, or M-Pesa transaction occurred this session. The pre-existing
+   untracked `.agents/` directory in the main checkout was left untouched.
 5. Keep Daraja live money disabled until the law-firm paybill arrangement,
    credentials, callbacks, and real-money reconciliation are approved.
 6. The previous ledger dry run found two unattributed rows: 6C water KES 1,200

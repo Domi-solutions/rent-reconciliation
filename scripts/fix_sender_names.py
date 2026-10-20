@@ -74,24 +74,31 @@ def main():
     improved, unchanged, missing = [], 0, 0
     with get_connection() as conn:
         for ref, name in sorted(names.items()):
-            row = conn.execute(
+            # Every row carrying the reference, not just the first. The same
+            # statement has been uploaded more than once, so a reference can sit
+            # on several rows; repairing one and leaving its twin truncated is
+            # half a repair, and the untouched copy is the one that still fails
+            # to match a tenant.
+            rows = conn.execute(
                 "SELECT id, sender_name FROM bank_transactions WHERE UPPER(mpesa_ref) = ?", (ref,)
-            ).fetchone()
-            if not row:
+            ).fetchall()
+            if not rows:
                 missing += 1
                 continue
-            current = (row['sender_name'] or '').strip()
-            # Only ever lengthen a name: never replace a fuller record with a
-            # shorter one, whatever order the sources are given in.
-            if current == name:
-                unchanged += 1
-            elif len(name) > len(current):
-                improved.append((row['id'], ref, current, name))
-            else:
-                unchanged += 1
+            for row in rows:
+                current = (row['sender_name'] or '').strip()
+                # Only ever lengthen a name: never replace a fuller record with a
+                # shorter one, whatever order the sources are given in.
+                if current == name:
+                    unchanged += 1
+                elif len(name) > len(current):
+                    improved.append((row['id'], ref, current, name))
+                else:
+                    unchanged += 1
 
-        print(f'\n  {len(improved)} name(s) would improve · {unchanged} already good · '
-              f'{missing} reference(s) not in the database\n')
+        refs_touched = len({r[1] for r in improved})
+        print(f'\n  {len(improved)} row(s) across {refs_touched} reference(s) would improve · '
+              f'{unchanged} already good · {missing} reference(s) not in the database\n')
         for _, ref, old, new in improved[:40]:
             print(f'    {ref:<14}{(old or "(blank)"):<26} ->  {new}')
         if len(improved) > 40:
