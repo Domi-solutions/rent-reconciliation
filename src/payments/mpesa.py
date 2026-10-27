@@ -239,6 +239,11 @@ def _confirm_with_safaricom(conn, txn):
     if not txn['mpesa_ref']:
         _fail(conn, txn['id'], 'STK callback has no M-Pesa receipt number')
         return 'stop'
+    from src.utils.runtime import is_demo
+    if is_demo() and str(txn['external_reference'] or '').startswith('DEMO-'):
+        # Demo site only: the simulated prompt has nobody at Safaricom to confirm it.
+        conn.execute("UPDATE payment_transactions SET verified_via = 'demo (simulated)' WHERE id = ?", (txn['id'],))
+        return 'go'
     if not daraja.configured():
         if is_production() or os.environ.get('DARAJA_ENV') == 'production':
             _fail(conn, txn['id'], 'Daraja not configured — cannot confirm with Safaricom')

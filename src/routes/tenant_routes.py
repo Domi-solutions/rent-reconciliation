@@ -156,6 +156,9 @@ def verify():
                 person_id = person_for_phone(conn, phone, tenancies)
                 session['tenant_verify_person'] = person_id
                 code = issue_otp(conn, person_id)
+                from src.utils.runtime import is_demo
+                if code and is_demo():
+                    session['demo_sms_code'] = code      # the demo shows the code instead of texting it
                 if code:
                     send_sms_async([phone],
                                    f"Your {(tenancies[0]['property_name'] or '').title()} tenant code is {code}. "
@@ -690,7 +693,7 @@ def pay(token):
     return render_template(
         'tenant/pay.html',
         how=how,
-        stk_enabled=daraja.configured(),
+        stk_enabled=daraja.configured() or __import__('src.utils.runtime', fromlist=['is_demo']).is_demo(),
         token=token,
         tenant=tenant,
         unit=unit,
@@ -987,6 +990,9 @@ def pay_stk(token):
         return jsonify({'success': False, 'error': 'A payment prompt was just sent. Check your phone, or try again in a minute.'})
 
     description = f"Rent — Unit {unit['unit_number']}"
+    from src.utils.runtime import is_demo
+    if is_demo():
+        return _demo_stk(tenant, unit, prop, phone, amount)
     result = stk_push(phone, amount, unit['unit_number'], description)
 
     if result['success']:
@@ -999,6 +1005,26 @@ def pay_stk(token):
         return jsonify({'success': True, 'checkout_request_id': checkout_request_id})
 
     return jsonify({'success': False, 'error': result.get('error', 'Payment initiation failed')})
+
+
+def _demo_stk(tenant, unit, prop, phone, amount):
+    """Demo site only: what Safaricom would do, done here. The request is recorded and
+    'paid' through the same booking path as a real M-Pesa payment, so the receipt,
+    allocations and balance are the real thing — only the money is pretend."""
+    import secrets as _secrets
+    from datetime import datetime
+    from src.payments import mpesa
+    checkout_id = 'DEMO-' + _secrets.token_hex(8)
+    receipt = 'TK' + ''.join(_secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
+    with get_connection() as conn:
+        mpesa.link_stk_request(conn, checkout_id, prop['organization_id'], prop['id'], unit['id'],
+                               tenant['id'], phone, amount)
+        row = conn.execute("SELECT id FROM payment_transactions WHERE external_reference = ?", (checkout_id,)).fetchone()
+        conn.execute("""UPDATE payment_transactions SET callback_amount = ?, mpesa_ref = ?, paid_at = ?, raw_callback = ?
+                        WHERE id = ?""", (amount, receipt, datetime.now().isoformat(timespec='seconds'),
+                                          '{"demo": "simulated M-Pesa result"}', row['id']))
+    mpesa.book(row['id'], os.environ.get('APP_BASE_URL') or request.host_url)
+    return jsonify({'success': True, 'checkout_request_id': checkout_id})
 
 
 @tenant_bp.route('/<token>/pay/status/<checkout_request_id>')

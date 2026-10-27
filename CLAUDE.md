@@ -101,7 +101,8 @@ scripts/payment_coverage_check.py    # read-only: find a payer by name/phone; pa
 src/reports/landlord_report.py # generate_report(), enrich_report_data()
 src/messaging/delivery.py      # send_sms(), send_sms_async(); SMS_PROVIDER africastalking|textsms; SMS_SENDER_ID; plain_sms()/sms_parts() keep text GSM-7 (Unicode costs 2-3x)
 src/messaging/outreach.py      # TENANT_OUTREACH_ENABLED default-off gate for invites, due reminders, monthly check-ins; AUTOMATIC_ALERTS_ENABLED default-off gate for system-initiated alerts (owner digest, stale/not-found claim SMS)
-src/utils/runtime.py           # is_production() — FLASK_ENV or ENVIRONMENT; never read either directly
+src/utils/runtime.py           # is_production() — FLASK_ENV or ENVIRONMENT; never read either directly; is_demo() — DEMO_MODE=true and not production
+src/demo/seed.py               # demo data (Kijani Court); scripts/seed_demo.py rebuilds a demo DB; fly.demo.toml = separate app 'domi-demo'. Demo: /demo start page + reset, SMS code shown on screen, STK simulated through the real booking path, banner on every page
 src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
 src/messaging/owner_notify.py  # notify_property_owners()
 src/payments/daraja.py         # STK Push (initiate), stk_query (confirm), configured()

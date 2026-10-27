@@ -25,7 +25,7 @@ from werkzeug.utils import secure_filename
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
-from src.database.db import get_connection, init_database, generate_id, allocate_payment, apply_unallocated_credit
+from src.database.db import get_connection, get_db_path, init_database, generate_id, allocate_payment, apply_unallocated_credit
 from src.parsers.pdf_parser import parse_bank_statement
 from src.parsers.sms_parser import parse_mpesa_message
 from src.reconciliation.matcher import enrich_with_suggestions
@@ -199,6 +199,15 @@ migrate_add_leases()
 migrate_add_staff_chat()
 migrate_add_expenses()
 
+# Demo site: an empty database is filled with the made-up Kijani Court data on first start.
+from src.utils.runtime import is_demo as _is_demo
+if _is_demo():
+    with get_connection() as _conn:
+        if not _conn.execute("SELECT 1 FROM properties LIMIT 1").fetchone():
+            from src.demo.seed import seed as _seed_demo
+            _seed_demo(_conn)
+            print("Demo data created.")
+
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
 from src.routes.team_routes import team_bp
@@ -365,7 +374,7 @@ def require_admin_auth():
     if request.endpoint is None:
         return None
     exempt = ('admin_login', 'admin_logout', 'org_select', 'static', 'welcome', 'health_check',
-              'short_link')  # /t/<code> is the tenant's SMS link; the tenant sign-in gate takes over
+              'short_link', 'demo_start', 'demo_reset')  # /t/<code> is the tenant's SMS link; the tenant sign-in gate takes over
     if request.endpoint in exempt:
         return None
     if request.path.startswith('/view'):
@@ -381,6 +390,9 @@ def require_admin_auth():
     if request.path.startswith('/owner'):
         return None
     if not session.get('admin_authenticated'):
+        from src.utils.runtime import is_demo
+        if is_demo() and request.endpoint == 'dashboard':
+            return redirect(url_for('demo_start'))
         return redirect(url_for('admin_login', next=request.url))
     if session.get('admin_user_id'):
         # Re-checked every request: switching an account off ends its sessions at once.
@@ -626,6 +638,12 @@ def inject_property_context():
 
 
 @app.context_processor
+def inject_demo_mode():
+    from src.utils.runtime import is_demo
+    return {'demo_mode': is_demo()}
+
+
+@app.context_processor
 def inject_page_guide():
     """The "what is this page" box (partials/guide.html) — text in src/utils/guides.py."""
     from src.utils import guides
@@ -683,6 +701,32 @@ def admin_login():
         return render_template('login.html', error='Incorrect email or password.')
 
     return render_template('login.html')
+
+
+@app.route('/demo')
+def demo_start():
+    """Demo site only: who to sign in as, and a reset button."""
+    from src.utils.runtime import is_demo
+    if not is_demo():
+        abort(404)
+    from src.demo.seed import LOGINS
+    return render_template('demo_start.html', logins=LOGINS)
+
+
+@app.route('/demo/reset', methods=['POST'])
+def demo_reset():
+    """Demo site only: rebuild the made-up data from scratch (everyone is signed out)."""
+    from src.utils.runtime import is_demo
+    if not is_demo():
+        abort(404)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('seed_demo', os.path.join(os.path.dirname(__file__), 'scripts', 'seed_demo.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.build(get_db_path())
+    session.clear()
+    flash('Demo data reset — everything is back to the start.', 'success')
+    return redirect(url_for('demo_start'))
 
 
 @app.route('/logout')

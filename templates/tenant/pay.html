@@ -34,8 +34,28 @@
 <script>
 (function () {
   const form = document.getElementById('stk-form'), msg = document.getElementById('stk-msg');
+  {% if demo_mode %}
+  // Demo: show what the tenant's phone would show, then "pay".
+  function demoPrompt(amount) {
+    return new Promise((resolve) => {
+      const o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+      o.innerHTML = '<div style="background:#fff;border-radius:16px;max-width:320px;width:100%;padding:18px;font-family:var(--font);box-shadow:0 20px 50px rgba(0,0,0,.35)">' +
+        '<div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#8A6A00;text-transform:uppercase">Demo · on the tenant\'s phone</div>' +
+        '<div style="font-weight:700;margin:8px 0 4px">M-PESA</div>' +
+        '<div style="font-size:14px;margin-bottom:12px">Do you want to pay KES ' + Number(amount).toLocaleString() + ' to {{ (how.name if how and how.name else property.name|title)|e }}? Account: {{ unit.unit_number|e }}</div>' +
+        '<input type="password" inputmode="numeric" maxlength="4" placeholder="Enter M-PESA PIN" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:10px;font-size:16px;margin-bottom:12px">' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-a="0" style="border:0;background:none;padding:8px 12px;font-weight:600">Cancel</button>' +
+        '<button type="button" data-a="1" style="border:0;background:#2E8B62;color:#fff;border-radius:999px;padding:8px 18px;font-weight:700">OK</button></div></div>';
+      document.body.appendChild(o);
+      o.querySelector('input').focus();
+      o.addEventListener('click', (ev) => { const a = ev.target.getAttribute && ev.target.getAttribute('data-a'); if (a !== null) { o.remove(); resolve(a === '1'); } });
+    });
+  }
+  {% endif %}
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    {% if demo_mode %}if (!(await demoPrompt(form.amount.value))) return;{% endif %}
     const btn = form.querySelector('button'); btn.disabled = true;
     msg.textContent = 'Sending the prompt to your phone…';
     const r = await fetch('{{ url_for("tenant.pay_stk", token=token) }}', {method: 'POST', body: new FormData(form)});

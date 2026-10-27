@@ -3,6 +3,12 @@
 {% block content %}
   <h1>Enter the code</h1>
   <p class="lead">If {{ masked }} is the number on record, a 6-digit code was sent to it by SMS. It works for 10 minutes.</p>
+  {% if demo_mode and session.get('demo_sms_code') %}
+  <div style="background:#FFF6D9;border:1px dashed #E0B640;border-radius:14px;padding:12px 14px;margin-bottom:16px;font-size:14px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#8A6A00;">Demo · the SMS would say</div>
+    <div style="margin-top:4px;">Your tenant code is <b style="font-size:20px;letter-spacing:3px;">{{ session.get('demo_sms_code') }}</b>. It expires in 10 minutes.</div>
+  </div>
+  {% endif %}
   {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
   <form method="POST" autocomplete="off">
     <div class="mb-3">

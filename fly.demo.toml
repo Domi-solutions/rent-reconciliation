@@ -1,0 +1,33 @@
+# The stakeholder demo: a separate app and database from the live site.
+# Made-up data (scripts/seed_demo.py), SMS codes shown on screen, M-Pesa simulated.
+# DEMO_MODE only works when FLASK_ENV is not "production" (src/utils/runtime.is_demo).
+app = "domi-demo"
+primary_region = "jnb"
+
+[build]
+
+[env]
+  PORT = "8080"
+  FLASK_DEBUG = "0"
+  FLASK_ENV = "demo"
+  DEMO_MODE = "true"
+  AT_SMS_ENABLED = "false"
+  DATABASE_PATH = "/data/demo.db"
+  UPLOAD_FOLDER = "/data/statements"
+  PYTHONUNBUFFERED = "1"
+
+[[mounts]]
+  source = "demo_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

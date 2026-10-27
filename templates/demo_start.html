@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Domi — demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+  <style>
+    body { margin: 0; background: linear-gradient(180deg, var(--forest) 0, var(--forest-2) 300px, var(--bg) 300px); background-repeat: no-repeat; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 36px 18px 40px; }
+    .hero { color: #fff; text-align: center; margin-bottom: 22px; }
+    .hero .brand { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+    .hero h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 14px 0 6px; line-height: 1.15; }
+    .hero h1 span { color: var(--sage); }
+    .hero p { color: rgba(255,255,255,.78); font-size: 14px; margin: 0; }
+    .role { display: block; background: #fff; border-radius: 22px; padding: 16px 18px; margin-bottom: 12px;
+            box-shadow: var(--shadow-md); text-decoration: none; color: var(--ink); }
+    .role .t { font-size: 17px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    .role .d { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+    .cred { margin-top: 10px; background: var(--mint); border-radius: 14px; padding: 9px 12px; font-size: 13px; color: var(--forest); }
+    .cred b { font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
+    .arrow { color: var(--accent); font-size: 20px; }
+    .flash { background: var(--mint); color: var(--forest); border-radius: 14px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+    .reset { text-align: center; margin-top: 18px; }
+    .reset button { background: none; border: 1px solid var(--border-strong); border-radius: 999px; padding: 8px 16px; font: 600 13px var(--font); color: var(--ink-2); cursor: pointer; }
+    .foot { text-align: center; font-size: 12px; color: var(--ink-3); margin-top: 14px; }
+  </style>
+</head>
+<body>
+{% include 'partials/demo_banner.html' %}
+<div class="wrap">
+  <div class="hero">
+    <div class="brand">Domi</div>
+    <h1>Rent, <span>clear</span> for everyone.</h1>
+    <p>Kijani Court — a made-up building. Sign in as each person to see what they see.</p>
+  </div>
+  {% with messages = get_flashed_messages() %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endwith %}
+
+  <a class="role" href="{{ url_for('tenant.verify') }}">
+    <div class="t">1 · Tenant, first time <span class="arrow">→</span></div>
+    <div class="d">{{ logins.tenant_new.name }}, unit {{ logins.tenant_new.unit }}. Gets a code by SMS (shown on screen in the demo), sets a PIN, sees her account and pays.</div>
+    <div class="cred">Phone <b>{{ logins.tenant_new.phone }}</b> · choose any 4-digit PIN</div>
+  </a>
+  <a class="role" href="{{ url_for('tenant.login') }}">
+    <div class="t">2 · Tenant, returning <span class="arrow">→</span></div>
+    <div class="d">{{ logins.tenant.name }}, unit {{ logins.tenant.unit }}. Statement, invoices, receipts, messages, repairs, paying.</div>
+    <div class="cred">Phone <b>{{ logins.tenant.phone }}</b> · PIN <b>{{ logins.tenant.pin }}</b> · payment PIN <b>{{ logins.tenant.pin }}</b></div>
+  </a>
+  <a class="role" href="{{ url_for('admin_login') }}">
+    <div class="t">3 · Management (the law firm) <span class="arrow">→</span></div>
+    <div class="d">{{ logins.admin.name }}. Who to follow up, leases, payments, tenant and caretaker chats, expenses and approvals, cash book.</div>
+    <div class="cred">Email <b>{{ logins.admin.email }}</b> · password <b>{{ logins.admin.password }}</b></div>
+  </a>
+  <a class="role" href="{{ url_for('caretaker.login') }}">
+    <div class="t">4 · Caretaker <span class="arrow">→</span></div>
+    <div class="d">Follow-up list with call buttons, water readings, repairs, reports and expenses to management.</div>
+    <div class="cred">Name <b>{{ logins.caretaker.name }}</b> · password <b>{{ logins.caretaker.password }}</b></div>
+  </a>
+  <a class="role" href="{{ url_for('admin_login') }}">
+    <div class="t">5 · Owner <span class="arrow">→</span></div>
+    <div class="d">{{ logins.owner.name }} for Kijani Holdings. Money collected, who owes, the cash book with every expense and receipt.</div>
+    <div class="cred">Email <b>{{ logins.owner.email }}</b> · password <b>{{ logins.owner.password }}</b></div>
+  </a>
+
+  <form class="reset" method="POST" action="{{ url_for('demo_reset') }}" onsubmit="return confirm('Put the demo back to the start? Everyone is signed out.')">
+    <button>Reset the demo</button>
+  </form>
+  <div class="foot">Sign out from one person before signing in as the next.</div>
+</div>
+</body>
+</html>

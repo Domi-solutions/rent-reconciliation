@@ -9,6 +9,7 @@
   {% block extra_css %}{% endblock %}
 </head>
 <body>
+{% include 'partials/demo_banner.html' %}
 {% set active_nav =
     'overview'    if request.endpoint == 'dashboard'
     else 'flagged'    if request.endpoint in ('flagged_claims_admin', 'admin_clear_flag')

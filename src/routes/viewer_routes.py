@@ -1023,6 +1023,11 @@ def property_wallet(property_id):
             (property_id, this_month)
         ).fetchone()[0])
 
+        from src.money import expenses as ex
+        months, totals = ex.cash_book(conn, property_id)
+        spent = [ex.get(conn, r['id'], property_id) for r in ex.listing(conn, property_id)
+                 if r['status'] in ('paid', 'approved')][:60]
+
     now = datetime.now(timezone.utc)
     payout_status = 'unset'
     if owner and owner['payout_mpesa'] and owner['payout_confirmed']:
@@ -1033,10 +1038,6 @@ def property_wallet(property_id):
     elif owner and owner['payout_mpesa'] and not owner['payout_confirmed']:
         payout_status = 'pending_otp'
 
-        from src.money import expenses as ex
-        months, totals = ex.cash_book(conn, property_id)
-        spent = [ex.get(conn, r['id'], property_id) for r in ex.listing(conn, property_id)
-                 if r['status'] in ('paid', 'approved')][:60]
 
     return render_template(
         'viewer/wallet.html',
