@@ -26,8 +26,20 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude (Codex/ChatGPT no longer in use — Claude builds and reviews)
-**Date:** 2026-10-27 · **Deployed:** v92 (all of `main` to `caf64c6`). GitHub has up to `dae0094`.
+**Who:** Codex — UI design review; prior implementation handoff retained below.
+**Date:** 2026-10-27 · **Deployment:** no deployment or product changes in this review. Prior deployment notes follow below.
+
+### UI review this session
+
+- User likes the existing colours and asked for an opinion on the font, icons and buttons feeling AI-generated.
+- Inspected the rendered demo start page, management overview, units table and mobile sidebar at domi-demo.fly.dev, plus the shared theme and templates.
+- Assessment: keep forest green / sage / warm paper. Figtree with frequent heavy weights, pill buttons, 22px card corners, shadows and small uppercase labels collectively feel generic. Sidebar icons also have weak associations (dollar sign for expenses, upload arrow for water charges).
+- Suggested direction for discussion: calmer typography, less rounding and shadow, consistent purposeful icons, clearer action hierarchy, stronger secondary-text legibility. Units table also crowds and clips at the inspected narrow viewport.
+- No redesign implemented. Next UI step depends on the user's response to this critique; operational priorities and reconciliation blockers below remain outstanding.
+
+### Previous implementation handoff
+
+Previously recorded deployment: v92 (all of `main` to `caf64c6`); GitHub up to `dae0094`, with later v99+ work noted below.
 
 ### Product direction agreed with stakeholders
 
