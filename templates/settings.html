@@ -4,12 +4,12 @@
 
 <div class="mb-4">
   <h4 class="mb-1">Account Settings</h4>
-  <div style="font-size: 13px; color: #718096;">Your own account. Other administrators are managed under <a href="{{ url_for('team.team') }}">Team</a>.</div>
+  <div style="font-size: 13px; color: var(--ink-2);">Your own account. Other administrators are managed under <a href="{{ url_for('team.team') }}">Team</a>.</div>
 </div>
 
 {% if not account %}
 <div class="card border-0 shadow-sm">
-  <div class="card-body py-5 text-center" style="color: #718096; font-size: 14px;">
+  <div class="card-body py-5 text-center" style="color: var(--ink-2); font-size: 14px;">
     This session has no personal account (master key or platform access).<br>
     Sign in with your own email and password to change your account.
   </div>
@@ -22,7 +22,7 @@
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body" style="padding: 24px;">
       <h6 style="font-weight: 700; margin-bottom: 4px;">Your name</h6>
-      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+      <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         What the activity log records you as. Tenants see replies signed "Management", never your name.
       </div>
       <form method="POST" action="{{ url_for('account_name', next=url_for('org_settings')) }}">
@@ -36,7 +36,7 @@
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body" style="padding: 24px;">
       <h6 style="font-weight: 700; margin-bottom: 4px;">Sign-in email</h6>
-      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+      <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         The email address you sign in to Domi with.
       </div>
       <form method="POST" action="{{ url_for('settings_update_email') }}">
@@ -55,7 +55,7 @@
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body" style="padding: 24px;">
       <h6 style="font-weight: 700; margin-bottom: 4px;">Password</h6>
-      <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+      <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
         Change your login password. You'll be required to enter your current password.
       </div>
       <form method="POST" action="{{ url_for('settings_update_password') }}">
@@ -83,7 +83,7 @@
   <div class="card border-0 shadow-sm">
     <div class="card-body" style="padding: 24px;">
       <h6 style="font-weight: 700; margin-bottom: 4px;">Organisation</h6>
-      <div style="font-size: 13px; color: #718096; margin-bottom: 12px;">
+      <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 12px;">
         Contact your Domi account manager to update your organisation name.
       </div>
       <div style="font-size: 14px;">

@@ -12,22 +12,22 @@
     padding: 18px 18px; margin-bottom: 12px; min-height: 76px;
     border: 1px solid var(--border); background: var(--surface); color: inherit; }
   .ct-do:hover { border-color: var(--ink-3); color: inherit; }
-  .ct-do-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .ct-do-primary { background: var(--frame); color: #fff; border-color: transparent; box-shadow: var(--shadow-md); }
   .ct-do-primary:hover { opacity: .92; color: #fff; }
   .ct-do-title { font-size: 17px; font-weight: 700; display: flex;
     justify-content: space-between; align-items: center; gap: 10px; }
   .ct-do-sub { font-size: 13px; color: var(--ink-3); margin-top: 3px; }
-  .ct-do-primary .ct-do-sub { color: rgba(255,255,255,.72); }
+  .ct-do-primary .ct-do-sub { color: var(--sage); }
   .ct-count { display: inline-block; min-width: 26px; text-align: center;
     padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 700;
     background: #FF3B30; color: #fff; }
 
-  .ct-head { background: var(--surface); border: 1px solid var(--border);
+  .ct-head { background: var(--frame); color: #fff; border: none; box-shadow: var(--shadow-md);
     border-radius: var(--r-card); padding: 18px; margin: 18px 0 12px; text-align: center; }
-  .ct-head-label { font-size: 11px; font-weight: 700; letter-spacing: .07em;
-    text-transform: uppercase; color: var(--ink-3); }
-  .ct-head-value { font-size: 32px; font-weight: 700; color: var(--ink); margin-top: 5px; line-height: 1.1; }
-  .ct-head-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+  .ct-head-label { font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--sage); }
+  .ct-head-value { font-size: 34px; font-weight: 800; color: #fff; margin-top: 6px; line-height: 1.1; letter-spacing: -.02em; }
+  .ct-head-sub { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 4px; }
 
   .ct-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
     text-transform: uppercase; color: var(--ink-3); margin: 20px 4px 9px; }
@@ -52,7 +52,7 @@
 <div class="ct-wrap">
 
   <div style="margin-bottom: 14px;">
-    <div style="font-size: 21px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
+    <div style="font-size: 22px; font-weight: 800; color: var(--ink); letter-spacing: -.02em;">{{ property.name|title }}</div>
     {% if days_to_due is not none %}
     <div style="font-size: 13px; color: var(--ink-2);">
       {% if days_to_due == 0 %}Rent due today
@@ -144,7 +144,7 @@
   </div>
   {% else %}
   <div class="ct-list">
-    <div class="ct-row" style="color: #1E7A35; font-weight: 600;">Nobody is behind on rent.</div>
+    <div class="ct-row" style="color: var(--green-dark); font-weight: 600;">Nobody is behind on rent.</div>
   </div>
   {% endif %}
 

@@ -1,13 +1,13 @@
 {# "What is this page" box. Text lives in src/utils/guides.py, keyed by endpoint. #}
 {% if guide %}
 <style>
-  .guide { background:#f3f7ff; border:1px solid #cfdcf5; border-radius:12px; padding:12px 14px; margin:0 0 16px; font-size:14px; color:#1f2a44; position:relative; }
+  .guide { background:var(--mint); border:1px solid rgba(46,139,98,.18); border-radius:18px; padding:12px 14px; margin:0 0 16px; font-size:14px; color:var(--forest); position:relative; }
   .guide b.t { display:block; font-size:15px; margin-bottom:2px; padding-right:28px; }
   .guide ul { margin:6px 0 0; padding-left:18px; } .guide li { margin:2px 0; }
-  .guide .x { position:absolute; top:6px; right:8px; border:0; background:none; font-size:22px; line-height:1; color:#5b6b8c; cursor:pointer; padding:4px 8px; }
-  .guide .lang { margin-top:8px; font-size:12px; } .guide .lang a { color:#3155a6; cursor:pointer; text-decoration:underline; }
-  .guide .lang a.on { font-weight:700; text-decoration:none; color:#1f2a44; }
-  .guide-reopen { border:1px solid #cfdcf5; background:#f3f7ff; color:#3155a6; border-radius:999px; font-size:12px; padding:3px 10px; margin:0 0 12px; cursor:pointer; }
+  .guide .x { position:absolute; top:6px; right:8px; border:0; background:none; font-size:22px; line-height:1; color:var(--ink-2); cursor:pointer; padding:4px 8px; }
+  .guide .lang { margin-top:8px; font-size:12px; } .guide .lang a { color:var(--accent); cursor:pointer; text-decoration:underline; }
+  .guide .lang a.on { font-weight:700; text-decoration:none; color:var(--forest); }
+  .guide-reopen { border:1px solid rgba(46,139,98,.25); background:var(--mint); color:var(--accent); border-radius:999px; font-size:12px; padding:3px 10px; margin:0 0 12px; cursor:pointer; }
   @media print { .guide, .guide-reopen { display:none !important; } }
 </style>
 <div class="guide" id="guide" role="note">

@@ -46,7 +46,7 @@ def thread(conn, caretaker_id):
     msgs = [dict(m) for m in conn.execute("""
         SELECT m.*, a.name AS account_name FROM staff_messages m
         LEFT JOIN admin_users a ON a.id = m.sender_account_id
-        WHERE m.caretaker_id = ? ORDER BY m.created_at, m.id
+        WHERE m.caretaker_id = ? ORDER BY m.created_at, m.rowid   -- rowid = order written (ids are random)
     """, (caretaker_id,))]
     photos = {}
     if msgs:
@@ -89,11 +89,11 @@ def chats_for_admin(conn, property_id):
         SELECT c.caretaker_id,
                COALESCE(ct.name, (SELECT m2.sender_name FROM staff_messages m2
                                   WHERE m2.caretaker_id = c.caretaker_id AND m2.sender_type = 'caretaker'
-                                  ORDER BY m2.created_at DESC LIMIT 1), 'Former caretaker') AS name,
+                                  ORDER BY m2.created_at DESC, m2.rowid DESC LIMIT 1), 'Former caretaker') AS name,
                ct.id IS NOT NULL AS current,
                ct.phone,
                (SELECT body FROM staff_messages WHERE caretaker_id = c.caretaker_id
-                ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
+                ORDER BY created_at DESC, rowid DESC LIMIT 1) AS last_body,
                (SELECT created_at FROM staff_messages WHERE caretaker_id = c.caretaker_id
                 ORDER BY created_at DESC LIMIT 1) AS last_at,
                (SELECT COUNT(*) FROM staff_messages m

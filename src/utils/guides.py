@@ -142,12 +142,12 @@ _T = {
     # ── Caretaker ────────────────────────────────────────────────────────────
     'caretaker.dashboard': {
         'en': ('Today', 'What needs you at this property.', [
-            'Arrears: who is behind, to follow up in person.',
+            'Follow up: who is more than a month behind, to call or visit.',
             'Water: enter every unit\'s meter reading each month — a month without readings stays open.',
             'Issues: repairs tenants report, with their photos. Reply, then mark fixed.',
         ]),
         'sw': ('Leo', 'Kinachohitaji umakini wako kwenye jengo hili.', [
-            'Madeni (Arrears): walio nyuma, wa kufuatilia ana kwa ana.',
+            'Fuatilia (Follow up): walio nyuma zaidi ya mwezi mmoja, wa kupigia simu au kutembelea.',
             'Maji: weka usomaji wa mita wa kila nyumba kila mwezi — mwezi bila usomaji unabaki wazi.',
             'Matatizo (Issues): matengenezo yaliyoripotiwa na wapangaji, pamoja na picha. Jibu, kisha weka "fixed".',
         ]),

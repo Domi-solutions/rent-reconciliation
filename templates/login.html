@@ -5,21 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign in — Domi</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { background: #f7f8fa; }
+    <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+<style>
+    body { background: linear-gradient(180deg, var(--forest) 0, var(--forest-2) 45%, var(--bg) 45%); background-repeat: no-repeat; min-height: 100vh; }
     .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .login-card { background: #fff; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,.08); padding: 40px 36px; width: 100%; max-width: 400px; }
+    .login-card { background: #fff; border-radius: 22px; box-shadow: var(--shadow-md); padding: 40px 36px; width: 100%; max-width: 400px; }
     .brand { text-align: center; margin-bottom: 32px; }
-    .brand-mark { width: 48px; height: 48px; background: #1a1a2e; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+    .brand-mark { width: 48px; height: 48px; background: var(--forest); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
     .brand-mark span { color: #fff; font-size: 22px; font-weight: 700; }
-    .brand-name { font-size: 20px; font-weight: 700; color: #1a1a2e; }
-    .brand-tagline { font-size: 13px; color: #8a94a6; margin-top: 2px; }
+    .brand-name { font-size: 20px; font-weight: 700; color: var(--forest); }
+    .brand-tagline { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
     .form-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
-    .form-control { border-radius: 10px; border: 1.5px solid #e5e7eb; padding: 11px 14px; font-size: 14px; transition: border-color .15s; }
-    .form-control:focus { border-color: #1a1a2e; box-shadow: 0 0 0 3px rgba(26,26,46,.08); }
-    .btn-signin { background: #1a1a2e; color: #fff; border: none; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 600; width: 100%; transition: opacity .15s; }
-    .btn-signin:hover { opacity: .88; color: #fff; }
-    .error-box { background: #fff1f0; border: 1px solid #fca5a5; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #b91c1c; margin-bottom: 20px; }
+    .form-control { border-radius: 10px; border: 1.5px solid var(--border-strong); padding: 11px 14px; font-size: 14px; transition: border-color .15s; }
+    .form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,139,98,.14); }
+    .btn-signin { background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 12px; font-size: 14px; font-weight: 600; width: 100%; transition: opacity .15s; }
+    .btn-signin:hover { background: var(--accent-hover); color: #fff; }
+    .error-box { background: #fff1f0; border: 1px solid #fca5a5; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--red); margin-bottom: 20px; }
   </style>
 </head>
 <body>

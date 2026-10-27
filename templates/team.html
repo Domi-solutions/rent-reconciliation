@@ -3,7 +3,7 @@
 {% block content %}
 <div class="mb-4">
   <h4 class="mb-1">Team</h4>
-  <div style="font-size: 13px; color: #718096; max-width: 640px;">
+  <div style="font-size: 13px; color: var(--ink-2); max-width: 640px;">
     Everyone who signs in to manage the organisation has their own account. Tenants see replies signed
     "Management"; the activity log records which person acted. Accounts are switched off, never deleted —
     a former admin's name stays on what they did.
@@ -54,7 +54,7 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="6" style="padding:20px;color:#718096">No accounts yet.</td></tr>
+      <tr><td colspan="6" style="padding:20px;color:var(--ink-2)">No accounts yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -65,7 +65,7 @@
 <div class="card border-0 shadow-sm" style="max-width: 560px;">
   <div class="card-body" style="padding: 24px;">
     <h6 style="font-weight: 700; margin-bottom: 4px;">Add an administrator</h6>
-    <div style="font-size: 13px; color: #718096; margin-bottom: 16px;">
+    <div style="font-size: 13px; color: var(--ink-2); margin-bottom: 16px;">
       Choose a temporary password and give it to them in person, not by SMS or email. They change it under Account Settings.
     </div>
     <form method="POST" action="{{ url_for('team.add') }}">
@@ -82,6 +82,6 @@
   </div>
 </div>
 {% else %}
-<div style="font-size:13px;color:#718096">Only a lead admin can add or switch off accounts.</div>
+<div style="font-size:13px;color:var(--ink-2)">Only a lead admin can add or switch off accounts.</div>
 {% endif %}
 {% endblock %}

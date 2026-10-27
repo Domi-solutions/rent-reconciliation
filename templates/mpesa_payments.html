@@ -3,7 +3,7 @@
 {% block content %}
 <div class="mb-3">
   <h4 class="mb-1">M-Pesa payments</h4>
-  <div style="font-size:13px;color:#718096;max-width:720px">
+  <div style="font-size:13px;color:var(--ink-2);max-width:720px">
     Payments made to the property's own paybill, from the tenant's Pay button or the M-Pesa menu.
     {% if not live %}<b>The paybill is not connected yet</b> — this page fills once Daraja keys are set.{% endif %}
     A payment whose account number named nobody waits here until you name the tenant.
@@ -13,7 +13,7 @@
 <div class="card border-0 shadow-sm mb-4" style="max-width:640px">
   <div class="card-body" style="padding:20px">
     <h6 style="font-weight:700;margin-bottom:4px">Where tenants pay — {{ property.name|title }}</h6>
-    <div style="font-size:13px;color:#718096;margin-bottom:12px">
+    <div style="font-size:13px;color:var(--ink-2);margin-bottom:12px">
       Shown on every tenant's Pay page as the only account rent goes to. Changing it is reported to the owners and to Domi.
     </div>
     <form method="POST" action="{{ url_for('mpesa_admin.save_instructions') }}" class="row g-2"
@@ -55,11 +55,11 @@
           {% elif r.processing_status == 'pending' %}<span class="badge bg-warning text-dark">{{ 'waiting for tenant' if not r.raw_callback else 'checking with Safaricom' }}</span>
           {% elif r.processing_status == 'duplicate' %}<span class="badge bg-secondary">same payment, already booked</span>
           {% else %}<span class="badge bg-light text-dark" title="{{ r.error_detail }}">not paid</span>
-            <div style="font-size:11px;color:#718096">{{ (r.error_detail or '')[:80] }}</div>{% endif %}
+            <div style="font-size:11px;color:var(--ink-2)">{{ (r.error_detail or '')[:80] }}</div>{% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" style="padding:20px;color:#718096">No M-Pesa payments yet.</td></tr>
+      <tr><td colspan="7" style="padding:20px;color:var(--ink-2)">No M-Pesa payments yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>

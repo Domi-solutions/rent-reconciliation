@@ -43,7 +43,7 @@ class DashboardAttention(unittest.TestCase):
     def test_quiet_state_does_not_show_a_false_alert(self):
         page = self.render()
         self.assertIn('No tenant questions, payment exceptions, or outstanding balances', page)
-        self.assertIn('Every unit is settled', page)
+        self.assertIn('Nothing overdue', page)
 
 
 if __name__ == '__main__':

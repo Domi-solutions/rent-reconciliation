@@ -72,7 +72,7 @@
         </table>
         {% endif %}
         {% if item.payment_id %}
-        <a class="print-btn d-inline-block mt-3" style="text-decoration:none;color:#1b1b1a" href="{{ url_for('tenant.receipt', token=token, payment_id=item.payment_id) }}">View / print receipt</a>
+        <a class="print-btn d-inline-block mt-3" style="text-decoration:none;color:var(--ink)" href="{{ url_for('tenant.receipt', token=token, payment_id=item.payment_id) }}">View / print receipt</a>
         {% endif %}
       </div>
     </div>

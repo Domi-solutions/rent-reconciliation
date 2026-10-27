@@ -4,7 +4,7 @@
 
 <div class="mb-4">
   <h4 class="mb-1">Pending Deletions</h4>
-  <div style="font-size:13px;color:#718096;">
+  <div style="font-size:13px;color:var(--ink-2);">
     Properties awaiting review. Data is fully preserved. Approve after the 14-day owner dispute window, cancel to restore, or transfer to a new agency.
   </div>
 </div>
@@ -14,7 +14,7 @@
   <div class="card-body text-center py-5">
     <div style="font-size:32px;margin-bottom:12px;">✓</div>
     <div style="font-weight:600;font-size:15px;margin-bottom:4px;">No pending deletions</div>
-    <div style="font-size:13px;color:#718096;">All properties are active.</div>
+    <div style="font-size:13px;color:var(--ink-2);">All properties are active.</div>
   </div>
 </div>
 {% else %}
@@ -36,10 +36,10 @@
         <tr>
           <td style="padding:14px 16px;">
             <div style="font-weight:600;">{{ p.name }}</div>
-            {% if p.address %}<div style="font-size:12px;color:#718096;">{{ p.address }}</div>{% endif %}
+            {% if p.address %}<div style="font-size:12px;color:var(--ink-2);">{{ p.address }}</div>{% endif %}
           </td>
-          <td style="padding:14px 16px;color:#718096;">{{ p.org_name or '—' }}</td>
-          <td style="padding:14px 16px;color:#718096;">{{ p.deletion_requested_at[:10] if p.deletion_requested_at else '—' }}</td>
+          <td style="padding:14px 16px;color:var(--ink-2);">{{ p.org_name or '—' }}</td>
+          <td style="padding:14px 16px;color:var(--ink-2);">{{ p.deletion_requested_at[:10] if p.deletion_requested_at else '—' }}</td>
           <td style="padding:14px 16px;">
             {% if days_left > 0 %}
             <span style="color:#d97706;font-weight:600;">{{ days_left }} day{{ 's' if days_left != 1 }} left</span>

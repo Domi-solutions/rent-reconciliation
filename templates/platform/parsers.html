@@ -4,7 +4,7 @@
 
 <div class="mb-4">
   <h4 class="mb-1">Parser Test Tools</h4>
-  <div style="font-size:13px;color:#718096;">
+  <div style="font-size:13px;color:var(--ink-2);">
     Runs parsers only — no data is saved to the database.
   </div>
 </div>
@@ -73,8 +73,8 @@
 
     {% if result.opening_balance is not none or result.closing_balance is not none %}
     <div class="d-flex gap-4 mb-3" style="font-size:13px;">
-      <div><span style="color:#718096;">Opening:</span> KES {{ "{:,.2f}".format((result.opening_balance or 0)|float) }}</div>
-      <div><span style="color:#718096;">Closing:</span> KES {{ "{:,.2f}".format((result.closing_balance or 0)|float) }}</div>
+      <div><span style="color:var(--ink-2);">Opening:</span> KES {{ "{:,.2f}".format((result.opening_balance or 0)|float) }}</div>
+      <div><span style="color:var(--ink-2);">Closing:</span> KES {{ "{:,.2f}".format((result.closing_balance or 0)|float) }}</div>
     </div>
     {% endif %}
 
@@ -109,7 +109,7 @@
         </tbody>
       </table>
       {% if result.transactions|length > 100 %}
-      <div style="font-size:12px;color:#718096;">{{ result.transactions|length - 100 }} more transactions not shown.</div>
+      <div style="font-size:12px;color:var(--ink-2);">{{ result.transactions|length - 100 }} more transactions not shown.</div>
       {% endif %}
     </div>
     {% endif %}

@@ -20,10 +20,10 @@
   .owed { font-weight: 700; color: #FF3B30; }
   .ref { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-2); }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
-  .p-red { background: #FFF0EF; color: #b91c1c; }
+  .p-red { background: #FFF0EF; color: var(--red); }
   .p-amber { background: #FFF4E5; color: #92400e; }
   .p-grey { background: var(--bg); color: var(--ink-2); }
-  .p-green { background: #EDFAF1; color: #1E7A35; }
+  .p-green { background: #EDFAF1; color: var(--green-dark); }
   .warn { background: #FFF4E5; border: 1px solid #FED7AA; border-radius: 12px; padding: 13px 16px; margin-bottom: 14px; font-size: 13px; color: #92400e; }
   .quiet { color: var(--ink-3); font-size: 12px; }
   @media print { .no-print { display: none !important; } }
@@ -256,7 +256,7 @@
           <tr>
             <td><strong>{{ c.unit_number }}</strong></td>
             <td>{{ c.tenant_name or '—' }}</td>
-            <td class="num" style="color:#1E7A35; font-weight:700;">{{ '{:,.0f}'.format(c.balance|abs) }}</td>
+            <td class="num" style="color:var(--green-dark); font-weight:700;">{{ '{:,.0f}'.format(c.balance|abs) }}</td>
             <td>{{ c.last_payment_date or '—' }}</td>
           </tr>
           {% endfor %}

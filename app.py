@@ -1093,11 +1093,19 @@ def dashboard():
         }
         show_setup_checklist = not (has_owner and has_caretaker and has_charges)
 
+        # "Who owes what" uses the follow-up calculation (overdue only, per tenant), so the
+        # dashboard, the Follow up page and the caretaker all show the same months behind.
+        from src.reports.follow_up import behind_list
+        behind = behind_list(conn, property_id, min_months=0, include_departed=False)
+
         return render_template(
             'dashboard.html',
             property=property_row,
             stats=stats,
             arrears=arrears,
+            behind=behind,
+            behind_overdue=sum(r['overdue'] for r in behind),
+            behind_follow_up=sum(1 for r in behind if r['follow_up']),
             pending=pending,
             awaiting_threads=awaiting_threads,
             unassigned=unassigned,

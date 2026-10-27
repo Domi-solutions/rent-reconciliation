@@ -7,12 +7,13 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <style>
-    .ct-header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
-    .ct-prop-name { font-size: 16px; font-weight: 700; color: var(--ink); }
-    .ct-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; background: #fef9c3; color: #854d0e; margin-left: 6px; vertical-align: middle; }
-    .ct-nav-tab { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--ink-2); text-decoration: none; }
-    .ct-nav-tab:hover { background: var(--border); color: var(--ink); }
-    .ct-nav-tab.active { background: var(--ink); color: #fff; }
+    .ct-header { background: var(--frame); position: sticky; top: 0; z-index: 100; color: #fff; }
+    .ct-prop-name { font-size: 16px; font-weight: 800; color: #fff; text-transform: capitalize; }
+    .ct-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; background: rgba(140,199,161,0.22); color: var(--sage); margin-left: 6px; vertical-align: middle; }
+    .ct-header .ct-meta { font-size: 13px; color: rgba(255,255,255,0.7); text-decoration: none; }
+    .ct-nav-tab { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.75); text-decoration: none; white-space: nowrap; }
+    .ct-nav-tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .ct-nav-tab.active { background: var(--sage); color: var(--forest); font-weight: 700; }
     @media print {
       .ct-header, .ct-no-print { display: none !important; }
       body { font-size: 12px; }
@@ -33,9 +34,9 @@
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         {% if session.get('caretaker_name') %}
-        <span style="font-size: 13px; color: var(--ink-3);">{{ session['caretaker_name'] }}</span>
+        <span class="ct-meta">{{ session['caretaker_name'] }}</span>
         {% endif %}
-        <a href="{{ url_for('caretaker.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
+        <a href="{{ url_for('caretaker.logout') }}" class="ct-meta">Log out</a>
       </div>
     </div>
 
@@ -44,7 +45,7 @@
       <a class="ct-nav-tab {% if active_tab == 'overview' %}active{% endif %}"
          href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
       <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"
-         href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Arrears</a>
+         href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Follow up</a>
       {% if ct_money_tools %}
       <a class="ct-nav-tab {% if active_tab == 'unassigned' %}active{% endif %}"
          href="{{ url_for('caretaker.unassigned', property_id=property.id) }}">Unassigned</a>
@@ -76,7 +77,7 @@
       {% if ct_flagged_count > 0 or active_tab == 'flagged_claims' %}
       <a class="ct-nav-tab {% if active_tab == 'flagged_claims' %}active{% endif %}"
          href="{{ url_for('caretaker.flagged_claims', property_id=property.id) }}"
-         style="color: #dc2626; position: relative;">
+         style="color: #ffb4ae; position: relative;">
         Flagged
         {% if ct_flagged_count > 0 %}
         <span style="background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 10px; margin-left: 4px;">{{ ct_flagged_count }}</span>

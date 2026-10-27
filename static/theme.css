@@ -1,0 +1,90 @@
+/* Domi theme — the one place colours, type and shape are decided.
+   Loaded by every page: style.css imports it, and standalone pages (sign-in,
+   owner portfolio, tenant sign-in) link it directly.
+
+   Deep forest green for the frame (sidebar, headers, hero), a soft sage for
+   highlights on dark, emerald for actions on light, warm off-white paper,
+   very rounded cards and pill buttons. Status colours keep their meaning:
+   green = settled, amber = waiting/behind, red = owed/problem, blue = info. */
+
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Brand */
+  --forest:         #1E4D3A;
+  --forest-2:       #153829;          /* gradient end / pressed */
+  --sage:           #8CC7A1;          /* accent on dark */
+  --accent:         #2E8B62;          /* buttons, links, accent words on light */
+  --accent-hover:   #26774F;
+  --mint:           #E8F3EC;          /* tinted panels */
+  --mint-2:         #F1F7F2;
+
+  /* Paper and ink */
+  --bg:             #F6F6F2;
+  --surface:        #FFFFFF;
+  --surface-2:      #F8F8F5;          /* quiet card fill */
+  --ink:            #1B211E;
+  --ink-2:          #59625D;
+  --ink-3:          #8B938E;
+  --ink-4:          #BEC4C0;
+  --border:         rgba(27,33,30,0.08);
+  --border-strong:  rgba(27,33,30,0.15);
+
+  /* Status (meaning, not decoration) */
+  --blue:           #2F6FB0;
+  --blue-soft:      #EAF1F9;
+  --red:            #C8423B;
+  --red-soft:       #FBEDEC;
+  --green:          #2E8B62;
+  --green-soft:     #E8F3EC;
+  --green-dark:     #1E6B49;
+  --orange:         #C2701F;
+  --orange-soft:    #FCF1E4;
+  --orange-border:  #F1CFA4;
+
+  /* Shape */
+  --shadow-xs:      0 1px 2px rgba(21,56,41,0.05);
+  --shadow-sm:      0 2px 10px rgba(21,56,41,0.06), 0 1px 2px rgba(21,56,41,0.04);
+  --shadow-md:      0 10px 28px rgba(21,56,41,0.10), 0 2px 6px rgba(21,56,41,0.05);
+  --r-card:         22px;
+  --r-btn:          999px;
+  --r-input:        12px;
+  --r-badge:        9999px;
+
+  --font:           'Figtree', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --frame:          linear-gradient(170deg, var(--forest) 0%, var(--forest-2) 100%);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
+
+h1, h2, h3, .page-title { letter-spacing: -0.02em; }
+
+/* Small spaced capitals above a section ("FOLLOW UP", "THIS MONTH"). */
+.eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+
+/* A word in a heading picked out in green: <span class="accent-word">clear</span>. */
+.accent-word { color: var(--accent); }
+
+/* Actions: pill buttons in emerald (Bootstrap's primary and dark both). */
+.btn-primary, .btn-dark {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  border-radius: var(--r-btn); font-weight: 600;
+}
+.btn-primary:hover, .btn-dark:hover, .btn-primary:focus, .btn-dark:focus {
+  background: var(--accent-hover); border-color: var(--accent-hover); color: #fff;
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(46,139,98,0.14);
+}

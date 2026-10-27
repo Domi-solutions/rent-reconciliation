@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h4 class="mb-1">Shadow Audit Log</h4>
-    <div style="font-size:13px;color:#718096;">Agency-uneditable record of all sensitive actions.</div>
+    <div style="font-size:13px;color:var(--ink-2);">Agency-uneditable record of all sensitive actions.</div>
   </div>
   <form method="get" class="d-flex gap-2 align-items-center">
     <select name="org_id" class="form-select form-select-sm" style="width:auto;">
@@ -34,10 +34,10 @@
       <tbody>
         {% for r in rows %}
         <tr>
-          <td style="white-space:nowrap;color:#718096;">{{ r.created_at[:16] }}</td>
+          <td style="white-space:nowrap;color:var(--ink-2);">{{ r.created_at[:16] }}</td>
           <td><span class="badge bg-secondary-subtle text-secondary">{{ r.action.replace('_', ' ')|title }}</span></td>
           <td>{{ r.org_name or '—' }}</td>
-          <td style="color:#718096;">{{ r.actor }}</td>
+          <td style="color:var(--ink-2);">{{ r.actor }}</td>
           <td style="max-width:400px;">{{ r.details or '—' }}</td>
         </tr>
         {% endfor %}
@@ -47,7 +47,7 @@
 </div>
 {% else %}
 <div class="card border-0 shadow-sm p-5 text-center">
-  <div style="color:#718096;">No shadow log entries yet.</div>
+  <div style="color:var(--ink-2);">No shadow log entries yet.</div>
 </div>
 {% endif %}
 {% endblock %}

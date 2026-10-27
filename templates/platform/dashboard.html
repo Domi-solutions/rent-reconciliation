@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h4 class="mb-1">Organisations</h4>
-    <div style="font-size: 13px; color: #718096;">All agencies using Domi</div>
+    <div style="font-size: 13px; color: var(--ink-2);">All agencies using Domi</div>
   </div>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrgModal">Add Organisation</button>
 </div>
@@ -14,13 +14,13 @@
   <div class="col-sm-3">
     <div class="card border-0 shadow-sm text-center p-3">
       <div style="font-size: 28px; font-weight: 700;">{{ orgs|length }}</div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">Organisations</div>
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">Organisations</div>
     </div>
   </div>
   <div class="col-sm-3">
     <div class="card border-0 shadow-sm text-center p-3">
       <div style="font-size: 28px; font-weight: 700;">{{ total_properties }}</div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">Properties</div>
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">Properties</div>
     </div>
   </div>
   <div class="col-sm-2">
@@ -28,7 +28,7 @@
       <div style="font-size: 28px; font-weight: 700; {% if open_alerts_critical > 0 %}color: #e53e3e;{% elif open_alerts_total > 0 %}color: #d97706;{% endif %}">
         {{ open_alerts_total }}
       </div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">
         Alerts &mdash; <a href="{{ url_for('platform.alerts') }}" style="color: inherit;">view</a>
       </div>
     </div>
@@ -38,7 +38,7 @@
       <div style="font-size: 28px; font-weight: 700; {% if open_disputes > 0 %}color: #e53e3e;{% endif %}">
         {{ open_disputes }}
       </div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">
         Disputes &mdash; <a href="{{ url_for('platform.disputes') }}" style="color: inherit;">view</a>
       </div>
     </div>
@@ -48,7 +48,7 @@
       <div style="font-size: 28px; font-weight: 700; {% if recent_error_count > 0 %}color: #e53e3e;{% endif %}">
         {{ recent_error_count }}
       </div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">
         Errors (24h) &mdash; <a href="{{ url_for('platform.errors') }}" style="color: inherit;">view</a>
       </div>
     </div>
@@ -58,7 +58,7 @@
       <div style="font-size: 28px; font-weight: 700; {% if parse_error_count > 0 %}color: #d97706;{% endif %}">
         {{ parse_error_count }}
       </div>
-      <div style="font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: .04em;">
+      <div style="font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em;">
         Parse errors (7d) &mdash; <a href="{{ url_for('platform.parse_errors_view') }}" style="color: inherit;">view</a>
       </div>
     </div>
@@ -85,8 +85,8 @@
         <tr>
           <td>
             <div style="font-weight: 600;">{{ org.name }}</div>
-            {% if org.slug %}<div style="font-size: 12px; color: #718096;">{{ org.slug }}</div>{% endif %}
-            <div style="font-size: 12px; color: {% if org.contact_email %}#718096{% else %}#e53e3e{% endif %};">
+            {% if org.slug %}<div style="font-size: 12px; color: var(--ink-2);">{{ org.slug }}</div>{% endif %}
+            <div style="font-size: 12px; color: {% if org.contact_email %}var(--ink-2){% else %}#e53e3e{% endif %};">
               {{ org.contact_email or '⚠ No login email' }}
             </div>
           </td>
@@ -97,7 +97,7 @@
             {% if org.last_activity %}
               {{ org.last_activity[:16] }}
             {% else %}
-              <span style="color: #a0aec0;">No activity</span>
+              <span style="color: var(--ink-3);">No activity</span>
             {% endif %}
           </td>
           <td>
@@ -130,8 +130,8 @@
               <summary class="btn btn-sm btn-outline-secondary" style="list-style:none;cursor:pointer;">
                 {{ 'Change pw' if org.has_password else 'Set pw' }}
               </summary>
-              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;z-index:100;min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
-                <div style="font-size:11px;color:#718096;margin-bottom:8px;">Password for {{ org.name }}</div>
+              <div style="position:absolute;right:0;top:100%;background:#fff;border:1px solid var(--border-strong);border-radius:8px;padding:12px;z-index:100;min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,.1);">
+                <div style="font-size:11px;color:var(--ink-2);margin-bottom:8px;">Password for {{ org.name }}</div>
                 <form method="POST" action="{{ url_for('platform.set_org_password', org_id=org.id) }}"
                       style="display:flex;gap:6px;align-items:center;">
                   <input type="password" name="password" class="form-control form-control-sm"
@@ -154,7 +154,7 @@
 </div>
 {% else %}
 <div class="card border-0 shadow-sm p-5 text-center">
-  <div style="color: #718096; margin-bottom: 16px;">No organisations yet.</div>
+  <div style="color: var(--ink-2); margin-bottom: 16px;">No organisations yet.</div>
   <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newOrgModal">Add first organisation</button>
 </div>
 {% endif %}
@@ -246,7 +246,7 @@ document.getElementById('editOrgModal').addEventListener('show.bs.modal', functi
             <div class="form-text">Domi's transaction fee on disbursements (default 1%). Not visible to the org.</div>
           </div>
           <div class="mb-2">
-            <label class="form-label">Slug <span style="font-weight:400;color:#718096;">(optional)</span></label>
+            <label class="form-label">Slug <span style="font-weight:400;color:var(--ink-2);">(optional)</span></label>
             <input type="text" name="slug" class="form-control" placeholder="e.g. alfa-property">
             <div class="form-text">URL-safe identifier. Auto-generated if left blank.</div>
           </div>

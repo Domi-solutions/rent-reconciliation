@@ -17,7 +17,7 @@
     <tr>
       <td>
         <a href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}"><b>{{ c.subject }}</b></a>
-        {% if c.unread %}<span class="chip" style="padding:1px 8px;margin:0 0 0 6px;background:#1b1b1a;color:#fff;border-color:#1b1b1a">New reply</span>{% endif %}
+        {% if c.unread %}<span class="chip" style="padding:1px 8px;margin:0 0 0 6px;background: var(--forest);color:#fff;border-color:var(--ink)">New reply</span>{% endif %}
         <div class="muted">{{ topics[c.topic] }} · {{ (c.last_message_at or '')[:10] }} ·
           {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}</div>
       </td>

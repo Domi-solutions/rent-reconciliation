@@ -18,15 +18,16 @@
   .ph-action-sub { font-size: 13px; opacity: .72; margin-top: 4px; }
 
   .ph-headline {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r-card); padding: 20px; margin-bottom: 14px;
-    text-align: center;
+    background: var(--frame); color: #fff; border: none;
+    border-radius: var(--r-card); padding: 26px 22px; margin-bottom: 14px;
+    text-align: center; box-shadow: var(--shadow-md);
   }
-  .ph-headline-label { font-size: 11px; font-weight: 700; letter-spacing: .07em;
-    text-transform: uppercase; color: var(--ink-3); }
-  .ph-headline-value { font-size: 34px; font-weight: 700; color: var(--ink);
-    line-height: 1.1; margin-top: 6px; }
-  .ph-headline-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .ph-headline-label { font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--sage); }
+  .ph-headline-value { font-size: 36px; font-weight: 800; color: #fff; letter-spacing: -.02em;
+    line-height: 1.1; margin-top: 8px; }
+  .ph-headline-sub { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 6px; }
+  .ph-headline-sub b { color: var(--sage); }
 
   .ph-section-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
     text-transform: uppercase; color: var(--ink-3); margin: 22px 4px 10px; }
@@ -122,41 +123,41 @@
 
   {# ---- Who owes what ---- #}
   <div class="ph-headline">
-    <div class="ph-headline-label">Total outstanding</div>
-    <div class="ph-headline-value">KES {{ '{:,.0f}'.format(stats.total_arrears or 0) }}</div>
+    <div class="ph-headline-label">Overdue rent</div>
+    <div class="ph-headline-value">KES {{ '{:,.0f}'.format(behind_overdue or 0) }}</div>
     <div class="ph-headline-sub">
-      {{ stats.units_in_arrears or 0 }} of {{ stats.total_units or 0 }} units ·
-      {{ stats.occupied_units or 0 }} occupied
+      {{ (behind or [])|length }} tenant{{ 's' if (behind or [])|length != 1 }} behind ·
+      <b>{{ behind_follow_up or 0 }} more than a month</b> ·
+      {{ stats.occupied_units or 0 }} of {{ stats.total_units or 0 }} units occupied
     </div>
+    <div class="ph-headline-sub" style="font-size:12px;">Total balance, including charges not yet due: KES {{ '{:,.0f}'.format(stats.total_arrears or 0) }}</div>
   </div>
 
   <div class="ph-section-title">Who owes what</div>
-  {% if arrears %}
+  {% if behind %}
   <div class="ph-list">
-    {% for a in arrears[:15] %}
-    <a class="ph-item" href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) if a.tenant_id else url_for('admin_arrears') }}">
+    {% for a in behind[:15] %}
+    <a class="ph-item" href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) }}">
       <div>
         <div class="ph-unit">{{ a.unit_number }}</div>
-        <div class="ph-name">{{ a.tenant_name or 'Vacant' }}</div>
+        <div class="ph-name">{{ a.name }}</div>
       </div>
       <div>
-        <div class="ph-owed">{{ '{:,.0f}'.format(a.balance or 0) }}</div>
-        {% if a.monthly_rent and a.monthly_rent > 0 %}
-        <div class="ph-months">{{ '%.1f'|format((a.balance or 0) / a.monthly_rent) }} months</div>
-        {% endif %}
+        <div class="ph-owed">{{ '{:,.0f}'.format(a.overdue or 0) }}</div>
+        <div class="ph-months">{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }} behind</div>
       </div>
     </a>
     {% endfor %}
-    {% if arrears|length > 15 %}
-    <a class="ph-more" href="{{ url_for('admin_arrears') }}">
-      See all {{ arrears|length }} →
+    {% if behind|length > 15 %}
+    <a class="ph-more" href="{{ url_for('admin_arrears', show='all') }}">
+      See all {{ behind|length }} →
     </a>
     {% endif %}
   </div>
   {% else %}
   <div class="ph-list">
     <div class="ph-item" style="color: var(--green-dark); font-weight: 600;">
-      Every unit is settled.
+      Nothing overdue.
     </div>
   </div>
   {% endif %}

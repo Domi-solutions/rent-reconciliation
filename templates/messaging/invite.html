@@ -43,7 +43,7 @@
           {% else %}<span class="badge bg-light text-dark">not invited</span>{% endif %}
         </td>
         <td style="max-width:420px;font-size:12px;color:#4a5568">
-          {% if r.link_ready %}{{ r.text }} <span style="color:#a0aec0">· {{ r.parts }} SMS</span>
+          {% if r.link_ready %}{{ r.text }} <span style="color:var(--ink-3)">· {{ r.parts }} SMS</span>
           {% else %}No sign-in link until portal access is enabled.{% endif %}
         </td>
       </tr>
@@ -53,6 +53,6 @@
   </div>
 </div>
 <button class="btn btn-primary" {% if not outreach_enabled %}disabled{% endif %}>Send to selected</button>
-<span style="font-size:12px;color:#718096;margin-left:8px">Tenants already signed up or invited are unticked; tick them to send again.</span>
+<span style="font-size:12px;color:var(--ink-2);margin-left:8px">Tenants already signed up or invited are unticked; tick them to send again.</span>
 </form>
 {% endblock %}
