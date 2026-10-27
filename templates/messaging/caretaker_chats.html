@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Caretaker chat — {{ property.name }}{% endblock %}
+{% block content %}
+<div class="page-title mb-1">Caretaker chat</div>
+<div class="page-meta mb-3">One conversation with each caretaker of {{ property.name|title }}.</div>
+{% if chats %}
+<div class="surface-card">
+  {% for c in chats %}
+  <a class="data-row d-flex justify-content-between align-items-start" style="text-decoration:none;color:inherit;"
+     href="{{ url_for('messaging.caretaker_chat', caretaker_id=c.caretaker_id) }}">
+    <div>
+      <div class="data-row-unit">{{ c.name }}{% if not c.current %} <span class="data-row-meta">(account removed)</span>{% endif %}</div>
+      <div class="data-row-meta">{{ (c.last_body or 'No messages yet')[:90] }}</div>
+    </div>
+    <div class="text-end">
+      {% if c.unread %}<span style="background:#d03b3b;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px">{{ c.unread }}</span>{% endif %}
+      <div class="data-row-meta">{{ (c.last_at or '')[:16] }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-title">No caretaker accounts</div>
+  <div class="empty-state-sub"><a href="{{ url_for('manage_caretakers') }}">Add a caretaker</a> to start a conversation.</div>
+</div>
+{% endif %}
+{% endblock %}

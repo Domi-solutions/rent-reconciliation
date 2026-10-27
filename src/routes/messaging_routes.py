@@ -717,3 +717,75 @@ def invite():
                            signed_up=sum(1 for r in rows if r['signed_up']),
                            missing_links=sum(1 for r in rows if not r['link_ready']),
                            outreach_enabled=can_send, active_nav='messages')
+
+
+# ── Management ↔ caretaker chat ──────────────────────────────────────────────
+
+def _caretaker_for_prop(conn, caretaker_id, property_id):
+    """The caretaker's chat belongs to this property (current account, or history here)."""
+    return conn.execute("""
+        SELECT 1 FROM caretakers WHERE id = ? AND property_id = ?
+        UNION SELECT 1 FROM staff_messages WHERE caretaker_id = ? AND property_id = ?
+    """, (caretaker_id, property_id, caretaker_id, property_id)).fetchone() is not None
+
+
+@messaging_bp.route('/caretakers')
+def caretaker_chats():
+    from src.messaging import staff_chat
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        chats = staff_chat.chats_for_admin(conn, prop['id'])
+    if len(chats) == 1:
+        return redirect(url_for('messaging.caretaker_chat', caretaker_id=chats[0]['caretaker_id']))
+    return render_template('messaging/caretaker_chats.html', property=prop, chats=chats,
+                           active_nav='caretaker_chat')
+
+
+@messaging_bp.route('/caretakers/<caretaker_id>', methods=['GET', 'POST'])
+def caretaker_chat(caretaker_id):
+    from src.messaging import staff_chat
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        if not _caretaker_for_prop(conn, caretaker_id, prop['id']):
+            abort(404)
+        ct = conn.execute("SELECT * FROM caretakers WHERE id = ?", (caretaker_id,)).fetchone()
+        if request.method == 'POST':
+            if not ct:
+                flash('This caretaker account no longer exists, so they cannot read new messages.', 'warning')
+                return redirect(url_for('messaging.caretaker_chat', caretaker_id=caretaker_id))
+            body = (request.form.get('body') or '').strip()
+            if body:
+                _, saved, rejected = staff_chat.post(
+                    conn, prop['id'], caretaker_id, 'admin', session.get('admin_name') or 'Management', body,
+                    photos=request.files.getlist('photos'), account_id=session.get('admin_user_id'))
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('caretaker_chat_message', 'caretaker', caretaker_id,
+                     f"To {ct['name']} | {body[:60]}", staff.actor()))
+                staff_chat.notify_caretaker(conn, caretaker_id, prop['id'],
+                                            os.environ.get('APP_BASE_URL') or request.host_url)
+                if rejected:
+                    flash(f'{rejected} file(s) were not photos and were not attached.', 'warning')
+            return redirect(url_for('messaging.caretaker_chat', caretaker_id=caretaker_id))
+        msgs = staff_chat.thread(conn, caretaker_id)
+        staff_chat.mark_read(conn, caretaker_id, 'admin')
+        chats = staff_chat.chats_for_admin(conn, prop['id'])
+    name = ct['name'] if ct else next((m['sender_name'] for m in reversed(msgs) if m['sender_type'] == 'caretaker'),
+                                      'Former caretaker')
+    return render_template('messaging/caretaker_chat.html', property=prop, caretaker=ct, name=name,
+                           msgs=msgs, chats=chats, active_nav='caretaker_chat')
+
+
+@messaging_bp.route('/caretakers/photo/<photo_id>')
+def caretaker_chat_photo(photo_id):
+    from src.messaging import staff_chat
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        p, m = staff_chat.photo(conn, photo_id)
+        if not prop or not p or m['property_id'] != prop['id']:
+            abort(404)
+    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')

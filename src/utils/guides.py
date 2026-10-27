@@ -164,6 +164,18 @@ _T = {
             '"Anything overdue" inaonyesha kila mtu aliyechelewa, hata kwa siku chache.',
         ]),
     },
+    'caretaker.management_chat': {
+        'en': ('Management', 'Your conversation with management.', [
+            'Send reports and questions here. "Start a report" fills in an outline: water, repairs, visitors, tenants, other.',
+            'Add photos of anything that needs fixing. Management gets your message on their screen.',
+            'When management writes to you, you get an SMS and the Management tab shows a red number.',
+        ]),
+        'sw': ('Usimamizi', 'Mazungumzo yako na usimamizi.', [
+            'Tuma ripoti na maswali hapa. "Start a report" inaweka muhtasari: maji, matengenezo, wageni, wapangaji, mengine.',
+            'Ongeza picha za kitu chochote kinachohitaji kurekebishwa. Usimamizi unaona ujumbe wako kwenye skrini yao.',
+            'Usimamizi ukikuandikia, unapata SMS na kichupo cha Management kinaonyesha nambari nyekundu.',
+        ]),
+    },
     'caretaker.water_list': {
         'en': ('Water', 'Meter readings entered so far.', [
             'Every month needs a reading for every occupied unit.',
@@ -244,6 +256,13 @@ _T = {
             'Only charges past their due date count, so this month\'s rent is not "behind" before the due day.',
             'A payment a tenant reported but the bank records don\'t show yet is listed beside the amount, not taken off it.',
             'Nothing here texts tenants. Use Message to write to one, or call.',
+        ]),
+    },
+    'messaging.caretaker_chat': {
+        'en': ('Caretaker chat', 'One ongoing conversation with this caretaker.', [
+            'Reports from the caretaker are marked REPORT. Photos open full size.',
+            'Your message reaches them with an SMS saying a message is waiting — never its content.',
+            'Messages cannot be edited or deleted; the activity log records who wrote.',
         ]),
     },
     'leases.board': {

@@ -1970,3 +1970,52 @@ def migrate_add_leases():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_lease_documents_lease ON lease_documents(lease_id)")
         print("Migration complete: leases, lease_documents ready.")
+
+
+def migrate_add_staff_chat():
+    """Management ↔ caretaker chat: one ongoing conversation per caretaker. Idempotent.
+
+    Messages and photos are append-only, like tenant conversations (a trigger aborts
+    any UPDATE); read positions live in their own table so messages never change.
+    caretaker_id deliberately has no foreign key: deleting a caretaker revokes their
+    access, but the chat stays on record under the name it was written with.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS staff_messages (
+                id TEXT PRIMARY KEY,
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                caretaker_id TEXT NOT NULL,
+                sender_type TEXT NOT NULL,              -- caretaker | admin
+                sender_name TEXT NOT NULL,
+                sender_account_id TEXT,                 -- ADM-… or CTKR-…
+                kind TEXT NOT NULL DEFAULT 'message',   -- message | report
+                body TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_staff_messages_ct ON staff_messages(caretaker_id, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_staff_messages_prop ON staff_messages(property_id, created_at)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS staff_message_photos (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL REFERENCES staff_messages(id),
+                file_name TEXT NOT NULL,
+                width INTEGER, height INTEGER, size_bytes INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS staff_chat_reads (
+                caretaker_id TEXT NOT NULL,
+                side TEXT NOT NULL,                     -- admin | caretaker
+                read_at TIMESTAMP NOT NULL,
+                PRIMARY KEY (caretaker_id, side)
+            )
+        """)
+        for table in ('staff_messages', 'staff_message_photos'):
+            conn.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS trg_{table}_no_edit BEFORE UPDATE ON {table}
+                BEGIN SELECT RAISE(ABORT, 'messages are never edited — add a new message instead'); END
+            """)
+        print("Migration complete: staff_messages, staff_message_photos, staff_chat_reads ready.")

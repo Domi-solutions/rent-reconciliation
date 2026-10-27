@@ -295,3 +295,12 @@ blueprints:
       - "POST /leases/<id>/documents — attach lease / ID copy / other"
       - "POST /leases/<id>/brought-forward — correct brought-forward amount (evidence required; audit + platform_log)"
       - "GET /leases/<id>/documents/<doc_id> — admin-only file, Cache-Control no-store"
+
+  staff_chat:
+    note: "Management ↔ caretaker chat. Logic in src/messaging/staff_chat.py."
+    key_routes:
+      - "GET /messages/caretakers — chats with each caretaker (redirects when only one)"
+      - "GET|POST /messages/caretakers/<caretaker_id> — read / write (photos); SMS ping to caretaker"
+      - "GET /messages/caretakers/photo/<photo_id> — admin, property-checked"
+      - "GET|POST /caretaker/<pid>/management — caretaker's chat (needs a named account); report outline"
+      - "GET /caretaker/<pid>/management/photo/<photo_id> — caretaker's own chat only"

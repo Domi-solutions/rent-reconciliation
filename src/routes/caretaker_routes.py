@@ -36,7 +36,7 @@ def inject_caretaker_counts():
     property_id = request.view_args.get('property_id') if request.view_args else None
     if not property_id:
         return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0,
-                'ct_money_tools': money_tools_on()}
+                'ct_mgmt_unread': 0, 'ct_money_tools': money_tools_on()}
     try:
         with get_connection() as conn:
             repairs_waiting = threads.awaiting_count(conn, property_id, caretaker=True)
@@ -48,11 +48,14 @@ def inject_caretaker_counts():
                 "SELECT COUNT(*) FROM payment_claims WHERE property_id = ? AND source = 'tenant' AND status = 'pending'",
                 (property_id,)
             ).fetchone()[0]
+            from src.messaging.staff_chat import unread_for_caretaker
+            mgmt_unread = unread_for_caretaker(conn, session['caretaker_id']) if session.get('caretaker_id') else 0
         return {'ct_flagged_count': flagged, 'ct_tenant_pending_count': tenant_pending,
-                'ct_repairs_waiting': repairs_waiting, 'ct_money_tools': money_tools_on()}
+                'ct_repairs_waiting': repairs_waiting, 'ct_mgmt_unread': mgmt_unread,
+                'ct_money_tools': money_tools_on()}
     except Exception:
         return {'ct_flagged_count': 0, 'ct_tenant_pending_count': 0, 'ct_repairs_waiting': 0,
-                'ct_money_tools': money_tools_on()}
+                'ct_mgmt_unread': 0, 'ct_money_tools': money_tools_on()}
 
 
 def _has_db_caretakers():
@@ -1559,3 +1562,49 @@ def tenant_quick_assign(property_id, tenant_id, txn_id):
     if request.form.get('return_to') == 'dashboard':
         return redirect(url_for('caretaker.dashboard', property_id=property_id))
     return redirect(url_for('caretaker.tenant_statement', property_id=property_id, tenant_id=tenant_id))
+
+
+# ── Chat with management ─────────────────────────────────────────────────────
+
+@caretaker_bp.route('/<property_id>/management', methods=['GET', 'POST'])
+def management_chat(property_id):
+    """The caretaker's conversation with management: reports, questions, photos."""
+    from src.messaging import staff_chat
+    caretaker_id = session.get('caretaker_id')
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        if not caretaker_id:
+            # Shared-password sessions have no person to attach a conversation to.
+            return render_template('caretaker/management_chat.html', property=prop, msgs=[], no_account=True,
+                                   outline=staff_chat.REPORT_OUTLINE, active_tab='management')
+        if request.method == 'POST':
+            body = (request.form.get('body') or '').strip()
+            if body:
+                _, saved, rejected = staff_chat.post(
+                    conn, property_id, caretaker_id, 'caretaker', session.get('caretaker_name') or 'Caretaker',
+                    body, kind=request.form.get('kind'), photos=request.files.getlist('photos'),
+                    account_id=caretaker_id)
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('caretaker_chat_message', 'caretaker', caretaker_id,
+                     f"{'Report' if request.form.get('kind') == 'report' else 'Message'} to management | {body[:60]}",
+                     f"caretaker:{session.get('caretaker_name') or caretaker_id}"))
+                if rejected:
+                    flash(f'{rejected} file(s) were not photos and were not attached.', 'warning')
+            return redirect(url_for('caretaker.management_chat', property_id=property_id))
+        msgs = staff_chat.thread(conn, caretaker_id)
+        staff_chat.mark_read(conn, caretaker_id, 'caretaker')
+    return render_template('caretaker/management_chat.html', property=prop, msgs=msgs, no_account=False,
+                           outline=staff_chat.REPORT_OUTLINE, active_tab='management')
+
+
+@caretaker_bp.route('/<property_id>/management/photo/<photo_id>')
+def management_chat_photo(property_id, photo_id):
+    from src.messaging import staff_chat
+    with get_connection() as conn:
+        p, m = staff_chat.photo(conn, photo_id)
+    if not p or m['caretaker_id'] != session.get('caretaker_id') or m['property_id'] != property_id:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
