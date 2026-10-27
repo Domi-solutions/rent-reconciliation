@@ -48,6 +48,16 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 - Family Bank `*OPENING BALANCE*` parser fix; due dates per lease; `scripts/sms_test.py`.
 - Prod secrets: `AT_SMS_ENABLED=false` (set), outreach + automatic alerts unset. SMS provider still AT sandbox.
 
+### Also shipped 2026-10-27 (live v99+)
+
+Follow-up lists, receipts with balance, admin↔caretaker chat, new look (theme.css), domi.co.ke
+(APP_BASE_URL), money out (expenses + cash book; no management fee in system).
+
+### Demo site — https://domi-demo.fly.dev (Fly app `domi-demo`, fly.demo.toml)
+
+Made-up Kijani Court (src/demo/seed.py). /demo start page lists logins; Reset button rebuilds.
+Deploy: `fly deploy -c fly.demo.toml -a domi-demo --ha=false`. DEMO_MODE refuses production.
+
 ### Reconciliation (in progress — nothing applied to prod yet)
 
 - `scripts/reconcile_2026_10.py review|apply` — adds Family Bank May–Jun + 25 Sep–14 Oct, National
