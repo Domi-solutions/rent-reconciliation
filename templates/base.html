@@ -17,6 +17,7 @@
     else 'inbox'      if request.endpoint.startswith('messaging.inbox')
     else 'messages'   if request.endpoint.startswith('messaging.')
     else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field', 'move_out_tenant')
+    else 'follow_up'  if request.endpoint == 'admin_arrears'
     else 'leases'     if request.endpoint.startswith('leases.')
     else 'lookup'     if request.endpoint == 'reports.payment_lookup'
     else 'reports'    if request.endpoint.startswith('reports.')
@@ -52,6 +53,11 @@
       <a class="sidebar-item {% if active_nav == 'units' %}active{% endif %}" href="{{ url_for('manage_units') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
         Units
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'follow_up' %}active{% endif %}" href="{{ url_for('admin_arrears') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+        Follow up
       </a>
 
       <a class="sidebar-item {% if active_nav == 'leases' %}active{% endif %}" href="{{ url_for('leases.board') }}">

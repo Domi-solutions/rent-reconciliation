@@ -92,6 +92,7 @@ src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit sugge
 src/reconciliation/state_machine.py  # payment lifecycle
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
 scripts/tenant_ledger_report.py      # run against a prod copy before deploy; --execute redoes crossed allocations
+src/reports/follow_up.py             # behind_list(): who is behind — OVERDUE only (due date passed), per tenant, months = overdue ÷ (rent+service); admin /arrears (sidebar "Follow up") + caretaker /arrears + caretaker dashboard. Reported-unmatched claims shown beside, never netted.
 src/reports/payment_lookup.py        # find_payer(), month_coverage() — admin page /reports/lookup (sidebar "Lookup") + the script below
 scripts/payment_coverage_check.py    # read-only: find a payer by name/phone; payments + statements per month per property
 src/reports/landlord_report.py # generate_report(), enrich_report_data()

@@ -67,7 +67,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 2. Upload safety: statement upload supersedes ANY overlapping active statement org-wide (all banks) —
    scope to same bank/account and full overlap; add totals check for scanned uploads.
 3. ~~Receipt SMS with remaining balance; broadcast to portal + SMS~~ (done, `66bc9e0`).
-4. ">1 month behind" lists (admin + caretaker). 5. Admin↔caretaker chat. 6. Move-out (tenant
+4. ~~">1 month behind" lists (admin + caretaker)~~ (done). 5. Admin↔caretaker chat. 6. Move-out (tenant
    notice + left-without-notice). 7. Owner comms + per-unit performance. 8. KCB parser (needs sample).
 
 ### Still open

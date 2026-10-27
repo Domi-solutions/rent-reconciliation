@@ -1,78 +1,77 @@
 {% extends "base.html" %}
-{% block title %}Arrears — {{ property.name }}{% endblock %}
+{% block title %}Follow up — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .fu-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .fu-tab { padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; text-decoration: none; color: var(--ink-2); background: var(--surface); }
+  .fu-tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .mo { display: inline-block; padding: 2px 8px; border-radius: var(--r-badge); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .mo-1 { background: var(--orange-soft); color: var(--orange); }
+  .mo-3 { background: var(--red-soft); color: var(--red); }
+  .mo-0 { background: var(--bg); color: var(--ink-3); }
+  .fu-sub { font-size: 12px; color: var(--ink-3); }
+  @media print { .fu-tabs, .fu-actions { display: none; } }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="mb-4 d-flex justify-content-between align-items-start">
+<div class="mb-3 d-flex justify-content-between align-items-start flex-wrap gap-2">
   <div>
-    <div class="page-title">Arrears</div>
+    <div class="page-title">Follow up</div>
     <div class="page-meta">
-      {{ arrears|length }} unit{{ 's' if arrears|length != 1 }} with outstanding balances
-      {% if total_arrears > 0 %} · KES {{ "{:,.0f}".format(total_arrears) }} total{% endif %}
+      {% if show_all %}Every tenant with rent overdue{% else %}Tenants more than one month behind{% endif %}
+      · KES {{ "{:,.0f}".format(totals.overdue) }} overdue{% if totals.departed_count %} · plus KES {{ "{:,.0f}".format(totals.departed_overdue) }} from {{ totals.departed_count }} former tenant{{ 's' if totals.departed_count != 1 }}{% endif %}
     </div>
   </div>
   <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">Print</button>
 </div>
 
-{% if arrears %}
-
-{% if total_arrears > 0 %}
-<div class="banner-danger mb-2">
-  <strong>{{ arrears|length }} unit{{ 's' if arrears|length != 1 }} owe a total of KES {{ "{:,.0f}".format(total_arrears) }}</strong>
-</div>
-{% endif %}
-
-{% if pending_total > 0 %}
-<div class="banner-warning mb-3">
-  <strong>KES {{ "{:,.0f}".format(pending_total) }}</strong> in pending payments reported.
-  If verified, arrears would be <strong>KES {{ "{:,.0f}".format(projected_arrears) }}</strong>.
-</div>
-{% endif %}
-
-<div class="surface-card">
-  {% for a in arrears %}
-  <div class="data-row">
-    <div class="d-flex justify-content-between align-items-start">
-      <div>
-        <div class="data-row-unit">{{ a.unit_number }}</div>
-        <div class="data-row-meta">
-          {{ a.tenant_name or 'No tenant' }}
-          {% if a.tenant_phone %}
-            · <a href="tel:{{ a.tenant_phone }}" class="data-row-meta">{{ a.tenant_phone }}</a>
-          {% endif %}
-        </div>
-        {% if a.monthly_rent > 0 %}
-        <div class="data-row-meta">KES {{ "{:,.0f}".format(a.monthly_rent) }}/mo</div>
-        {% endif %}
-        {% if a.tenant_id %}
-        <div class="mt-1">
-          <a href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) }}"
-             class="data-row-meta" style="font-size:12px; color:#0d6efd;">View statement →</a>
-        </div>
-        {% endif %}
-      </div>
-      <div class="text-end">
-        <div class="data-row-amount amount-danger">
-          KES {{ "{:,.0f}".format(a.balance) }}
-        </div>
-        <div class="data-row-meta">
-          {% if a.months_behind %}~{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }} behind{% endif %}
-        </div>
-        {% if a.pending_amount > 0 %}
-        <div class="mt-1">
-          <span class="status-pending">KES {{ "{:,.0f}".format(a.pending_amount) }} pending</span>
-        </div>
-        <div class="data-row-meta">If verified → KES {{ "{:,.0f}".format(a.projected_balance) }}</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-  {% endfor %}
+<div class="fu-tabs">
+  <a class="fu-tab {% if not show_all %}active{% endif %}" href="{{ url_for('admin_arrears') }}">More than 1 month behind ({{ follow_up_count }})</a>
+  <a class="fu-tab {% if show_all %}active{% endif %}" href="{{ url_for('admin_arrears', show='all') }}">Anything overdue ({{ overdue_count }})</a>
 </div>
 
+{% if rows %}
+<div class="surface-card" style="overflow-x:auto;">
+  <table class="table table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Tenant</th>
+        <th class="text-end">Overdue (KES)</th>
+        <th>Behind</th>
+        <th>Oldest unpaid</th>
+        <th>Last payment</th>
+        <th class="fu-actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="fw-semibold">{{ r.unit_number }}{% if r.status != 'active' %}<div class="fu-sub">moved out</div>{% endif %}</td>
+        <td>{{ r.name }}
+          <div class="fu-sub">{% if r.phone %}<a href="tel:{{ r.phone }}">{{ r.phone }}</a>{% else %}No phone{% endif %}</div></td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(r.overdue) }}
+          {% if r.pending_amount %}<div class="fu-sub">KES {{ "{:,.0f}".format(r.pending_amount) }} reported, not yet in bank records</div>{% endif %}
+          {% if r.flagged_count %}<div class="fu-sub" style="color:var(--red);">Reported payment not found</div>{% endif %}</td>
+        <td><span class="mo {{ 'mo-3' if r.months_behind >= 3 else ('mo-1' if r.months_behind > 1 else 'mo-0') }}">{{ r.months_behind }} month{{ 's' if r.months_behind != 1 }}</span></td>
+        <td>{{ r.oldest_unpaid or '—' }}</td>
+        <td>{% if r.last_payment_date %}{{ r.last_payment_date[:10] }}<div class="fu-sub">KES {{ "{:,.0f}".format(r.last_payment_amount or 0) }}</div>{% else %}<span class="fu-sub">None on record</span>{% endif %}</td>
+        <td class="text-end fu-actions text-nowrap">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenant_statement', tenant_id=r.tenant_id) }}">Statement</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('messaging.thread', tenant_id=r.tenant_id) }}">Message</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="fu-sub mt-2">Only charges already past their due date count. Months behind = overdue ÷ monthly rent + service charge. Payments a tenant has reported but the bank records don't show yet are listed beside the amount, not taken off it.</p>
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-title">No arrears</div>
-  <div class="empty-state-sub">All tenants are up to date.</div>
+  <div class="empty-state-title">{% if show_all %}Nothing overdue{% else %}Nobody is more than a month behind{% endif %}</div>
+  <div class="empty-state-sub">{% if not show_all and overdue_count %}<a href="{{ url_for('admin_arrears', show='all') }}">See the {{ overdue_count }} with something overdue →</a>{% endif %}</div>
 </div>
 {% endif %}
 {% endblock %}

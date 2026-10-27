@@ -153,13 +153,15 @@ _T = {
         ]),
     },
     'caretaker.arrears': {
-        'en': ('Arrears', 'Tenants whose balance is behind, largest first.', [
-            'Remind them the only place to pay is shown on their Pay page.',
-            'Never accept rent in cash or to your own number.',
+        'en': ('Follow up', 'Tenants behind on rent — more than one month behind first.', [
+            'Only rent already past its due date counts. "Months behind" is overdue rent ÷ the monthly rent.',
+            'Tap Call to phone the tenant. If they say they paid, ask for the M-Pesa message and send it to management.',
+            '"Anything overdue" shows everyone with something late, even a few days.',
         ]),
-        'sw': ('Madeni', 'Wapangaji walio na deni, mkubwa kwanza.', [
-            'Wakumbushe mahali pekee pa kulipa panaonyeshwa kwenye ukurasa wao wa Pay.',
-            'Kamwe usipokee kodi kwa pesa taslimu au kwenye nambari yako.',
+        'sw': ('Fuatilia', 'Wapangaji walio nyuma kwa kodi — walio nyuma zaidi ya mwezi mmoja kwanza.', [
+            'Kodi iliyopita tarehe ya kulipwa pekee ndiyo inahesabiwa. "Miezi nyuma" ni kodi iliyochelewa ÷ kodi ya mwezi.',
+            'Bonyeza Call kumpigia mpangaji. Akisema amelipa, omba ujumbe wa M-Pesa na umpelekee usimamizi.',
+            '"Anything overdue" inaonyesha kila mtu aliyechelewa, hata kwa siku chache.',
         ]),
     },
     'caretaker.water_list': {
@@ -235,6 +237,13 @@ _T = {
         'en': ('Team', 'One account per administrator.', [
             'A lead admin adds people and switches accounts off. Switched-off accounts keep their name on the record.',
             'Give a temporary password in person; they change it under Account Settings.',
+        ]),
+    },
+    'admin_arrears': {
+        'en': ('Follow up', 'Who to contact about rent: more than one month behind first.', [
+            'Only charges past their due date count, so this month\'s rent is not "behind" before the due day.',
+            'A payment a tenant reported but the bank records don\'t show yet is listed beside the amount, not taken off it.',
+            'Nothing here texts tenants. Use Message to write to one, or call.',
         ]),
     },
     'leases.board': {

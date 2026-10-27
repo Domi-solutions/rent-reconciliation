@@ -103,7 +103,7 @@
       <span>Who owes what</span>
       {% if arrears_total %}<span class="ct-count" style="background: var(--ink-3);">{{ arrears_total }}</span>{% endif %}
     </div>
-    <div class="ct-do-sub">Every tenant behind on rent</div>
+    <div class="ct-do-sub">Who to follow up — more than a month behind first</div>
   </a>
 
   {% if mismatches %}
@@ -115,7 +115,7 @@
 
   {# ---- Who owes what, inline ---- #}
   <div class="ct-head">
-    <div class="ct-head-label">Outstanding</div>
+    <div class="ct-head-label">Overdue</div>
     <div class="ct-head-value">KES {{ '{:,.0f}'.format(arrears_sum or 0) }}</div>
     <div class="ct-head-sub">
       {{ arrears_total }} tenant{{ 's' if arrears_total != 1 }} behind ·
@@ -133,7 +133,7 @@
         <div class="ct-t">{{ a.tenant_name or 'Vacant' }}</div>
       </div>
       <div>
-        <div class="ct-owed">{{ '{:,.0f}'.format(a.display_balance or 0) }}</div>
+        <div class="ct-owed">{{ '{:,.0f}'.format(a.overdue or 0) }}</div>
         {% if a.months_behind %}<div class="ct-mo">{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }}</div>{% endif %}
       </div>
     </a>

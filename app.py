@@ -1108,56 +1108,24 @@ def dashboard():
 
 @app.route('/arrears')
 def admin_arrears():
-    """Admin arrears page — all units with outstanding balances."""
+    """Follow-up list: tenants more than a month behind (overdue money only); ?show=all for
+    everyone with anything overdue. Same figures as the caretaker's list."""
+    from src.reports.follow_up import behind_list, summary
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
             return redirect(url_for('dashboard'))
-        property_id = property_row['id']
-
-        rows = conn.execute("""
-            SELECT
-                ub.unit_id, ub.unit_number, ub.tenant_name, ub.tenant_phone,
-                ub.tenant_id, ub.monthly_rent, ub.balance,
-                COALESCE(pending.pending_amount, 0) AS pending_amount
-            FROM unit_balances ub
-            LEFT JOIN (
-                SELECT unit_id, SUM(claimed_amount) AS pending_amount
-                FROM payment_claims
-                WHERE property_id = ? AND status = 'pending'
-                GROUP BY unit_id
-            ) pending ON pending.unit_id = ub.unit_id
-            WHERE ub.property_id = ? AND ub.balance > 0
-            ORDER BY ub.balance DESC
-        """, (property_id, property_id)).fetchall()
-
-        arrears = []
-        for r in rows:
-            balance = float(r['balance'])
-            monthly_rent = float(r['monthly_rent'] or 0)
-            pending_amount = float(r['pending_amount'] or 0)
-            arrears.append({
-                'unit_number': r['unit_number'],
-                'tenant_name': r['tenant_name'],
-                'tenant_phone': r['tenant_phone'],
-                'tenant_id': r['tenant_id'],
-                'balance': balance,
-                'monthly_rent': monthly_rent,
-                'pending_amount': pending_amount,
-                'projected_balance': max(balance - pending_amount, 0),
-                'months_behind': get_months_behind(balance, monthly_rent),
-            })
-
-        total_arrears = sum(a['balance'] for a in arrears)
-        pending_total = sum(a['pending_amount'] for a in arrears)
-
+        show_all = request.args.get('show') == 'all'
+        everyone = behind_list(conn, property_row['id'], min_months=0)
+        rows = everyone if show_all else [r for r in everyone if r['follow_up']]
         return render_template(
             'arrears.html',
             property=property_row,
-            arrears=arrears,
-            total_arrears=total_arrears,
-            pending_total=pending_total,
-            projected_arrears=max(total_arrears - pending_total, 0),
+            rows=rows,
+            show_all=show_all,
+            totals=summary(rows),
+            follow_up_count=sum(1 for r in everyone if r['follow_up'] and r['status'] == 'active'),
+            overdue_count=sum(1 for r in everyone if r['status'] == 'active'),
         )
 
 

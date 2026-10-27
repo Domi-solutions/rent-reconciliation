@@ -201,46 +201,25 @@ def _assignable_tenants(conn, property_id):
 
 
 def _arrears_rows(conn, property_id):
-    rows = conn.execute("""
-        SELECT
-            u.id as unit_id,
-            u.unit_number,
-            u.monthly_rent,
-            t.id as tenant_id,
-            t.name as tenant_name,
-            t.phone as tenant_phone,
-            COALESCE(ch.total, 0) - COALESCE(py.total, 0) as balance,
-            COALESCE(pc_pending.pending_amount, 0) as pending_amount,
-            COALESCE(pc_pending.pending_count, 0) as pending_count,
-            COALESCE(pc_flagged.flagged_amount, 0) as flagged_amount,
-            COALESCE(pc_flagged.flagged_count, 0) as flagged_count
-        FROM units u
-        LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-        LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM rent_charges GROUP BY unit_id) ch ON ch.unit_id = u.id
-        LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM payments GROUP BY unit_id) py ON py.unit_id = u.id
-        LEFT JOIN (
-            SELECT unit_id, SUM(claimed_amount) as pending_amount, COUNT(*) as pending_count
-            FROM payment_claims WHERE property_id = ? AND status = 'pending' GROUP BY unit_id
-        ) pc_pending ON pc_pending.unit_id = u.id
-        LEFT JOIN (
-            SELECT unit_id, SUM(claimed_amount) as flagged_amount, COUNT(*) as flagged_count
-            FROM payment_claims WHERE property_id = ? AND status = 'flagged' GROUP BY unit_id
-        ) pc_flagged ON pc_flagged.unit_id = u.id
-        WHERE u.property_id = ?
-          AND COALESCE(ch.total, 0) - COALESCE(py.total, 0) > 0
-        ORDER BY
-            CASE WHEN COALESCE(pc_flagged.flagged_count, 0) > 0 THEN 0 ELSE 1 END ASC,
-            (COALESCE(ch.total, 0) - COALESCE(py.total, 0) - COALESCE(pc_pending.pending_amount, 0)) DESC
-    """, (property_id, property_id, property_id)).fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        # Flagged claims do NOT reduce display balance — the full amount is still owed
-        d['display_balance'] = max(float(d['balance']) - float(d['pending_amount']), 0)
-        # months_behind reflects what the caretaker actually needs to follow up on
-        d['months_behind'] = get_months_behind(d['display_balance'], d.get('monthly_rent'))
-        result.append(d)
-    return result
+    """Current tenants with overdue money (per-tenant ledger, due dates respected), most
+    months behind first — the same figures as the admin's follow-up list."""
+    from src.reports.follow_up import behind_list
+    out = []
+    for r in behind_list(conn, property_id, min_months=0, include_departed=False):
+        out.append({
+            'tenant_id': r['tenant_id'], 'unit_number': r['unit_number'],
+            'tenant_name': r['name'], 'tenant_phone': r['phone'],
+            'balance': r['overdue'], 'overdue': r['overdue'],
+            'pending_amount': float(r['pending_amount'] or 0),
+            # A reported payment not yet seen in the bank is shown beside the debt, never netted
+            # into it; display_balance is what still needs a call if that report is genuine.
+            'display_balance': max(r['overdue'] - float(r['pending_amount'] or 0), 0),
+            'flagged_count': r['flagged_count'],
+            'months_behind': r['months_behind'], 'follow_up': r['follow_up'],
+            'oldest_unpaid': r['oldest_unpaid'],
+            'last_payment_date': r['last_payment_date'], 'last_payment_amount': r['last_payment_amount'],
+        })
+    return out
 
 
 @caretaker_bp.route('/<property_id>')
@@ -311,7 +290,7 @@ def dashboard(property_id):
                            occ=occ,
                            arrears=arrears,
                            arrears_total=len(arrears),
-                           arrears_sum=sum(float(a['display_balance']) for a in arrears),
+                           arrears_sum=sum(float(a['overdue']) for a in arrears),
                            vacant_units=vacant_units,
                            next_due_date=next_due_date,
                            days_to_due=days_to_due,
@@ -347,19 +326,19 @@ def arrears(property_id):
         if not prop:
             abort(404)
 
-        arrears = _arrears_rows(conn, property_id)
-        total_balance = sum(float(a['balance']) for a in arrears)
-        total_display_balance = sum(float(a['display_balance']) for a in arrears)
-        total_pending = sum(float(a['pending_amount']) for a in arrears)
-        total_flagged = sum(float(a['flagged_amount']) for a in arrears)
+        everyone = _arrears_rows(conn, property_id)
+        show_all = request.args.get('show') == 'all'
+        arrears = everyone if show_all else [a for a in everyone if a['follow_up']]
 
     return render_template('caretaker/arrears.html',
                            property=prop,
                            arrears=arrears,
-                           total_balance=total_balance,
-                           total_display_balance=total_display_balance,
-                           total_pending=total_pending,
-                           total_flagged=total_flagged,
+                           show_all=show_all,
+                           follow_up_count=sum(1 for a in everyone if a['follow_up']),
+                           overdue_count=len(everyone),
+                           total_overdue=sum(a['overdue'] for a in arrears),
+                           total_pending=sum(a['pending_amount'] for a in arrears),
+                           any_flagged=any(a['flagged_count'] for a in arrears),
                            active_tab='arrears')
 
 
@@ -378,11 +357,11 @@ def tenants(property_id):
                 t.name as tenant_name,
                 t.phone as tenant_phone,
                 t.move_in_date,
-                COALESCE(ch.total, 0) - COALESCE(py.total, 0) as balance
+                COALESCE(tb.balance, 0) as balance
             FROM units u
             JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
-            LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM rent_charges GROUP BY unit_id) ch ON ch.unit_id = u.id
-            LEFT JOIN (SELECT unit_id, SUM(amount) as total FROM payments GROUP BY unit_id) py ON py.unit_id = u.id
+            -- The tenant's own account, not the unit's whole history (previous occupants).
+            LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
             WHERE u.property_id = ?
             ORDER BY u.unit_number
         """, (property_id,)).fetchall()
