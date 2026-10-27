@@ -58,8 +58,8 @@
 {% block content %}
 <div class="ph-wrap">
 
-  <header class="dashboard-heading">
-    <h1>{{ property.name }}</h1>
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 22px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
     {% if days_to_due is not none %}
     <div style="font-size: 13px; color: var(--ink-2);">
       {% if days_to_due == 0 %}Rent due today
@@ -68,7 +68,7 @@
       · {{ next_due_date }}
     </div>
     {% endif %}
-  </header>
+  </div>
 
   {# ---- Only items that need a person's attention appear here ---- #}
   <div class="ph-section-title">Needs follow-up</div>

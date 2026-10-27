@@ -45,7 +45,6 @@
       <div class="sidebar-brand">
         <div class="sidebar-mark"><span>{% if current_property %}{{ current_property.name[0] }}{% else %}D{% endif %}</span></div>
         <span class="sidebar-name">{{ current_property.name if current_property else 'Domi OS' }}</span>
-        <button type="button" class="sidebar-close d-md-none" aria-label="Close navigation" onclick="closeSidebar()">×</button>
       </div>
     </div>
 
@@ -245,11 +244,7 @@ function closeSidebar() {
   document.getElementById('sidebar').classList.remove('open');
   document.querySelector('[aria-controls=sidebar]').setAttribute('aria-expanded', 'false');
   document.getElementById('sidebarBackdrop').classList.remove('open');
-  document.querySelector('[aria-controls=sidebar]').focus();
 }
-document.addEventListener('keydown', function(event) {
-  if (event.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) closeSidebar();
-});
 </script>
 {% block extra_js %}{% endblock %}
 </body>

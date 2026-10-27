@@ -1,5 +1,4 @@
 {% extends "caretaker/base_caretaker.html" %}
-{% from 'partials/icons.html' import icon %}
 {% block title %}{{ property.name }} — Caretaker{% endblock %}
 
 {% block extra_css %}
@@ -52,8 +51,8 @@
 {% block content %}
 <div class="ct-wrap">
 
-  <header class="dashboard-heading">
-    <h1>{{ property.name|title }}</h1>
+  <div style="margin-bottom: 14px;">
+    <div style="font-size: 22px; font-weight: 650; color: var(--ink); letter-spacing: -.02em;">{{ property.name|title }}</div>
     {% if days_to_due is not none %}
     <div style="font-size: 13px; color: var(--ink-2);">
       {% if days_to_due == 0 %}Rent due today
@@ -62,34 +61,24 @@
       · {{ next_due_date }}
     </div>
     {% endif %}
-  </header>
+  </div>
 
   {# ---- The things a caretaker actually does ---- #}
   <a href="{{ url_for('caretaker.water_new', property_id=property.id) }}" class="ct-do {% if not water_done %}ct-do-primary{% endif %}">
-    <span class="action-symbol">{{ icon('water', 26) }}</span>
-    <div class="action-content">
     <div class="ct-do-title"><span>Water readings — {{ water_month }}</span>
       {% if not water_done %}<span class="ct-count">!</span>{% endif %}</div>
     <div class="ct-do-sub">{% if water_done %}Entered {{ (water_done.submitted_at or '')[:10] }}{% else %}Not entered yet — every unit's meter, this month{% endif %}</div>
-
-    </div>
   </a>
 
   <a href="{{ url_for('caretaker.issues', property_id=property.id) }}" class="ct-do">
-    <span class="action-symbol">{{ icon('wrench', 26) }}</span>
-    <div class="action-content">
     <div class="ct-do-title"><span>Repairs</span>
       {% if ct_repairs_waiting %}<span class="ct-count">{{ ct_repairs_waiting }}</span>{% endif %}</div>
     <div class="ct-do-sub">{% if ct_repairs_waiting %}{{ ct_repairs_waiting }} waiting for a reply{% else %}Reported repairs and their status{% endif %}</div>
-
-    </div>
   </a>
 
   {% if ct_money_tools %}
   <a href="{{ url_for('caretaker.unassigned', property_id=property.id) }}"
      class="ct-do {% if unassigned_count %}ct-do-primary{% endif %}">
-    <span class="action-symbol">{{ icon('wallet', 26) }}</span>
-    <div class="action-content">
     <div class="ct-do-title">
       <span>Assign payments to tenants</span>
       {% if unassigned_count %}<span class="ct-count">{{ unassigned_count }}</span>{% endif %}
@@ -101,30 +90,20 @@
         Everything received is matched to a tenant
       {% endif %}
     </div>
-
-    </div>
   </a>
 
   <a href="{{ url_for('caretaker.log_payment', property_id=property.id) }}" class="ct-do">
-    <span class="action-symbol">{{ icon('message', 26) }}</span>
-    <div class="action-content">
     <div class="ct-do-title"><span>Log an M-Pesa message</span></div>
     <div class="ct-do-sub">Paste the SMS and assign it to a tenant</div>
-
-    </div>
   </a>
   {% endif %}
 
   <a href="{{ url_for('caretaker.arrears', property_id=property.id) }}" class="ct-do">
-    <span class="action-symbol">{{ icon('phone', 26) }}</span>
-    <div class="action-content">
     <div class="ct-do-title">
       <span>Who owes what</span>
       {% if arrears_total %}<span class="ct-count" style="background: var(--ink-3);">{{ arrears_total }}</span>{% endif %}
     </div>
     <div class="ct-do-sub">Who to follow up — more than a month behind first</div>
-
-    </div>
   </a>
 
   {% if mismatches %}

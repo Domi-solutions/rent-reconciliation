@@ -48,7 +48,7 @@
 
   {% if portfolio %}
   <div class="mb-4">
-    <h1 class="page-title">Portfolio <span class="portfolio-period">{{ portfolio.month_label }}</span></h1>
+    <h5 class="mb-1">Portfolio — {{ portfolio.month_label }}</h5>
     <div style="font-size: 13px; color: var(--ink-2);">Across {{ properties|length }} propert{{ 'y' if properties|length == 1 else 'ies' }}</div>
   </div>
 
@@ -92,7 +92,7 @@
           <div class="prop-name">{{ prop.name }}</div>
           <div class="prop-meta">{{ prop.occupied }} occupied / {{ prop.total }} units</div>
         </div>
-        <span class="property-open" aria-label="View property">↗</span>
+        <div style="font-size: 13px; color: var(--ink-3);">View &rarr;</div>
       </div>
 
       <div class="kpi-row">
