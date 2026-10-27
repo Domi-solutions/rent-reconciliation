@@ -1,6 +1,7 @@
 """Send ONE test SMS through TextSMS to a phone you name — proves real delivery.
 
     ./venv/bin/python scripts/sms_test.py 0712345678
+    ./venv/bin/python scripts/sms_test.py 0712345678 "Your own text, e.g. with a link https://…"
 
 Asks for the API key (hidden as you type) and partner ID, so neither lands in
 your shell history, the repo, or a chat. Nothing is saved. On the live server it
@@ -21,9 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("Usage: ./venv/bin/python scripts/sms_test.py <your phone, e.g. 0712345678>")
+    if len(sys.argv) not in (2, 3):
+        sys.exit('Usage: ./venv/bin/python scripts/sms_test.py <your phone> ["optional message text"]')
     phone = sys.argv[1]
+    text = sys.argv[2] if len(sys.argv) == 3 else "Domi test: if you can read this, SMS delivery works."
 
     os.environ.setdefault('DATABASE_PATH', 'data/dev.db')     # the live server sets its own
     os.environ['SMS_PROVIDER'] = 'textsms'
@@ -41,7 +43,7 @@ def main():
     if not normalize_to_e164(phone):
         sys.exit(f"'{phone}' is not a Kenyan mobile number this app recognises.")
 
-    sent, failed, errors = send_sms([phone], "Domi test: if you can read this, SMS delivery works.")
+    sent, failed, errors = send_sms([phone], text)
     if sent:
         print(f"Sent to {normalize_to_e164(phone)}. Check the phone — delivery can take a minute.")
     else:
