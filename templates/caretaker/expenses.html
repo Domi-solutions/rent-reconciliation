@@ -1,0 +1,45 @@
+{% extends "caretaker/base_caretaker.html" %}
+{% block title %}Expenses — {{ property.name }}{% endblock %}
+{% block extra_css %}{% include 'money/_styles.html' %}{% endblock %}
+{% block content %}
+<div style="font-size: 20px; font-weight: 800; color: var(--ink);">Expenses</div>
+<div style="font-size: 13px; color: var(--ink-3); margin-bottom: 14px;">Something you bought or paid for the building. Management approves it, then pays you back.</div>
+
+{% if no_account %}
+<div class="alert alert-warning" style="font-size:13px;">Expenses need your own caretaker account. Ask management to create one.</div>
+{% else %}
+<form method="POST" enctype="multipart/form-data" class="mx-card">
+  <div class="row g-2">
+    <div class="col-7"><label class="form-label">For *</label>
+      <select class="form-select" name="category" required><option value="">Choose…</option>
+        {% for k, label in categories %}<option value="{{ k }}" {% if form.category == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-5"><label class="form-label">KES *</label>
+      <input class="form-control" name="amount" type="number" min="1" step="1" inputmode="numeric" required value="{{ form.amount or '' }}"></div>
+    <div class="col-12"><label class="form-label">What was it *</label>
+      <input class="form-control" name="description" required placeholder="e.g. New tap for 3B kitchen" value="{{ form.description or '' }}"></div>
+    <div class="col-6"><label class="form-label">Bought from</label>
+      <input class="form-control" name="paid_to" placeholder="e.g. Athi Hardware" value="{{ form.paid_to or '' }}"></div>
+    <div class="col-6"><label class="form-label">Date *</label>
+      <input class="form-control" name="expense_date" type="date" required value="{{ form.expense_date or '' }}"></div>
+    <div class="col-12"><label class="form-label">Receipt photo</label>
+      <input class="form-control" type="file" name="receipts" accept="image/*,application/pdf,.heic" capture="environment" multiple></div>
+    <div class="col-12"><label style="font-size:14px;"><input type="checkbox" name="paid_myself" value="1" {% if form.paid_myself == '1' %}checked{% endif %}> I paid with my own money — pay me back</label></div>
+  </div>
+  <button class="btn btn-primary mt-3 w-100">Send for approval</button>
+</form>
+
+<div class="eyebrow mb-2">Your expenses</div>
+{% for e in rows %}
+<div class="mx-card" style="padding:12px 14px;">
+  <div class="d-flex justify-content-between gap-2">
+    <div><strong>{{ e.category_label }}</strong> · KES {{ "{:,.0f}".format(e.amount) }}
+      <div class="mx-sub">{{ e.expense_date }} · {{ e.description }}</div>
+      {% if e.status == 'rejected' and e.decision_note %}<div class="mx-sub" style="color:var(--red)">Reason: {{ e.decision_note }}</div>{% endif %}</div>
+    <span class="st st-{{ e.status }}">{{ 'Paid back' if e.status == 'paid' and e.reimburse_caretaker else e.status_label }}</span>
+  </div>
+</div>
+{% else %}
+<p style="font-size:14px;color:var(--ink-3);">None yet.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

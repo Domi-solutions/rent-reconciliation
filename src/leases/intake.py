@@ -59,15 +59,17 @@ def documents_dir():
     return d
 
 
-def store_document(upload):
+def store_document(upload, directory=None):
     """Save an uploaded PDF as-is, or an image re-encoded as JPEG (EXIF/GPS
-    dropped). Returns (file_name, content_type, size) or None if neither."""
+    dropped), into `directory` (default: lease documents). Returns
+    (file_name, content_type, size) or None if neither. Also used for expense receipts."""
+    directory = directory or documents_dir()
     data = upload.read(MAX_DOCUMENT_BYTES + 1)
     if not data or len(data) > MAX_DOCUMENT_BYTES:
         return None
     if data[:5] == b'%PDF-':
         name = f'{uuid.uuid4().hex}.pdf'
-        with open(os.path.join(documents_dir(), name), 'wb') as f:
+        with open(os.path.join(directory, name), 'wb') as f:
             f.write(data)
         return name, 'application/pdf', len(data)
     try:
@@ -77,7 +79,7 @@ def store_document(upload):
         return None
     img.thumbnail((STORED_MAX_SIDE, STORED_MAX_SIDE))
     name = f'{uuid.uuid4().hex}.jpg'
-    path = os.path.join(documents_dir(), name)
+    path = os.path.join(directory, name)
     img.save(path, 'JPEG', quality=85, optimize=True)
     return name, 'image/jpeg', os.path.getsize(path)
 

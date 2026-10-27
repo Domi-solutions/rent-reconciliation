@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Expenses — {{ property.name }}{% endblock %}
+{% block extra_css %}{% include 'money/_styles.html' %}{% endblock %}
+{% block content %}
+<div class="mx-wrap">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div>
+      <div class="page-title">Expenses</div>
+      <div class="page-meta">Every shilling paid out of {{ property.name|title }}'s rent.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('money.cashbook') }}">Cash book</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('money.new_expense', category='owner_payout') }}">Payment to owner</a>
+      <a class="btn btn-primary" href="{{ url_for('money.new_expense') }}">Record expense</a>
+    </div>
+  </div>
+
+  {% if waiting %}
+  <div class="banner-warning mb-3"><strong>{{ waiting }} expense{{ 's' if waiting != 1 }} from the caretaker waiting for your approval.</strong>
+    <a href="{{ url_for('money.expenses', status='submitted') }}">Review →</a></div>
+  {% endif %}
+
+  <div class="mx-tabs">
+    <a class="mx-tab {% if not status %}active{% endif %}" href="{{ url_for('money.expenses') }}">All</a>
+    {% for k, label in statuses.items() %}
+    <a class="mx-tab {% if status == k %}active{% endif %}" href="{{ url_for('money.expenses', status=k) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  {% if rows %}
+  <div class="surface-card" style="overflow-x:auto;">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Date</th><th>For</th><th class="text-end">KES</th><th>Status</th><th>By</th></tr></thead>
+      <tbody>
+      {% for e in rows %}
+      <tr style="cursor:pointer" onclick="location='{{ url_for('money.expense', expense_id=e.id) }}'">
+        <td class="text-nowrap">{{ e.expense_date }}</td>
+        <td><strong>{{ e.category_label }}</strong><div class="mx-sub">{{ e.description[:70] }}{% if e.paid_to %} · {{ e.paid_to }}{% endif %}{% if e.receipt_count %} · 📎 {{ e.receipt_count }}{% endif %}</div></td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(e.amount) }}</td>
+        <td><span class="st st-{{ e.status }}">{{ e.status_label }}</span>{% if e.reimburse_caretaker and e.status in ('submitted','approved') %}<div class="mx-sub">caretaker to be paid back</div>{% endif %}</td>
+        <td class="mx-sub">{{ 'Caretaker · ' ~ e.caretaker_name if e.submitted_by_type == 'caretaker' else e.submitted_by|replace('admin:', '') }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-title">No expenses here yet</div>
+    <div class="empty-state-sub"><a href="{{ url_for('money.new_expense') }}">Record the first one →</a></div></div>
+  {% endif %}
+</div>
+{% endblock %}

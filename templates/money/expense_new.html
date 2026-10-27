@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Record expense — {{ property.name }}{% endblock %}
+{% block extra_css %}{% include 'money/_styles.html' %}{% endblock %}
+{% block content %}
+<div class="mx-wrap" style="max-width:640px">
+  <a href="{{ url_for('money.expenses') }}" style="font-size:13px">← Expenses</a>
+  <div class="page-title mt-2 mb-3">{{ 'Payment to owner' if form.category == 'owner_payout' else 'Record expense' }}</div>
+  <form method="POST" enctype="multipart/form-data" class="mx-card">
+    <div class="row g-3">
+      <div class="col-sm-6"><label class="form-label">What was it for *</label>
+        <select class="form-select" name="category" required>
+          <option value="">Choose…</option>
+          {% for k, label in categories %}<option value="{{ k }}" {% if form.category == k %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="col-sm-3"><label class="form-label">Amount (KES) *</label>
+        <input class="form-control" name="amount" type="number" min="1" step="1" required value="{{ form.amount or '' }}"></div>
+      <div class="col-sm-3"><label class="form-label">Date *</label>
+        <input class="form-control" name="expense_date" type="date" required value="{{ form.expense_date or '' }}"></div>
+      <div class="col-12"><label class="form-label">Description *</label>
+        <input class="form-control" name="description" required placeholder="e.g. Replaced kitchen tap in 3B" value="{{ form.description or '' }}"></div>
+      <div class="col-sm-6"><label class="form-label">Paid to</label>
+        <input class="form-control" name="paid_to" placeholder="e.g. Juma Plumbing" value="{{ form.paid_to or '' }}"></div>
+      <div class="col-sm-6"><label class="form-label">Receipt (photo or PDF)</label>
+        <input class="form-control" type="file" name="receipts" multiple accept="image/*,application/pdf,.heic"></div>
+      <div class="col-12">
+        <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="already_paid" value="1" id="paid" {% if form.already_paid == '1' %}checked{% endif %}> Already paid</label>
+        <div class="mx-sub">Untick if it is agreed but not paid yet — it shows as "Approved — not yet paid" until you mark it paid.</div>
+      </div>
+      <div class="col-sm-6 paid-only"><label class="form-label">Paid by</label>
+        <select class="form-select" name="paid_method">{% for k, label in methods %}<option value="{{ k }}" {% if form.paid_method == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-sm-6 paid-only"><label class="form-label">Reference</label>
+        <input class="form-control" name="paid_reference" placeholder="bank ref / M-Pesa code / cheque no." value="{{ form.paid_reference or '' }}"></div>
+    </div>
+    <button class="btn btn-primary mt-3">Save</button>
+    <div class="mx-sub mt-2">Saved expenses cannot be edited or deleted — a mistake is voided with a reason, so the owner always sees why the money moved.</div>
+  </form>
+</div>
+<script>
+  var paid = document.getElementById('paid');
+  function t() { document.querySelectorAll('.paid-only').forEach(function (el) { el.style.display = paid.checked ? '' : 'none'; }); }
+  paid.addEventListener('change', t); t();
+</script>
+{% endblock %}

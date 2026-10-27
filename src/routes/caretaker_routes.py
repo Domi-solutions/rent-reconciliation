@@ -1608,3 +1608,47 @@ def management_chat_photo(property_id, photo_id):
     if not p or m['caretaker_id'] != session.get('caretaker_id') or m['property_id'] != property_id:
         abort(404)
     return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+
+
+# ── Expenses (caretaker submits; management approves and pays back) ─────────
+
+@caretaker_bp.route('/<property_id>/expenses', methods=['GET', 'POST'])
+def expenses(property_id):
+    from datetime import date as _date
+    from src.money import expenses as ex
+    caretaker_id = session.get('caretaker_id')
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        if not prop:
+            abort(404)
+        form = {'expense_date': _date.today().isoformat(), 'paid_myself': '1'}
+        if request.method == 'POST' and caretaker_id:
+            form = request.form.to_dict()
+            actor = f"caretaker:{session.get('caretaker_name') or caretaker_id}"
+            try:
+                _, saved, rejected = ex.record(conn, prop, form, actor, by='caretaker', caretaker_id=caretaker_id,
+                                               uploads=request.files.getlist('receipts'))
+            except ex.ExpenseError as e:
+                flash(str(e), 'error')
+            else:
+                flash('Sent to management for approval.', 'success')
+                if rejected:
+                    flash(f'{rejected} file(s) were not a photo or PDF and were not attached.', 'warning')
+                return redirect(url_for('caretaker.expenses', property_id=property_id))
+        rows = ex.listing(conn, property_id, caretaker_id=caretaker_id) if caretaker_id else []
+    return render_template('caretaker/expenses.html', property=prop, rows=rows, form=form,
+                           categories=[c for c in ex.CATEGORIES if c[0] != 'owner_payout'],
+                           no_account=not caretaker_id, active_tab='expenses')
+
+
+@caretaker_bp.route('/<property_id>/expenses/<expense_id>/receipt/<receipt_id>')
+def expense_receipt(property_id, expense_id, receipt_id):
+    from src.money import expenses as ex
+    with get_connection() as conn:
+        e = ex.get(conn, expense_id, property_id)
+    if not e or e['caretaker_id'] != session.get('caretaker_id'):
+        abort(404)
+    r = next((r for r in e['receipts'] if r['id'] == receipt_id), None)
+    if not r:
+        abort(404)
+    return send_from_directory(ex.receipts_dir(), r['file_name'], mimetype=r['content_type'])

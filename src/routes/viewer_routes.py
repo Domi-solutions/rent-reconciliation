@@ -994,7 +994,9 @@ def property_wallet(property_id):
             (owner_id,)
         ).fetchone()
 
-        fee_rate = float(prop['management_fee_rate'] or 0.08)
+        # No management fee is taken in the system yet (it will come from each client's
+        # contract). Showing a default rate here told owners about a deduction nobody agreed.
+        fee_rate = 0.0
 
         total_collected = float(conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE property_id = ?",
@@ -1031,10 +1033,18 @@ def property_wallet(property_id):
     elif owner and owner['payout_mpesa'] and not owner['payout_confirmed']:
         payout_status = 'pending_otp'
 
+        from src.money import expenses as ex
+        months, totals = ex.cash_book(conn, property_id)
+        spent = [ex.get(conn, r['id'], property_id) for r in ex.listing(conn, property_id)
+                 if r['status'] in ('paid', 'approved')][:60]
+
     return render_template(
         'viewer/wallet.html',
         property=prop,
         active_tab='wallet',
+        months=months,
+        totals=totals,
+        spent=spent,
         total_collected=total_collected,
         fee_rate=fee_rate,
         fee_amount=fee_amount,
@@ -1184,3 +1194,19 @@ def tenant_statement(property_id, tenant_id):
                            ledger=ledger,
                            open_claims=open_claims,
                            active_tab='arrears')
+
+
+@viewer_bp.route('/<property_id>/expenses/<expense_id>/receipt/<receipt_id>')
+def expense_receipt(property_id, expense_id, receipt_id):
+    """Owner can open the receipt behind any expense on their property."""
+    from flask import send_from_directory
+    from src.money import expenses as ex
+    with get_connection() as conn:
+        if not conn.execute("SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+                            (property_id, session.get('owner_id'))).fetchone():
+            abort(403)
+        e = ex.get(conn, expense_id, property_id)
+    r = next((r for r in (e['receipts'] if e else []) if r['id'] == receipt_id), None)
+    if not r:
+        abort(404)
+    return send_from_directory(ex.receipts_dir(), r['file_name'], mimetype=r['content_type'])

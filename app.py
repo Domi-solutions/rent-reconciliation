@@ -134,6 +134,7 @@ from src.database.db import (
     migrate_add_payment_instructions,
     migrate_add_leases,
     migrate_add_staff_chat,
+    migrate_add_expenses,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -196,11 +197,13 @@ migrate_add_mpesa_fields()
 migrate_add_payment_instructions()
 migrate_add_leases()
 migrate_add_staff_chat()
+migrate_add_expenses()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
 from src.routes.team_routes import team_bp
 from src.routes.lease_routes import lease_bp
+from src.routes.money_routes import money_bp
 from src.routes.mpesa_admin_routes import mpesa_admin_bp, unmatched_count as mpesa_unmatched_count
 from src.messaging.reminders import generate_due_reminders
 
@@ -219,6 +222,7 @@ app.register_blueprint(platform_bp)
 app.register_blueprint(owner_bp)
 app.register_blueprint(team_bp)
 app.register_blueprint(lease_bp)
+app.register_blueprint(money_bp)
 
 from src.utils.tenant_documents import charge_label as _charge_label
 app.jinja_env.filters['charge_label'] = _charge_label
@@ -598,10 +602,12 @@ def inject_property_context():
                 ).fetchone()[0]
                 from src.messaging.threads import awaiting_count
                 inbox_awaiting_count = awaiting_count(conn, prop["id"])
-            staff_chat_unread = 0
+            staff_chat_unread = expenses_waiting = 0
             if prop:
                 from src.messaging.staff_chat import unread_for_admin
+                from src.money.expenses import waiting_count
                 staff_chat_unread = unread_for_admin(conn, prop["id"])
+                expenses_waiting = waiting_count(conn, prop["id"])
 
             return {
                 "current_property": prop,
@@ -611,11 +617,12 @@ def inject_property_context():
                 "flagged_claims_count": flagged_claims_count,
                 "inbox_awaiting_count": inbox_awaiting_count,
                 "staff_chat_unread": staff_chat_unread,
+                "expenses_waiting": expenses_waiting,
                 "mpesa_unmatched_count": mpesa_unmatched_count(conn, org_id),
             }
     except Exception:
         return {"current_property": None, "property_count": 0, "unit_count": None, "all_properties": [], "flagged_claims_count": 0,
-                "inbox_awaiting_count": 0, "staff_chat_unread": 0, "mpesa_unmatched_count": 0}
+                "inbox_awaiting_count": 0, "staff_chat_unread": 0, "expenses_waiting": 0, "mpesa_unmatched_count": 0}
 
 
 @app.context_processor

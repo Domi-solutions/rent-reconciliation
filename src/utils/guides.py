@@ -176,6 +176,16 @@ _T = {
             'Usimamizi ukikuandikia, unapata SMS na kichupo cha Management kinaonyesha nambari nyekundu.',
         ]),
     },
+    'caretaker.expenses': {
+        'en': ('Expenses', 'Things you bought or paid for the building.', [
+            'Fill in what it was, how much, and take a photo of the receipt.',
+            'Management approves it. If you paid with your own money, they pay you back and it shows "Paid back".',
+        ]),
+        'sw': ('Matumizi', 'Vitu ulivyonunua au kulipia jengo.', [
+            'Jaza ni nini, kiasi gani, na upige picha ya risiti.',
+            'Usimamizi unaidhinisha. Kama ulilipa kwa pesa yako, wanakurudishia na inaonyesha "Paid back".',
+        ]),
+    },
     'caretaker.water_list': {
         'en': ('Water', 'Meter readings entered so far.', [
             'Every month needs a reading for every occupied unit.',
@@ -263,6 +273,19 @@ _T = {
             'Reports from the caretaker are marked REPORT. Photos open full size.',
             'Your message reaches them with an SMS saying a message is waiting — never its content.',
             'Messages cannot be edited or deleted; the activity log records who wrote.',
+        ]),
+    },
+    'money.expenses': {
+        'en': ('Expenses', 'Every shilling paid out of the rent collected.', [
+            'Record an expense yourself, or approve one the caretaker sent (with their receipt photo).',
+            'A caretaker who paid out of pocket is paid back once you mark the expense paid.',
+            'Nothing is edited or deleted — a mistake is voided with a reason. The owner sees all of it.',
+        ]),
+    },
+    'money.cashbook': {
+        'en': ('Cash book', 'Rent collected − expenses − paid to owner = balance held.', [
+            'Collected is rent matched to bank or M-Pesa records. Expenses count once paid.',
+            'The owner sees this same page in their portal.',
         ]),
     },
     'leases.board': {

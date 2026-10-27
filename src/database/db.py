@@ -2019,3 +2019,48 @@ def migrate_add_staff_chat():
                 BEGIN SELECT RAISE(ABORT, 'messages are never edited — add a new message instead'); END
             """)
         print("Migration complete: staff_messages, staff_message_photos, staff_chat_reads ready.")
+
+
+def migrate_add_expenses():
+    """Money out: every shilling that leaves a property's collected rent. Idempotent.
+
+    status: submitted (a caretaker asked; admin decides) → approved (agreed, not yet
+    paid) → paid; or rejected. A recorded expense is never edited or deleted: a
+    mistake is voided with a reason (status 'void'), so the cash book always
+    explains itself. reimburse_caretaker = the caretaker paid out of pocket and is
+    owed the money back once approved.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id TEXT PRIMARY KEY,
+                org_id TEXT REFERENCES organizations(id),
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                category TEXT NOT NULL,
+                amount REAL NOT NULL,
+                expense_date DATE NOT NULL,
+                paid_to TEXT,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'submitted',     -- submitted | approved | paid | rejected | void
+                submitted_by_type TEXT NOT NULL,               -- admin | caretaker
+                submitted_by TEXT NOT NULL,                    -- staff.actor() or caretaker:<name>
+                caretaker_id TEXT,
+                reimburse_caretaker INTEGER NOT NULL DEFAULT 0,
+                decided_by TEXT, decided_at TIMESTAMP, decision_note TEXT,
+                paid_by TEXT, paid_at TIMESTAMP, paid_method TEXT, paid_reference TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_expenses_property ON expenses(property_id, status, expense_date)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS expense_receipts (
+                id TEXT PRIMARY KEY,
+                expense_id TEXT NOT NULL REFERENCES expenses(id),
+                file_name TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                original_name TEXT,
+                size_bytes INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        print("Migration complete: expenses, expense_receipts ready.")

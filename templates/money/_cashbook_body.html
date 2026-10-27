@@ -1,0 +1,28 @@
+<div class="mx-hero">
+  <div class="eyebrow">Balance held</div>
+  <div class="big">KES {{ "{:,.0f}".format(totals.held) }}</div>
+  <div class="sub">Rent collected KES {{ "{:,.0f}".format(totals.collected) }} − expenses KES {{ "{:,.0f}".format(totals.expenses) }} − paid to owner KES {{ "{:,.0f}".format(totals.owner_payouts) }}</div>
+</div>
+<div class="mx-grid">
+  <div class="mx-stat"><div class="n">KES {{ "{:,.0f}".format(totals.collected) }}</div><div class="l">Rent collected (matched to bank / M-Pesa records)</div></div>
+  <div class="mx-stat"><div class="n">KES {{ "{:,.0f}".format(totals.expenses) }}</div><div class="l">Expenses paid</div></div>
+  <div class="mx-stat"><div class="n">KES {{ "{:,.0f}".format(totals.owner_payouts) }}</div><div class="l">Paid to owner</div></div>
+  <div class="mx-stat"><div class="n">KES {{ "{:,.0f}".format(totals.owed_out) }}</div><div class="l">Approved, not yet paid{% if totals.waiting %} · {{ totals.waiting }} waiting approval{% endif %}</div></div>
+</div>
+<div class="surface-card" style="overflow-x:auto;">
+  <table class="table mb-0">
+    <thead><tr><th>Month</th><th class="text-end">Collected</th><th class="text-end">Expenses</th><th class="text-end">To owner</th><th class="text-end">Net</th></tr></thead>
+    <tbody>
+    {% for m in months %}
+    <tr>
+      <td><strong>{{ m.label }}</strong>{% if m.by_category %}<div class="mx-sub">{% for label, amt in m.by_category %}{{ label }} {{ "{:,.0f}".format(amt) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}</td>
+      <td class="text-end">{{ "{:,.0f}".format(m.collected) }}</td>
+      <td class="text-end">{{ "{:,.0f}".format(m.expenses) }}</td>
+      <td class="text-end">{{ "{:,.0f}".format(m.owner_payouts) }}</td>
+      <td class="text-end fw-semibold" style="color:{{ 'var(--green-dark)' if m.net >= 0 else 'var(--red)' }}">{{ "{:,.0f}".format(m.net) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="mx-sub mt-2">Collected = rent payments matched to bank or M-Pesa records, by payment date. Expenses count once paid; approved-but-unpaid and waiting ones are shown above, not taken off.</p>
