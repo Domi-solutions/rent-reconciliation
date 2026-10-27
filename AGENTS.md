@@ -37,7 +37,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
   one-month deposit. Charges now fall due that way (`src/utils/due_dates.py`).
 - **Onboarding is repeatable:** a lease opens a clean account; old debt moves only as an evidenced
   "brought forward". Owners see all conversations. Move-out: one month's notice, walk-outs handled.
-- **WhatsApp:** admin runs an open tenant community group outside Domi.
+- **No WhatsApp group** (owner declined, 2026-10-27). SMS + portal only.
 
 ### Shipped this session (v92)
 
@@ -66,7 +66,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
    AT_SMS_ENABLED=true, one-phone prod test.
 2. Upload safety: statement upload supersedes ANY overlapping active statement org-wide (all banks) —
    scope to same bank/account and full overlap; add totals check for scanned uploads.
-3. Receipt SMS with remaining balance; broadcast to portal + SMS; "Copy for WhatsApp".
+3. ~~Receipt SMS with remaining balance; broadcast to portal + SMS~~ (done, `66bc9e0`).
 4. ">1 month behind" lists (admin + caretaker). 5. Admin↔caretaker chat. 6. Move-out (tenant
    notice + left-without-notice). 7. Owner comms + per-unit performance. 8. KCB parser (needs sample).
 
