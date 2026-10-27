@@ -106,6 +106,16 @@ def test_closing_balance_prefers_value_over_clear():
     assert closing == Decimal('517570.28'), closing
 
 
+def test_opening_balance_with_asterisks():
+    # Family Bank, Sep 2026 layout. A miss fell back to guessing a running balance,
+    # which then "corrected" the first payment away.
+    opening, closing = extract_balances(
+        "*OPENING BALANCE* 49,049.68\n28-SEP- 28-SEP- Paybill Credit 68,049.68 014\n"
+        "30-SEP- 30-SEP- Paybill Credit 108,049.68 014\nVALUE BALANCE 159,123.18")
+    assert opening == Decimal('49049.68'), opening
+    assert closing == Decimal('159123.18'), closing
+
+
 def test_unit_hint_ignores_the_account_number():
     """'MOWIN 014000050518' is the account number, not unit 0140. This produced
     a bogus Tier-1 hint on 63 of 67 credits in one statement."""

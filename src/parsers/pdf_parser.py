@@ -1144,7 +1144,11 @@ def extract_balances(raw_text: str) -> tuple[Optional[Decimal], Optional[Decimal
     
     # Look for opening balance
     opening_patterns = [
-        r'Opening Balance[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
+        # Family Bank (Sep 2026 on) prints "*OPENING BALANCE* 49,049.68". Missing the
+        # asterisks fell through to the range guess below, which picked a later running
+        # balance — and the balance-movement check then "corrected" the first payment
+        # to fit it (19,000 credit → 40,000 debit), losing a real payment.
+        r'\*?Opening Balance\*?[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
         r'Balance B/F[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
         r'Balance Brought Forward[:\s]+(\d{1,3}(?:,\d{3})*\.\d{2})',
     ]
