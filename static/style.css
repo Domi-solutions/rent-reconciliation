@@ -327,14 +327,14 @@ body {
 }
 
 .report-view-btn {
-  color: var(--blue);
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
 }
 
 .report-view-btn:hover {
-  color: #0058B0;
+  color: var(--accent-hover);
 }
 
 /* === EMPTY STATES === */

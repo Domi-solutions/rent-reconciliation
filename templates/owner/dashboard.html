@@ -8,15 +8,18 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
 <style>
     body { background: var(--bg); }
+    /* Same deep-green band as the property pages, tenant and caretaker portals. */
     .owner-header {
-      background: #fff;
-      border-bottom: 1px solid var(--border-strong);
+      background: var(--frame); color: #fff;
       padding: 14px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
-    .owner-header .brand { font-size: 16px; font-weight: 700; }
+    .owner-header .brand { font-size: 16px; font-weight: 700; color: #fff; }
+    .owner-header .brand span { font-weight: 500; color: var(--sage); }
+    .owner-header > a { font-size: 13px; color: rgba(255,255,255,.88); }
+    .owner-header > a:hover { color: #fff; }
     .stat-card { background: #fff; border-radius: var(--r-card); padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     .stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
     .stat-label { font-size: 11px; text-transform: none; letter-spacing: .01em; color: var(--ink-2); margin-top: 4px; }
@@ -40,8 +43,8 @@
 {% include 'partials/demo_banner.html' %}
 
 <div class="owner-header">
-  <div class="brand">Domi{% if person_name %} <span style="font-weight:500; color:var(--ink-2);">— {{ person_name }}</span>{% endif %}</div>
-  <a href="{{ url_for('owner.logout') }}" style="font-size: 13px; color: var(--ink-2); text-decoration: none;">Log out</a>
+  <div class="brand">Domi{% if person_name %} <span>— {{ person_name }}</span>{% endif %}</div>
+  <a href="{{ url_for('owner.logout') }}">Log out</a>
 </div>
 
 <div style="max-width: 900px; margin: 0 auto; padding: 28px 20px 64px;">
@@ -92,7 +95,7 @@
           <div class="prop-name">{{ prop.name }}</div>
           <div class="prop-meta">{{ prop.occupied }} occupied / {{ prop.total }} units</div>
         </div>
-        <div style="font-size: 13px; color: var(--ink-3);">View &rarr;</div>
+        <div style="font-size: 13px; color: var(--accent); font-weight: 600;">View &rarr;</div>
       </div>
 
       <div class="kpi-row">

@@ -40,6 +40,13 @@
   --orange-soft:    #FCF1E4;
   --orange-border:  #F1CFA4;
 
+  /* Conversations (chat.css): muted green canvas, white incoming, pale green outgoing */
+  --chat-canvas:            #EDF1EB;
+  --chat-incoming:          #FFFFFF;
+  --chat-incoming-alt:      #F7FAF6;   /* caretaker, in management's chat with them */
+  --chat-outgoing:          #DDEFE2;
+  --chat-outgoing-border:   #B9D5C2;
+
   /* Shape */
   --shadow-xs:      none;
   --shadow-sm:      0 1px 3px rgba(21,56,41,0.06);

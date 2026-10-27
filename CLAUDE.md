@@ -130,7 +130,7 @@ Messaging helpers in `messaging_routes.py` (do not duplicate inline):
 - `_next_due_date(rent_due_day)` — returns next rent due date (date object) from `properties.rent_due_day`
 - `_build_variables(conn, tenant, prop, base_url=None)` — single source of truth for broadcast/thread substitution; returns dict with `{tenant_name}`, `{balance}`, `{unit}`, `{due_date}`, `{caretaker_phone}`, `{portal_link}`, `{property_name}`
 
-**Look:** colours, font (Figtree), radii live only in `static/theme.css` (deep forest `--forest`/`--frame` for sidebars, portal headers and highlight cards; `--sage` accent on dark; `--accent` emerald for buttons/links; warm `--bg`). `style.css` imports it; standalone pages (sign-in, owner portfolio, platform) link it. Use the tokens — never hard-code hex colours in templates. Status colours keep their meaning (green settled, amber waiting, red owed, blue info).
+**Look:** colours (incl. the `--chat-*` conversation colours), font (the device's own system font since 2026-10-27; Figtree dropped), radii live only in `static/theme.css` (deep forest `--forest`/`--frame` for sidebars, portal headers and highlight cards; `--sage` accent on dark; `--accent` emerald for buttons/links; warm `--bg`). `style.css` imports it; standalone pages (sign-in, owner portfolio, platform) link it. Use the tokens — never hard-code hex colours in templates. Status colours keep their meaning (green settled, amber waiting, red owed, blue info).
 
 Templates: `base.html` (admin base), `viewer/base_viewer.html` + `viewer/wallet.html`, `caretaker/`, `tenant/`, `platform/`, `messaging/`, `tenant_statement.html`, `move_out.html`, `owners.html`, `caretakers.html`
 

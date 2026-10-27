@@ -23,7 +23,7 @@
       <input class="form-control" name="expense_date" type="date" required value="{{ form.expense_date or '' }}"></div>
     <div class="col-12"><label class="form-label">Receipt photo</label>
       <input class="form-control" type="file" name="receipts" accept="image/*,application/pdf,.heic" capture="environment" multiple></div>
-    <div class="col-12"><label style="font-size:14px;"><input type="checkbox" name="paid_myself" value="1" {% if form.paid_myself == '1' %}checked{% endif %}> I paid with my own money — pay me back</label></div>
+    <div class="col-12"><label class="check-big"><input type="checkbox" name="paid_myself" value="1" {% if form.paid_myself == '1' %}checked{% endif %}> I paid with my own money — pay me back</label></div>
   </div>
   <button class="btn btn-primary mt-3 w-100">Send for approval</button>
 </form>

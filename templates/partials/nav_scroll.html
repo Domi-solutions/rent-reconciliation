@@ -1,0 +1,22 @@
+{# Portal tab bars (tenant, owner, caretaker) are one scrolling row. Bring the open
+   page's tab into view and mark the edges that hide more tabs (faded in interface.css). #}
+<script>
+(function () {
+  document.querySelectorAll('.viewer-header nav, .ct-header nav').forEach(function (nav) {
+    var active = nav.querySelector('.active');
+    if (active) {
+      var left = active.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft;
+      if (left + active.offsetWidth > nav.clientWidth - 48) {   /* hidden or under the fade */
+        nav.scrollLeft = left - (nav.clientWidth - active.offsetWidth) / 2;
+      }
+    }
+    function edges() {
+      nav.classList.toggle('more-left', nav.scrollLeft > 4);
+      nav.classList.toggle('more-right', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+    }
+    edges();
+    nav.addEventListener('scroll', edges, { passive: true });
+    window.addEventListener('resize', edges);
+  });
+})();
+</script>

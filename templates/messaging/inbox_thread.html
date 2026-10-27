@@ -36,9 +36,9 @@
       <textarea id="reply-body" name="body" class="message-input form-control mb-2" rows="3" placeholder="Reply — the tenant gets an SMS that a reply is waiting" required></textarea>
       <label class="form-label" for="reply-photos">Photos <span class="chat-optional">(optional)</span></label>
       <input id="reply-photos" type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
-      <div class="d-flex gap-2 align-items-center">
+      <div class="d-flex gap-3 align-items-center flex-wrap">
         <button type="submit" class="btn btn-dark">Send reply</button>
-        <label style="font-size:13px"><input type="checkbox" name="close" value="1"> and close the conversation</label>
+        <label class="check-big"><input type="checkbox" name="close" value="1"> and close the conversation</label>
       </div>
     </form>
     {% if conv.status != 'closed' %}

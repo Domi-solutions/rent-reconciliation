@@ -1,11 +1,6 @@
 /* Conversation surfaces shared by admin, tenant, caretaker and owner views.
    Sender names, directions, attachments and delivery behavior remain unchanged. */
-:root {
-  --chat-canvas: #EDF1EB;
-  --chat-incoming: #FFFFFF;
-  --chat-outgoing: #DDEFE2;
-  --chat-outgoing-border: #B9D5C2;
-}
+/* Colours are tokens in theme.css (--chat-*). */
 body .chat-transcript {
   background: var(--chat-canvas); border: 1px solid var(--border-strong);
   border-radius: var(--r-card); padding: 20px; margin: 16px 0;
@@ -23,7 +18,10 @@ body .chat-transcript .bubble-row.out .bubble {
   margin-left: auto; background: var(--chat-outgoing); border-color: var(--chat-outgoing-border);
   color: var(--ink); border-radius: 10px 10px 3px 10px;
 }
-body .chat-transcript .bubble.b-ct { background: #F7FAF6; }
+body .chat-transcript .bubble.b-ct { background: var(--chat-incoming-alt); }
+/* Owner view of a tenant conversation: the caretaker answers for management, so the
+   reply sits on management's side, marked by a sage edge and its "(caretaker)" label. */
+body .chat-transcript .bubble.b-staff.b-caretaker { border-right: 3px solid var(--sage); }
 body .chat-transcript .bubble:is(.sys, .b-sys) {
   max-width: 90%; margin: 0 auto 14px; padding: 6px 12px; background: rgba(255,255,255,.65);
   color: var(--ink-2); font-size: 12px; text-align: center; border-radius: 6px; box-shadow: none;

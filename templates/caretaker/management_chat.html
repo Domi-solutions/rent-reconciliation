@@ -14,8 +14,8 @@
 </style>
 {% endblock %}
 {% block content %}
-<div style="font-size: 20px; font-weight: 700; color: var(--ink);">Management</div>
-<div style="font-size: 13px; color: var(--ink-3); margin-bottom: 14px;">Your conversation with management: reports, questions, photos.</div>
+{# The guide box above already says what this page is; no second subtitle. #}
+<div style="font-size: 20px; font-weight: 700; color: var(--ink); margin-bottom: 10px;">Management</div>
 
 {% if no_account %}
 <div class="alert alert-warning" style="font-size:13px;">Messages need your own caretaker account. Ask management to create one for you, then sign in with your name.</div>
@@ -39,7 +39,7 @@
       <textarea name="body" id="reply-body" class="message-input form-control mb-2" rows="5" placeholder="Write to management" required></textarea>
     <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="start-report">Start a report</button>
-      <label style="font-size:13px;"><input type="checkbox" name="kind" value="report" id="is-report"> This is a report</label>
+      <label class="check-big"><input type="checkbox" name="kind" value="report" id="is-report"> This is a report</label>
     </div>
     <label class="form-label" for="reply-photos">Photos <span class="chat-optional">(optional)</span></label>
       <input id="reply-photos" type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>

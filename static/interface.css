@@ -157,3 +157,38 @@ body .text-action:hover { background: var(--mint); border-color: var(--accent); 
 body :is(.viewer-header, .ct-header) a:not(.viewer-nav-tab):not(.ct-nav-tab) { color: rgba(255,255,255,.88) !important; }
 body .stat-card { height: 100%; }
 body .platform-stats .card { height: 100%; }
+
+/* Focus on dark frames: the emerald ring is lost on forest green, so it is white there. */
+body :is(.sidebar, .viewer-header, .ct-header, .platform-header, .platform-nav, .ph-headline, .ct-head, .mx-hero)
+  :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline-color: #fff; }
+/* Portal tab bars: one row in every portal. partials/nav_scroll.html scrolls the open
+   page's tab into view; a fade marks an edge that hides more tabs. */
+body :is(.viewer-header, .ct-header) nav {
+  flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
+  padding-left: 4px; padding-right: 4px; margin-left: -4px; margin-right: -4px;
+}
+body :is(.viewer-header, .ct-header) nav::-webkit-scrollbar { display: none; }
+body :is(.viewer-header, .ct-header) :is(.viewer-nav-tab, .ct-nav-tab):focus-visible { outline-offset: 1px; }
+body :is(.viewer-header, .ct-header) nav.more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+          mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+body :is(.viewer-header, .ct-header) nav.more-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px);
+          mask-image: linear-gradient(to right, transparent, #000 48px);
+}
+body :is(.viewer-header, .ct-header) nav.more-left.more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+          mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+}
+@media (max-width: 767px) {
+  /* A pinned two-part header costs a fifth of a phone screen; it scrolls away instead. */
+  body :is(.viewer-header, .ct-header) { position: static; }
+}
+/* A list row that opens something looks like it: whole row is the link, with a chevron. */
+body a.data-row-link { display: block; color: var(--ink); text-decoration: none; position: relative; padding-right: 40px; }
+body a.data-row-link::after { content: '›'; position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 22px; color: var(--accent); }
+body a.data-row-link:hover { background: var(--mint-2); color: var(--ink); }
+/* Checkboxes next to buttons: big enough to tap. */
+body .check-big { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; font-size: 14px; cursor: pointer; }
+body .check-big input[type=checkbox] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }

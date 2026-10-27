@@ -36,7 +36,7 @@
   <h2>Notices</h2>
   <table>
     {% for m in notices %}
-    <tr><td>
+    <tr id="notice-{{ m.id }}"><td>
       <b>{{ m.subject }}</b> <span class="muted">· {{ (m.created_at or '')[:10] }}</span>
       <div style="font-size:13px;white-space:pre-wrap;margin-top:4px">{{ m.body }}</div>
     </td></tr>

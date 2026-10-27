@@ -30,11 +30,11 @@ _T = {
     },
     'tenant.login': {
         'en': ('Sign in', 'Your phone number and the 4-digit PIN you chose.', [
-            'No PIN yet, or forgot it? Tap "Get a code" — an SMS code lets you set a new one.',
+            'No PIN yet, or forgot it? Tap "First time, or forgot your PIN?" — an SMS code lets you set a new one.',
             'Keep your PIN to yourself, like your M-Pesa PIN.',
         ]),
         'sw': ('Ingia', 'Nambari yako ya simu na PIN ya tarakimu 4 uliyochagua.', [
-            'Huna PIN, au umeisahau? Bonyeza "Get a code" — nambari ya SMS itakuwezesha kuweka mpya.',
+            'Huna PIN, au umeisahau? Bonyeza "First time, or forgot your PIN?" — nambari ya SMS itakuwezesha kuweka mpya.',
             'Usimwambie mtu PIN yako, kama PIN ya M-Pesa.',
         ]),
     },

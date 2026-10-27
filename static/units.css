@@ -9,8 +9,8 @@
 .unit-button svg, .units-search svg, .unit-more svg { width: 18px; height: 18px; flex-shrink: 0; }
 .unit-button-secondary { background: var(--surface); color: var(--ink); }
 .unit-button-secondary:hover { background: var(--surface-2); color: var(--ink); border-color: var(--ink-3); }
-.unit-button-primary { background: var(--forest); border-color: var(--forest); color: white; }
-.unit-button-primary:hover { background: var(--forest-2); border-color: var(--forest-2); color: white; }
+.unit-button-primary { background: var(--accent); border-color: var(--accent); color: white; }
+.unit-button-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: white; }
 .units-overview { display: flex; align-items: center; gap: 38px; padding: 0 0 24px; margin-bottom: 26px; border-bottom: 1px solid var(--border-strong); }
 .units-overview > div { display: flex; align-items: baseline; gap: 9px; }
 .units-overview strong { font-size: 24px; font-weight: 500; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
