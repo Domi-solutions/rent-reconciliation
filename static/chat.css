@@ -1,0 +1,69 @@
+/* Conversation surfaces shared by admin, tenant, caretaker and owner views.
+   Sender names, directions, attachments and delivery behavior remain unchanged. */
+:root {
+  --chat-canvas: #EDF1EB;
+  --chat-incoming: #FFFFFF;
+  --chat-outgoing: #DDEFE2;
+  --chat-outgoing-border: #B9D5C2;
+}
+body .chat-transcript {
+  background: var(--chat-canvas); border: 1px solid var(--border-strong);
+  border-radius: var(--r-card); padding: 20px; margin: 16px 0;
+  min-height: 150px; overflow-wrap: anywhere;
+}
+body .chat-transcript .bubble {
+  width: fit-content; max-width: 82%; padding: 12px 15px; margin: 0 0 14px;
+  background: var(--chat-incoming); color: var(--ink); border: 1px solid var(--border-strong);
+  border-radius: 10px 10px 10px 3px; font-size: 14px; line-height: 1.6;
+  box-shadow: 0 1px 2px rgba(21,56,41,.04); font-weight: 500;
+}
+body .chat-transcript .bubble:last-child { margin-bottom: 0; }
+body .chat-transcript .bubble:is(.staff, .us, .me, .b-staff),
+body .chat-transcript .bubble-row.out .bubble {
+  margin-left: auto; background: var(--chat-outgoing); border-color: var(--chat-outgoing-border);
+  color: var(--ink); border-radius: 10px 10px 3px 10px;
+}
+body .chat-transcript .bubble.b-ct { background: #F7FAF6; }
+body .chat-transcript .bubble:is(.sys, .b-sys) {
+  max-width: 90%; margin: 0 auto 14px; padding: 6px 12px; background: rgba(255,255,255,.65);
+  color: var(--ink-2); font-size: 12px; text-align: center; border-radius: 6px; box-shadow: none;
+}
+body .chat-transcript .bubble:is(.report, .b-report) { border-left: 3px solid var(--blue); }
+body .chat-transcript .bubble :is(.body, .body-text) { white-space: pre-wrap; overflow-wrap: anywhere; }
+body .chat-transcript .bubble :is(.meta, .ts) {
+  font-size: 11px; font-weight: 500; color: var(--ink-2); opacity: 1;
+  margin-top: 8px; line-height: 1.5; white-space: normal;
+}
+body .chat-transcript .bubble :is(.tag, .eyebrow) { color: var(--blue); font-weight: 600; }
+body .chat-transcript .bubble a { color: var(--forest); text-decoration: underline; }
+body .chat-transcript .bubble .photos a { display: block; }
+body .chat-transcript .bubble .photos img { border-radius: 6px; }
+body .chat-composer {
+  background: var(--surface); border: 1px solid var(--border-strong); border-top: 3px solid var(--sage);
+  border-radius: var(--r-card); padding: 18px; margin: 16px 0;
+}
+body .chat-composer .form-label { display: block; margin-bottom: 6px; color: var(--forest); }
+body .chat-optional { font-weight: 500; color: var(--ink-2); }
+body textarea.message-input {
+  background: var(--mint-2) !important; color: var(--ink); border: 1px solid #A9C7B3 !important;
+  border-radius: var(--r-input); padding: 12px 14px; line-height: 1.6; resize: vertical;
+}
+body textarea.message-input:focus {
+  background: var(--surface) !important; border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(46,139,98,.14);
+}
+body .chat-area.chat-transcript { margin: 0; border-radius: 0; }
+body .compose-box.chat-composer { margin: 0; border-radius: 0 0 var(--r-card) var(--r-card); }
+body .thread-avatar { background: var(--forest); }
+@media (max-width: 767px) {
+  body .chat-transcript { padding: 14px 12px; }
+  body .chat-transcript .bubble { max-width: 92%; padding: 10px 12px; }
+  body .chat-composer { padding: 14px; }
+  body textarea.message-input { font-size: 16px; }
+  body .thread-header { flex-wrap: wrap; }
+  body .thread-header .thread-meta { min-width: 140px; }
+}
+@media print {
+  body .chat-transcript { background: white; border-color: #ccc; }
+  body .chat-transcript .bubble { box-shadow: none; break-inside: avoid; }
+}

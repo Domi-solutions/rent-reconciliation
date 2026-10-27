@@ -12,7 +12,7 @@
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
       <div class="d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-3">
-          <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Monthly Workflow</h6>
+          <h6 style="font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin: 0;">Monthly Workflow</h6>
           <div class="d-flex align-items-center gap-1" style="font-size: 12px;">
             <a href="{{ url_for('tools_index', period=prev_period) }}" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 11px; line-height: 1.6;">&#8592;</a>
             <span style="font-weight: 600; color: var(--ink-1); min-width: 64px; text-align: center;">{{ period }}</span>
@@ -33,7 +33,7 @@
         {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 1</div>
+            <div class="data-row-meta" style="font-size: 11px; text-transform: none; letter-spacing: .01em;">Step 1</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
               {% if done %}✓ {{ period }}{% else %}Not done{% endif %}
             </span>
@@ -48,7 +48,7 @@
         {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 2</div>
+            <div class="data-row-meta" style="font-size: 11px; text-transform: none; letter-spacing: .01em;">Step 2</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
               {% if done %}✓ {{ period }}{% else %}Not done{% endif %}
             </span>
@@ -63,7 +63,7 @@
         {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 3</div>
+            <div class="data-row-meta" style="font-size: 11px; text-transform: none; letter-spacing: .01em;">Step 3</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
               {% if done %}✓ {{ s[:10] }}{% else %}Not done{% endif %}
             </span>
@@ -79,7 +79,7 @@
         {% set unassigned = workflow.get('unassigned', 0) %}
         <div class="col-md" style="padding: 20px; border-right: 1px solid var(--border); border-top: 3px solid {{ '#22c55e' if (done and unassigned == 0) else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 4</div>
+            <div class="data-row-meta" style="font-size: 11px; text-transform: none; letter-spacing: .01em;">Step 4</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if (done and unassigned == 0) else '#dc2626' }};">
               {% if done and unassigned == 0 %}✓ {{ s[:10] }}
               {% elif done %}{{ unassigned }} unassigned
@@ -101,7 +101,7 @@
         {% set done = s is not none and s != '' %}
         <div class="col-md" style="padding: 20px; border-top: 3px solid {{ '#22c55e' if done else '#ef4444' }};">
           <div class="d-flex justify-content-between align-items-start mb-1">
-            <div class="data-row-meta" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">Step 5</div>
+            <div class="data-row-meta" style="font-size: 11px; text-transform: none; letter-spacing: .01em;">Step 5</div>
             <span style="font-size: 11px; font-weight: 600; color: {{ '#16a34a' if done else '#dc2626' }};">
               {% if done %}✓ {{ s[:10] }}{% else %}Not done{% endif %}
             </span>
@@ -130,7 +130,7 @@
 
   <div class="col-12">
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
-      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Property</h6>
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin: 0;">Property</h6>
     </div>
     <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
       <div class="row g-0">
@@ -151,7 +151,7 @@
   {% if prop %}
   <div class="col-12">
     <div class="surface-card-header" style="background: #fff5f5; border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid #fca5a5; border-bottom: none; padding: 14px 20px;">
-      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #dc2626; margin: 0;">Danger Zone</h6>
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: #dc2626; margin: 0;">Danger Zone</h6>
     </div>
     <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card); border-color: #fca5a5;">
       <div class="row g-0">
@@ -167,7 +167,7 @@
 
   <div class="col-12">
     <div class="surface-card-header" style="background: var(--bg); border-radius: var(--r-card) var(--r-card) 0 0; border: 1px solid var(--border); border-bottom: none; padding: 14px 20px;">
-      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin: 0;">Parser Test Tools</h6>
+      <h6 style="font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin: 0;">Parser Test Tools</h6>
     </div>
     <div class="surface-card" style="border-radius: 0 0 var(--r-card) var(--r-card);">
       <div class="data-row-meta" style="padding: 12px 20px 4px; font-size: 12px;">These tools run parsers only — no data is saved to the database.</div>

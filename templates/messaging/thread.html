@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from 'partials/icons.html' import icon %}
+
 {% block title %}{{ tenant.name }} — Messages{% endblock %}
 
 {% block extra_css %}
@@ -30,7 +32,7 @@
 
   .bubble {
     max-width: 68%; padding: 10px 14px;
-    border-radius: 18px; font-size: 14px; line-height: 1.45;
+    border-radius: var(--r-card); font-size: 14px; line-height: 1.45;
     position: relative;
   }
   .bubble-row.out .bubble {
@@ -53,7 +55,7 @@
 
   .empty-thread {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    color: #adb5bd; font-size: 14px; padding: 40px;
+    color: var(--ink-3); font-size: 14px; padding: 40px;
     flex-direction: column; gap: 6px;
   }
 
@@ -87,7 +89,7 @@
   </div>
 
   {# ── Chat area ── #}
-  <div class="chat-area" id="chat-area">
+  <div class="chat-area chat-transcript" id="chat-area">
     {% if messages %}
       {% for m in messages %}
       <div class="bubble-row {{ m.direction }}">
@@ -105,14 +107,14 @@
       {% endfor %}
     {% else %}
       <div class="empty-thread">
-        <div style="font-size:28px;">💬</div>
+        <div style="font-size:28px;">{{ icon('message', 26) }}</div>
         <div>No messages yet — send one below.</div>
       </div>
     {% endif %}
   </div>
 
   {# ── Compose ── #}
-  <div class="compose-box">
+  <div class="compose-box chat-composer">
     <form method="post">
       <div class="template-row">
         <select class="form-select form-select-sm" id="tpl-select" style="max-width:260px;">
@@ -129,7 +131,8 @@
                id="compose-subject" placeholder="Subject" required>
       </div>
       <div class="mb-2">
-        <textarea class="form-control form-control-sm" name="body" id="compose-body"
+        <label class="form-label" for="compose-body">Your message</label>
+        <textarea class="message-input form-control form-control-sm" name="body" id="compose-body"
                   rows="3" placeholder="Message…"></textarea>
       </div>
       <div class="d-flex gap-2 align-items-center">

@@ -64,7 +64,7 @@
           {% for issue in open_issues %}
           <tr>
             <td>{{ issue.unit_number or 'Common area' }}</td>
-            <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
+            <td style="text-transform: none; font-size: 11px; color: var(--ink-3);">
               {{ issue.category or 'general' }}
             </td>
             <td>{{ issue.title }}
@@ -124,7 +124,7 @@
           {% for issue in resolved_issues %}
           <tr>
             <td>{{ issue.unit_number or 'Common area' }}</td>
-            <td style="text-transform: uppercase; font-size: 11px; color: var(--ink-3);">
+            <td style="text-transform: none; font-size: 11px; color: var(--ink-3);">
               {{ issue.category or 'general' }}
             </td>
             <td>{{ issue.title }}

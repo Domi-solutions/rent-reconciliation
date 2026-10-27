@@ -19,18 +19,18 @@
   .ct-do-sub { font-size: 13px; color: var(--ink-3); margin-top: 3px; }
   .ct-do-primary .ct-do-sub { color: var(--sage); }
   .ct-count { display: inline-block; min-width: 26px; text-align: center;
-    padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    padding: 2px 9px; border-radius: var(--r-btn); font-size: 13px; font-weight: 700;
     background: #FF3B30; color: #fff; }
 
   .ct-head { background: var(--frame); color: #fff; border: none; box-shadow: var(--shadow-md);
     border-radius: var(--r-card); padding: 18px; margin: 18px 0 12px; text-align: center; }
-  .ct-head-label { font-size: 11px; font-weight: 700; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--sage); }
-  .ct-head-value { font-size: 34px; font-weight: 800; color: #fff; margin-top: 6px; line-height: 1.1; letter-spacing: -.02em; }
+  .ct-head-label { font-size: 11px; font-weight: 700; letter-spacing: .01em;
+    text-transform: none; color: var(--sage); }
+  .ct-head-value { font-size: 34px; font-weight: 650; color: #fff; margin-top: 6px; line-height: 1.1; letter-spacing: -.02em; }
   .ct-head-sub { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 4px; }
 
-  .ct-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--ink-3); margin: 20px 4px 9px; }
+  .ct-title { font-size: 12px; font-weight: 700; letter-spacing: .01em;
+    text-transform: none; color: var(--ink-3); margin: 20px 4px 9px; }
   .ct-list { background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--r-card); overflow: hidden; }
   .ct-row { display: flex; justify-content: space-between; align-items: center;
@@ -44,7 +44,7 @@
   .ct-mo { font-size: 11px; color: var(--ink-3); text-align: right; margin-top: 2px; }
   .ct-more { display: block; text-align: center; padding: 14px; font-size: 14px;
     font-weight: 600; color: #0071E3; text-decoration: none; }
-  .ct-note { border-radius: 12px; padding: 11px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
+  .ct-note { border-radius: var(--r-card); padding: 11px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -52,7 +52,7 @@
 <div class="ct-wrap">
 
   <div style="margin-bottom: 14px;">
-    <div style="font-size: 22px; font-weight: 800; color: var(--ink); letter-spacing: -.02em;">{{ property.name|title }}</div>
+    <div style="font-size: 22px; font-weight: 650; color: var(--ink); letter-spacing: -.02em;">{{ property.name|title }}</div>
     {% if days_to_due is not none %}
     <div style="font-size: 13px; color: var(--ink-2);">
       {% if days_to_due == 0 %}Rent due today

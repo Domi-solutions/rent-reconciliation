@@ -12,7 +12,7 @@
     <input type="hidden" name="topic" value="{{ topic }}">
     <input type="hidden" name="ref" value="{{ ref }}">
     {% if ref_text %}
-      <div class="chip" style="display:block;border-radius:10px;margin-bottom:12px">About: <b>{{ ref_text }}</b></div>
+      <div class="chip" style="display:block;border-radius:var(--r-card);margin-bottom:12px">About: <b>{{ ref_text }}</b></div>
     {% endif %}
     {% if topic == 'repair' %}
     <div class="mb-3">
@@ -29,14 +29,14 @@
     </div>
     <div class="mb-3">
       <label class="form-label fw-semibold">Message</label>
-      <textarea name="body" class="form-control" rows="5" required></textarea>
+      <textarea name="body" class="message-input form-control" rows="5" required></textarea>
     </div>
     <div class="mb-4">
       <label class="form-label fw-semibold">Photos <span class="muted">(optional, up to {{ max_photos }})</span></label>
       <input type="file" name="photos" class="form-control" accept="image/*" multiple>
       <div class="muted" style="margin-top:4px">{% if topic == 'repair' %}A photo of the problem helps it get fixed faster.{% else %}For a payment, a screenshot of the M-Pesa message helps.{% endif %}</div>
     </div>
-    <button type="submit" class="btn btn-dark w-100" style="padding:12px;border-radius:12px;font-weight:600">Send</button>
+    <button type="submit" class="btn btn-dark w-100" style="padding:12px;border-radius:var(--r-card);font-weight:600">Send</button>
   </form>
 </div>
 {% endblock %}

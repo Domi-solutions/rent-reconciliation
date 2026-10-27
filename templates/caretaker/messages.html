@@ -56,7 +56,7 @@
         <div style="flex: 1;">
           <textarea name="body" id="body_field" rows="5" required
                     placeholder="Write your message here… or select a template above."
-                    style="width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink); resize: vertical; line-height: 1.6;"></textarea>
+                    style="width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink); resize: vertical; line-height: 1.6;" class="message-input"></textarea>
           <div style="font-size: 11px; color: var(--ink-3); margin-top: 4px;">
             Auto-filled per tenant: {tenant_name} &nbsp;·&nbsp; {unit_number} &nbsp;·&nbsp; {balance} &nbsp;·&nbsp; {monthly_rent} &nbsp;·&nbsp; {service_charge} &nbsp;·&nbsp; {due_date}
           </div>
@@ -99,9 +99,9 @@
           <td style="color: var(--ink-2);">{{ m.subject }}</td>
           <td>
             {% if m.delivery_channel == 'sms' %}
-            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: #dcfce7; color: #166534;">SMS</span>
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: var(--r-card); background: #dcfce7; color: #166534;">SMS</span>
             {% else %}
-            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: #f1f5f9; color: var(--ink-2);">Portal</span>
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: var(--r-card); background: #f1f5f9; color: var(--ink-2);">Portal</span>
             {% endif %}
           </td>
         </tr>

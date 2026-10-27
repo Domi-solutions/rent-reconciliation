@@ -25,9 +25,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-## Units screen design trial (2026-10-27)
+## Shared UI refresh (2026-10-27, local review)
 
-`templates/units.html` loads `static/units.css` and sets the `body_class` block in `base.html` to `units-preview`. This scopes typography, shell styling and component treatment to the units screen; `theme.css` remains unchanged. The same editable row markup becomes a stacked register at widths ≤1050px. Search and status filters run locally on the authorised rows; the existing `?q=` unit deep-link remains supported. Pencil icons and dotted underlines mark editable values; inline persistence uses the existing endpoints. This is a local trial pending user feedback, not a site-wide design decision.
+The Units trial has been extended across all portals at LINCKS's request. `static/theme.css` owns the palette, system font, 500-weight body text and restrained shape tokens. `static/interface.css` is linked **last in the head of all 20 document roots**, after page styles; it supplies consistent controls, focus rings, navigation, card boundaries and text hierarchy. `static/style.css` still owns the shared layouts. `static/units.css` now only styles the register (`units-screen` body class); the Units trial's editing, search and status filtering remain intact.
+
+`templates/partials/icons.html` provides the shared stroke SVG macro, imported by the admin shell and templates using icons. No icon font, Google font or new JS dependency. `static/chat.css` is imported by interface.css: `.chat-transcript` groups existing messages, `.chat-composer` separates the reply form, and `.message-input` distinguishes message-writing fields. Incoming messages are white and outgoing messages light green, both on a muted green canvas, across tenant/admin/caretaker and read-only owner threads. Sender metadata and all existing form actions stay intact. The caretaker report outline helper targets `reply-body`.
+
+No Python, database, route, job, delivery or deployment changes. Local demo preview is on port 5051 with `/tmp/domi-ui-review.db`. SMS/outreach are disabled and the scheduler stays off via `FLASK_RUN_FROM_CLI=true`. Management `demo@demo` / `demo`; owner `owner@demo` / `demo`; caretaker `Juma` / `1234`; returning tenant `0700000101` / PIN `1234`; local platform password `demo`. Use `/demo` to select a role. Hub discussion #63 is explicitly a **Domi communication thread**, unrelated to the Second Mind snapshot/factory.
+
+Review expectations: compare from `d94703d` for the cross-page rollout, or `82728c7` to include the original Units trial. Verify hierarchy, text weight, visible click/edit affordances, message/composer contrast, narrow-screen wrapping, focus/keyboard operation and print layouts. The user is still reviewing the direction; no deployment is authorised.
 
 ## Development Commands
 

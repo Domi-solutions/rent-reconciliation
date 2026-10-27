@@ -131,7 +131,7 @@
           <form method="post" action="{{ url_for('statement_correct_payment', statement_id=stmt.id, payment_id=r.payment_id) }}">
             <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#92400e;">
               Correct assignment — currently Unit {{ r.unit_number }} ({{ r.assignment_type }})
-              {% if r.assignment_reason %}<span style="font-weight:400;"> · "{{ r.assignment_reason }}"</span>{% endif %}
+              {% if r.assignment_reason %}<span style="font-weight:500;"> · "{{ r.assignment_reason }}"</span>{% endif %}
             </div>
             <div class="row g-2 align-items-end">
               <div class="col-md-4">
@@ -303,7 +303,7 @@
   <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
     <div>
       <div style="font-weight:600;font-size:14px;color:#6b7280;">Ignored <span>({{ ignored_by_stmt|length }})</span></div>
-      <div style="font-size:12px;color:#9ca3af;margin-top:2px;">Excluded from the workflow unassigned count. Still assignable — restore to bring back into the workflow.</div>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:2px;">Excluded from the workflow unassigned count. Still assignable — restore to bring back into the workflow.</div>
     </div>
   </div>
   <table class="table mb-0" style="font-size:12px;">
@@ -324,7 +324,7 @@
         <td><code style="font-size:11px;">{{ r.mpesa_ref or '—' }}</code></td>
         <td style="color:#6b7280;">{{ r.sender_name or '—' }}</td>
         <td class="text-end" style="color:#6b7280;">KES {{ "{:,.0f}".format(r.amount) }}</td>
-        <td style="color:#9ca3af;font-size:11px;">{{ r.ignored_at[:10] if r.ignored_at else '—' }}</td>
+        <td style="color:var(--ink-3);font-size:11px;">{{ r.ignored_at[:10] if r.ignored_at else '—' }}</td>
         <td>
           <form method="post" action="{{ url_for('unignore_transaction', txn_id=r.id) }}" style="display:inline;">
             <input type="hidden" name="next" value="{{ url_for('statement_detail', statement_id=stmt.id) }}">
@@ -410,7 +410,7 @@
   <div style="padding:14px 16px 10px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;cursor:pointer;"
        data-bs-toggle="collapse" data-bs-target="#otherTxns">
     <div style="font-weight:600;font-size:14px;">
-      Other Transactions <span style="font-weight:400;color:#6b7280;">({{ other_txns|length }} — cheques, charges, reversals)</span>
+      Other Transactions <span style="font-weight:500;color:#6b7280;">({{ other_txns|length }} — cheques, charges, reversals)</span>
     </div>
     <span style="font-size:12px;color:#6b7280;">Show / hide ↕</span>
   </div>

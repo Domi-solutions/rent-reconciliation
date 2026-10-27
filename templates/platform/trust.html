@@ -45,11 +45,11 @@
             color:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};">
             {{ s.trust_score }}
           </div>
-          <div style="font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em;">/ 100</div>
-          <div style="margin-top:6px;background:var(--border-strong);border-radius:9999px;height:4px;width:60px;margin-left:auto;">
+          <div style="font-size:10px;color:var(--ink-3);text-transform: none;letter-spacing:.01em;">/ 100</div>
+          <div style="margin-top:6px;background:var(--border-strong);border-radius:var(--r-btn);height:4px;width:60px;margin-left:auto;">
             <div style="width:{{ s.trust_score }}%;
               background:{% if s.trust_score >= 80 %}#38a169{% elif s.trust_score >= 50 %}#d97706{% else %}#e53e3e{% endif %};
-              height:4px;border-radius:9999px;"></div>
+              height:4px;border-radius:var(--r-btn);"></div>
           </div>
         </div>
       </div>
@@ -65,7 +65,7 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold" style="font-size:14px;">
     How owner funds are protected
-    <span style="font-size:11px;color:var(--ink-2);font-weight:400;margin-left:8px;">These are your talking points when onboarding a new landlord.</span>
+    <span style="font-size:11px;color:var(--ink-2);font-weight:500;margin-left:8px;">These are your talking points when onboarding a new landlord.</span>
   </div>
   <div class="card-body p-0">
 
@@ -159,7 +159,7 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white fw-semibold" style="font-size:14px;">
     Platform oversight
-    <span style="font-size:11px;color:var(--ink-2);font-weight:400;margin-left:8px;">What Domi monitors automatically, independent of the agency.</span>
+    <span style="font-size:11px;color:var(--ink-2);font-weight:500;margin-left:8px;">What Domi monitors automatically, independent of the agency.</span>
   </div>
   <div class="card-body p-0">
     {% set monitors = [
@@ -193,15 +193,15 @@
   <div class="card-header bg-white fw-semibold" style="font-size:14px;">Implementation sprints</div>
   <div class="card-body p-0">
     <div class="p-3 border-bottom">
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#38a169;">Sprint 1 — Before disbursements go live ✓</div>
+      <div style="font-size:12px;font-weight:600;text-transform: none;letter-spacing:.01em;color:#38a169;">Sprint 1 — Before disbursements go live ✓</div>
       <div style="font-size:12px;color:var(--ink-2);margin-top:4px;">D1 · D3 · D4 · D7 · D9 — all implemented 2026-05-19</div>
     </div>
     <div class="p-3 border-bottom">
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#d97706;">Sprint 2 — Before onboarding external owners</div>
+      <div style="font-size:12px;font-weight:600;text-transform: none;letter-spacing:.01em;color:#d97706;">Sprint 2 — Before onboarding external owners</div>
       <div style="font-size:12px;color:var(--ink-2);margin-top:4px;">D2 (lock owner password write path) · D5 (fee rate guard) · D6 (owner activity tab)</div>
     </div>
     <div class="p-3">
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);">Sprint 3 — Phase 5 intelligence</div>
+      <div style="font-size:12px;font-weight:600;text-transform: none;letter-spacing:.01em;color:var(--ink-2);">Sprint 3 — Phase 5 intelligence</div>
       <div style="font-size:12px;color:var(--ink-2);margin-top:4px;">D8 (cumulative rent drift detection in detector.py)</div>
     </div>
   </div>

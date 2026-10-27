@@ -14,7 +14,7 @@
 
   {# Balance summary card #}
   <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-    <div style="font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">Current account balance</div>
+    <div style="font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: none; letter-spacing: .01em; margin-bottom: 10px;">Current account balance</div>
     <div class="d-flex gap-4" style="flex-wrap: wrap;">
       <div>
         <div style="font-size: 11px; color: var(--ink-3);">Total charged</div>
@@ -29,7 +29,7 @@
         <div style="font-size: 18px; font-weight: 700;
           {% if current_balance > 0 %}color: var(--red);{% elif current_balance < 0 %}color: #16a34a;{% endif %}">
           KES {{ "{:,.0f}".format(current_balance|abs) }}
-          {% if current_balance < 0 %}<span style="font-size: 12px; font-weight: 400;">(credit)</span>{% endif %}
+          {% if current_balance < 0 %}<span style="font-size: 12px; font-weight: 500;">(credit)</span>{% endif %}
         </div>
       </div>
     </div>
@@ -108,7 +108,7 @@
     </div>
 
     <div style="margin-bottom: 24px;">
-      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Admin notes <span style="font-weight: 400; color: var(--ink-3);">(optional)</span></label>
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Admin notes <span style="font-weight: 500; color: var(--ink-3);">(optional)</span></label>
       <textarea name="admin_notes" rows="2" placeholder="Any additional context about this departure..."
                 style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--surface); resize: vertical;"></textarea>
     </div>

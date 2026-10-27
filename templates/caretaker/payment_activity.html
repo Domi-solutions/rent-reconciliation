@@ -7,7 +7,7 @@
   .pa-card.mismatch { border-left: 4px solid #d97706; background: #fffdf5; }
   .pa-card.flagged  { border-left: 4px solid #dc2626; }
   .pa-card.pending  { border-left: 4px solid #d97706; opacity: 0.9; }
-  .pa-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .pa-tag { display: inline-block; padding: 2px 8px; border-radius: var(--r-card); font-size: 11px; font-weight: 700; }
   .pa-tag-green  { background: #f0fdf4; color: #15803d; }
   .pa-tag-amber  { background: #fffbeb; color: #92400e; }
   .pa-tag-red    { background: #fef2f2; color: #dc2626; }
@@ -75,7 +75,7 @@
     <span style="font-family: monospace; font-weight: 600; color: var(--ink-2);">{{ c.mpesa_ref }}</span>
     · {{ c.created_at[:10] }}
     {% if has_mismatch %}
-      · <span style="text-decoration: line-through; color: #9ca3af;">KES {{ '{:,.0f}'.format(c.claimed_amount) }}</span>
+      · <span style="text-decoration: line-through; color: var(--ink-3);">KES {{ '{:,.0f}'.format(c.claimed_amount) }}</span>
         → <strong style="color: #92400e;">KES {{ '{:,.0f}'.format(c.bank_amount) }}</strong> confirmed
     {% elif c.claimed_amount %}
       · KES {{ '{:,.0f}'.format(c.claimed_amount) }}
@@ -93,14 +93,12 @@
     <div style="font-size: 12px; background: #f0fdf4; border-radius: 6px; padding: 6px 10px; border: 1px solid #bbf7d0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
       <span style="color: #166534;">
         <strong>Your note:</strong> {{ c.caretaker_note }}
-        {% if c.caretaker_note_at %}<span style="color: #9ca3af; font-size: 11px;"> · {{ c.caretaker_note_at[:10] }}</span>{% endif %}
+        {% if c.caretaker_note_at %}<span style="color: var(--ink-3); font-size: 11px;"> · {{ c.caretaker_note_at[:10] }}</span>{% endif %}
       </span>
-      <button onclick="this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none'); this.classList.add('d-none');"
-              style="font-size: 11px; color: #6b7280; background: none; border: none; cursor: pointer; flex-shrink: 0;">Edit</button>
+      <button type="button" class="text-action" onclick="this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none'); this.classList.add('d-none');">Edit</button>
     </div>
     {% else %}
-    <button onclick="this.classList.add('d-none'); this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none');"
-            style="font-size: 12px; color: #92400e; font-weight: 600; background: none; border: none; cursor: pointer; padding: 0;">
+    <button type="button" class="text-action" onclick="this.classList.add('d-none'); this.closest('.pa-note-block').querySelector('.pa-note-form').classList.remove('d-none');">
       + Add note for admin
     </button>
     {% endif %}

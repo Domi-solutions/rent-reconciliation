@@ -20,13 +20,13 @@
         <div style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ n.subject }}</div>
         {% if n.sent_by %}
           {% if n.sent_by == 'Admin' %}
-          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: #dbeafe; color: #1d4ed8; letter-spacing: 0.04em;">ADMIN</span>
+          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-card); background: #dbeafe; color: #1d4ed8; letter-spacing: .01em;">ADMIN</span>
           {% elif n.sent_by == 'Caretaker' %}
-          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: #fef3c7; color: #92400e; letter-spacing: 0.04em;">CARETAKER</span>
+          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-card); background: #fef3c7; color: #92400e; letter-spacing: .01em;">CARETAKER</span>
           {% elif n.sent_by == 'System' %}
-          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: var(--bg); color: var(--ink-3); letter-spacing: 0.04em; border: 1px solid var(--border);">SYSTEM</span>
+          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-card); background: var(--bg); color: var(--ink-3); letter-spacing: .01em; border: 1px solid var(--border);">SYSTEM</span>
           {% else %}
-          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: var(--bg); color: var(--ink-3); letter-spacing: 0.04em; border: 1px solid var(--border);">{{ n.sent_by | upper }}</span>
+          <span style="font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-card); background: var(--bg); color: var(--ink-3); letter-spacing: .01em; border: 1px solid var(--border);">{{ n.sent_by | upper }}</span>
           {% endif %}
         {% endif %}
       </div>

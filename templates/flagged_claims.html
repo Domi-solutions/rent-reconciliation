@@ -7,7 +7,7 @@
   .claim-card.needs-action { border-left: 4px solid #dc2626; }
   .claim-card.ct-confirmed { border-left: 4px solid #d97706; }
   .claim-card.admin-cleared { border-left: 4px solid #2563eb; opacity: 0.85; }
-  .tag { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: var(--r-card); font-size: 11px; font-weight: 700; }
   .tag-red   { background: #fef2f2; color: #dc2626; }
   .tag-amber { background: #fffbeb; color: #92400e; }
   .tag-blue  { background: #eff6ff; color: #1d4ed8; }
@@ -49,7 +49,7 @@
 {% set cleared = claims | selectattr('admin_cleared', 'ne', 0) | list %}
 
 {% if pending_action %}
-<div style="font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 10px; letter-spacing: 0.04em; text-transform: uppercase;">
+<div style="font-size: 12px; font-weight: 600; color: #dc2626; margin-bottom: 10px; letter-spacing: .01em; text-transform: none;">
   Action needed — {{ pending_action | length }} claim{{ 's' if pending_action | length != 1 else '' }}
 </div>
 {% endif %}

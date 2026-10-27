@@ -4,10 +4,8 @@
 
    Deep forest green for the frame (sidebar, headers, hero), a soft sage for
    highlights on dark, emerald for actions on light, warm off-white paper,
-   very rounded cards and pill buttons. Status colours keep their meaning:
+   restrained corners and clearly bounded actions. Status colours keep their meaning:
    green = settled, amber = waiting/behind, red = owed/problem, blue = info. */
-
-@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap');
 
 :root {
   /* Brand */
@@ -25,10 +23,10 @@
   --surface-2:      #F8F8F5;          /* quiet card fill */
   --ink:            #1B211E;
   --ink-2:          #59625D;
-  --ink-3:          #8B938E;
-  --ink-4:          #BEC4C0;
-  --border:         rgba(27,33,30,0.08);
-  --border-strong:  rgba(27,33,30,0.15);
+  --ink-3:          #69736C;
+  --ink-4:          #78827B;
+  --border:         rgba(27,33,30,0.11);
+  --border-strong:  rgba(27,33,30,0.20);
 
   /* Status (meaning, not decoration) */
   --blue:           #2F6FB0;
@@ -43,15 +41,15 @@
   --orange-border:  #F1CFA4;
 
   /* Shape */
-  --shadow-xs:      0 1px 2px rgba(21,56,41,0.05);
-  --shadow-sm:      0 2px 10px rgba(21,56,41,0.06), 0 1px 2px rgba(21,56,41,0.04);
-  --shadow-md:      0 10px 28px rgba(21,56,41,0.10), 0 2px 6px rgba(21,56,41,0.05);
-  --r-card:         22px;
-  --r-btn:          999px;
-  --r-input:        12px;
-  --r-badge:        9999px;
+  --shadow-xs:      none;
+  --shadow-sm:      0 1px 3px rgba(21,56,41,0.06);
+  --shadow-md:      0 3px 12px rgba(21,56,41,0.08);
+  --r-card:         10px;
+  --r-btn:          6px;
+  --r-input:        6px;
+  --r-badge:        4px;
 
-  --font:           'Figtree', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font:           -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   --frame:          linear-gradient(170deg, var(--forest) 0%, var(--forest-2) 100%);
 }
 
@@ -59,24 +57,26 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
+  font-weight: 500;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent); }
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 a:hover { color: var(--accent-hover); }
 
 h1, h2, h3, .page-title { letter-spacing: -0.02em; }
 
-/* Small spaced capitals above a section ("FOLLOW UP", "THIS MONTH"). */
+/* Quiet section labels, with enough weight and contrast for small screens. */
 .eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--ink-2);
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  text-transform: none; color: var(--ink-2);
 }
 
 /* A word in a heading picked out in green: <span class="accent-word">clear</span>. */
 .accent-word { color: var(--accent); }
 
-/* Actions: pill buttons in emerald (Bootstrap's primary and dark both). */
+/* Actions: bounded emerald buttons, with the same shape across every portal. */
 .btn-primary, .btn-dark {
   background: var(--accent); border-color: var(--accent); color: #fff;
   border-radius: var(--r-btn); font-weight: 600;

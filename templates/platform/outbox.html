@@ -49,7 +49,7 @@
     </thead>
     <tbody>
     {% for e in entries %}
-    <tr data-bs-toggle="collapse" data-bs-target="#body-{{ loop.index }}" style="cursor:pointer;">
+    <tr>
       <td class="text-muted" style="white-space:nowrap;">{{ e.created_at[:16] if e.created_at else '—' }}</td>
       <td>
         {% if e.channel == 'email' %}
@@ -83,6 +83,7 @@
           {{ (e.body or '')[:120] }}
         </div>
         {% if e.error %}<div class="text-danger" style="font-size:11px;">{{ e.error }}</div>{% endif %}
+        <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#body-{{ loop.index }}" aria-expanded="false" aria-controls="body-{{ loop.index }}">View message</button>
       </td>
     </tr>
     <tr class="collapse" id="body-{{ loop.index }}">

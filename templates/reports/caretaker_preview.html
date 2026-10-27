@@ -5,25 +5,25 @@
 <style>
   .rpt-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .rpt-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 20px 18px; }
-  .rpt-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .rpt-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin-bottom: 8px; }
   .rpt-kpi-value { font-size: 28px; font-weight: 700; color: var(--ink-1); line-height: 1.1; margin-bottom: 4px; }
-  .rpt-kpi-value span { font-size: 15px; font-weight: 400; color: var(--ink-3); }
+  .rpt-kpi-value span { font-size: 15px; font-weight: 500; color: var(--ink-3); }
   .rpt-kpi-sub { font-size: 12px; color: var(--ink-3); }
   .rpt-kpi--vacant .rpt-kpi-value { color: #6366f1; }
   .rpt-kpi--arrears .rpt-kpi-value { color: #dc3545; }
   .rpt-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 20px; overflow: hidden; }
-  .rpt-section-header { padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+  .rpt-section-header { padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; letter-spacing: .01em; text-transform: none; color: var(--ink-3); }
   .rpt-section-body { padding: 20px; }
   .rpt-bar-wrap { background: var(--border); border-radius: 6px; height: 8px; overflow: hidden; margin: 10px 0 6px; }
   .rpt-bar { height: 8px; border-radius: 6px; background: #198754; }
   .rpt-split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   .rpt-stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
   .rpt-stat-label { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
-  .rpt-months-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .rpt-months-badge { display: inline-block; padding: 2px 7px; border-radius: var(--r-card); font-size: 11px; font-weight: 600; }
   .rpt-months-ok { background: #fff3cd; color: #856404; }
   .rpt-months-bad { background: #f8d7da; color: #842029; }
   .vacant-pill { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #ede9fe; color: #4f46e5; margin: 3px 3px 3px 0; }
-  .caretaker-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #854d0e; letter-spacing: 0.05em; text-transform: uppercase; margin-left: 8px; vertical-align: middle; }
+  .caretaker-badge { display: inline-block; padding: 3px 10px; border-radius: var(--r-card); font-size: 11px; font-weight: 700; background: #fef9c3; color: #854d0e; letter-spacing: .01em; text-transform: none; margin-left: 8px; vertical-align: middle; }
 
   @media print {
     .sidebar, .topbar, .rpt-no-print { display: none !important; }
@@ -180,7 +180,7 @@
   <div class="rpt-section-body">
     <div class="rpt-split">
       <div>
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform: none;color:var(--ink-3);margin-bottom:10px;">
           Move-ins — {{ report.tenant_movement.move_ins|length }}
         </div>
         {% if report.tenant_movement.move_ins %}
@@ -195,7 +195,7 @@
         {% endif %}
       </div>
       <div>
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform: none;color:var(--ink-3);margin-bottom:10px;">
           Departures — {{ report.tenant_movement.move_outs|length }}
         </div>
         {% if report.tenant_movement.move_outs %}

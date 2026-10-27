@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from 'partials/icons.html' import icon %}
+
 {% block title %}{{ e.category_label }} — {{ property.name }}{% endblock %}
 {% block extra_css %}{% include 'money/_styles.html' %}{% endblock %}
 {% block content %}
@@ -19,7 +21,7 @@
       {% if e.status == 'paid' %}<dt>Paid</dt><dd>{{ methods_d.get(e.paid_method, e.paid_method or '—') }}{% if e.paid_reference %} · ref {{ e.paid_reference }}{% endif %} · {{ (e.paid_at or '')[:10] }}</dd>{% endif %}
     </dl>
     {% if e.receipts %}<div class="mt-3"><div class="eyebrow mb-1">Receipts</div>
-      {% for r in e.receipts %}<a class="me-3" target="_blank" href="{{ url_for('money.receipt', expense_id=e.id, receipt_id=r.id) }}">📎 {{ r.original_name or 'receipt' }}</a>{% endfor %}</div>{% endif %}
+      {% for r in e.receipts %}<a class="me-3" target="_blank" href="{{ url_for('money.receipt', expense_id=e.id, receipt_id=r.id) }}">{{ icon('attachment', 14) }} {{ r.original_name or 'receipt' }}</a>{% endfor %}</div>{% endif %}
   </div>
 
   {% if e.status == 'submitted' %}

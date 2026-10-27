@@ -6,7 +6,7 @@
 <style>
   .vw-stmt-name  { font-size:18px; font-weight:700; color:var(--ink); }
   .vw-stmt-sub   { font-size:13px; color:var(--ink-3); margin-top:2px; }
-  .vw-balance    { display:inline-block; padding:4px 12px; border-radius:12px; font-size:13px; font-weight:700; margin-top:8px; }
+  .vw-balance    { display:inline-block; padding:4px 12px; border-radius:var(--r-card); font-size:13px; font-weight:700; margin-top:8px; }
   .vw-bal-arrears { background:#f8d7da; color:#842029; }
   .vw-bal-current { background:#d1fae5; color:#065f46; }
 
@@ -19,7 +19,7 @@
 
   .vw-summary { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
   .vw-stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; flex:1; min-width:120px; }
-  .vw-stat-label { font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; }
+  .vw-stat-label { font-size:11px; color:var(--ink-3); text-transform: none; letter-spacing:.5px; }
   .vw-stat-value { font-size:18px; font-weight:700; color:var(--ink); margin-top:2px; }
 </style>
 {% endblock %}

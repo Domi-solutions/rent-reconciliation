@@ -29,6 +29,8 @@
   </li>
   <li class="nav-item">
     <a class="nav-link {{ 'active' if tab == 'parse_errors' }}" href="{{ url_for('review', tab='parse_errors') }}">Parse Errors</a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link {{ 'active' if tab == 'ignored' }}" href="{{ url_for('review', tab='ignored') }}">Ignored</a>
   </li>
 </ul>
@@ -61,11 +63,11 @@
             &middot; Unit {{ r.unit_number }}
           </div>
           {% if r.mpesa_ref %}
-          <div style="font-size: 11px; color: #9ca3af; margin-top: 2px; font-family: monospace;">{{ r.mpesa_ref }}</div>
+          <div style="font-size: 11px; color: var(--ink-3); margin-top: 2px; font-family: monospace;">{{ r.mpesa_ref }}</div>
           {% endif %}
         </div>
         <div style="text-align: right; flex-shrink: 0; margin-left: 16px;">
-          <div style="font-size: 12px; color: #9ca3af;">{{ r.payment_date or r.txn_date or '-' }}</div>
+          <div style="font-size: 12px; color: var(--ink-3);">{{ r.payment_date or r.txn_date or '-' }}</div>
           <div style="margin-top: 4px; display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap;">
             {% if r.claim_source == 'caretaker' %}
               <span class="badge" style="background:#92400e; font-size:10px;">Caretaker</span>
@@ -90,7 +92,7 @@
       <div style="font-size: 12px; background: #fffbeb; border-radius: 6px; padding: 6px 10px; margin-top: 8px; border: 1px solid #fde68a;">
         <strong style="color: #92400e;">Caretaker note:</strong>
         <span style="color: #78350f;"> {{ r.caretaker_note }}</span>
-        {% if r.caretaker_note_at %}<span style="color: #9ca3af; font-size: 11px;"> · {{ r.caretaker_note_at[:10] }}</span>{% endif %}
+        {% if r.caretaker_note_at %}<span style="color: var(--ink-3); font-size: 11px;"> · {{ r.caretaker_note_at[:10] }}</span>{% endif %}
       </div>
       {% endif %}
 
@@ -99,14 +101,12 @@
         <div style="font-size: 12px; background: #f0fdf4; border-radius: 6px; padding: 6px 10px; border: 1px solid #bbf7d0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
           <span style="color: #166534;">
             <strong>Admin note:</strong> {{ r.notes }}
-            {% if r.notes_updated_at %}<span style="color: #9ca3af; font-size: 11px;"> · {{ r.notes_updated_at[:10] }}</span>{% endif %}
+            {% if r.notes_updated_at %}<span style="color: var(--ink-3); font-size: 11px;"> · {{ r.notes_updated_at[:10] }}</span>{% endif %}
           </span>
-          <button onclick="this.closest('.payment-note-block').querySelector('.note-form').classList.remove('d-none'); this.classList.add('d-none');"
-                  style="font-size: 11px; color: #6b7280; background: none; border: none; cursor: pointer; flex-shrink: 0;">Edit</button>
+          <button type="button" class="text-action" onclick="this.closest('.payment-note-block').querySelector('.note-form').classList.remove('d-none'); this.classList.add('d-none');">Edit</button>
         </div>
         {% else %}
-        <button onclick="this.classList.add('d-none'); this.closest('.payment-note-block').querySelector('.note-form').classList.remove('d-none');"
-                style="font-size: 12px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0;">
+        <button type="button" class="text-action" onclick="this.classList.add('d-none'); this.closest('.payment-note-block').querySelector('.note-form').classList.remove('d-none');">
           + Add admin note
         </button>
         {% endif %}
@@ -424,13 +424,13 @@
               <div style="font-size:12px;">{{ err.error_message or '—' }}</div>
               {% if err.raw_text %}
               <details style="margin-top:3px;">
-                <summary style="cursor:pointer; font-size:11px; color:#9ca3af;">raw</summary>
+                <summary style="cursor:pointer; font-size:11px; color:var(--ink-3);">raw</summary>
                 <pre style="font-size:11px; white-space:pre-wrap; background:#f8fafc; padding:6px; border-radius:4px; margin-top:4px; max-height:120px; overflow:auto;">{{ err.raw_text }}</pre>
               </details>
               {% endif %}
             </td>
-            <td style="color:#9ca3af; font-size:12px;">{{ err.page_number or '—' }}</td>
-            <td style="color:#9ca3af; font-size:12px; white-space:nowrap;">{{ err.created_at[:10] if err.created_at }}</td>
+            <td style="color:var(--ink-3); font-size:12px;">{{ err.page_number or '—' }}</td>
+            <td style="color:var(--ink-3); font-size:12px; white-space:nowrap;">{{ err.created_at[:10] if err.created_at }}</td>
           </tr>
           {% endfor %}
         </tbody>

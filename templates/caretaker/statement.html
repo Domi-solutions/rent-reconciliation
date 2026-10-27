@@ -7,12 +7,12 @@
   .ct-stmt-name { font-size:18px; font-weight:700; color:var(--ink); }
   .ct-stmt-sub  { font-size:13px; color:var(--ink-3); margin-top:3px; line-height:1.6; }
   .ct-stmt-sub a { color:var(--ink-3); text-decoration:none; }
-  .ct-balance   { display:inline-block; padding:5px 14px; border-radius:20px; font-size:14px; font-weight:700; margin-top:10px; }
+  .ct-balance   { display:inline-block; padding:5px 14px; border-radius:var(--r-card); font-size:14px; font-weight:700; margin-top:10px; }
   .ct-bal-arrears { background:#f8d7da; color:#842029; }
   .ct-bal-current { background:#d1fae5; color:#065f46; }
 
   /* ── Claims ── */
-  .ct-claim         { border-radius:10px; padding:14px 16px; margin-bottom:10px; font-size:13px; }
+  .ct-claim         { border-radius:var(--r-card); padding:14px 16px; margin-bottom:10px; font-size:13px; }
   .ct-claim-flagged { background:#fff5f5; border:1px solid #f1aeb5; }
   .ct-claim-pending { background:#eff6ff; border:1px solid #bfdbfe; }
   .ct-ref { font-family:monospace; font-size:13px; font-weight:700; background:#f1f5f9;
@@ -40,7 +40,7 @@
   .l-bal   { font-size:11px; color:var(--ink-3); margin-top:3px; }
   .l-status-note { font-size:12px; margin-top:4px; }
 
-  .s-pill { display:inline-block; padding:3px 9px; border-radius:10px; font-size:11px; font-weight:600; margin-top:4px; }
+  .s-pill { display:inline-block; padding:3px 9px; border-radius:var(--r-card); font-size:11px; font-weight:600; margin-top:4px; }
   .pill-paid        { background:#d1fae5; color:#065f46; }
   .pill-outstanding { background:#f8d7da; color:#842029; }
   .pill-partial     { background:#fef9c3; color:#854d0e; }
@@ -244,7 +244,7 @@
 {# ── Open claims ── #}
 {% if open_claims %}
 <div class="mb-3">
-  <div style="font-size:11px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px;">Unresolved Claims</div>
+  <div style="font-size:11px; font-weight:700; color:var(--ink-3); text-transform: none; letter-spacing:.5px; margin-bottom:10px;">Unresolved Claims</div>
   {% for c in open_claims %}
     {% if c.status == 'flagged' %}
     <div class="ct-claim ct-claim-flagged">
@@ -254,7 +254,7 @@
       </div>
       <div style="font-size:15px; font-weight:700; margin-top:6px;">
         KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
-        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:400;"> · {{ c.mpesa_period }}</span>{% endif %}
+        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:500;"> · {{ c.mpesa_period }}</span>{% endif %}
       </div>
       <div style="margin-top:8px;"><span class="ct-ref">{{ c.mpesa_ref }}</span></div>
       {% if c.checked_statements %}
@@ -277,7 +277,7 @@
       </div>
       <div style="font-size:15px; font-weight:700; margin-top:6px;">
         KES {{ "{:,.0f}".format(c.claimed_amount or 0) }}
-        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:400;"> · {{ c.mpesa_period }}</span>{% endif %}
+        {% if c.mpesa_period %}<span style="font-size:12px; font-weight:500;"> · {{ c.mpesa_period }}</span>{% endif %}
       </div>
       <div style="margin-top:8px;"><span class="ct-ref">{{ c.mpesa_ref }}</span></div>
       <div style="font-size:12px; color:#6c757d; margin-top:6px;">

@@ -29,7 +29,7 @@
           <span style="display:inline-flex;align-items:center;gap:4px;background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; font-size: 11px; font-weight: 500;">
             {{ prop.name }}
             {% if prop.is_primary %}
-            <span style="background: var(--forest);color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px;letter-spacing:.04em;">PRIMARY</span>
+            <span style="background: var(--forest);color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px;letter-spacing:.01em;">PRIMARY</span>
             {% else %}
             <span style="background:var(--border-strong);color:#64748b;font-size:9px;font-weight:600;border-radius:3px;padding:1px 4px;">additional</span>
             {% endif %}
@@ -68,7 +68,7 @@
 
         {# DOMI ACCOUNT #}
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Domi Account</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin-bottom: 8px;">Domi Account</div>
           {% if owner.has_domi_password %}
             <div style="font-size: 13px; color: #16a34a; margin-bottom: 10px;">Active — owner can sign in two ways:</div>
             <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 6px;">1. Email + password at <a href="{{ url_for('admin_login') }}">/login</a></div>
@@ -109,7 +109,7 @@
         {# PORTAL LINK — only show if owner has no Domi account yet #}
         {% if not owner.has_domi_password and not owner.activation_token %}
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Legacy Portal Link</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin-bottom: 8px;">Legacy Portal Link</div>
           <div style="font-size: 12px; color: var(--ink-3); margin-bottom: 8px;">Token-based read-only access. Use the Domi Account above for the full portal.</div>
           {% if owner.access_token %}
           {% set portal_url = request.host_url ~ 'view/o/' ~ owner.access_token %}
@@ -135,7 +135,7 @@
 
         {# EDIT DETAILS #}
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Edit Details</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin-bottom: 8px;">Edit Details</div>
           <form method="POST" action="{{ url_for('edit_owner', owner_id=owner.id) }}" style="max-width: 360px; display: flex; flex-direction: column; gap: 8px;">
             <input type="text" name="name" class="form-control form-control-sm" value="{{ owner.name }}" placeholder="Name" required>
             <input type="text" name="phone" class="form-control form-control-sm" value="{{ owner.phone or '' }}" placeholder="Phone (+254...)">
@@ -155,7 +155,7 @@
         {# ASSIGN PROPERTY #}
         {% if all_properties %}
         <div>
-          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">Assign Property</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--ink-3); margin-bottom: 8px;">Assign Property</div>
           <form method="POST" action="{{ url_for('assign_property_to_owner', owner_id=owner.id) }}" class="d-flex gap-2" style="max-width: 360px;">
             <select name="property_id" class="form-select form-select-sm">
               <option value="">— Select property —</option>

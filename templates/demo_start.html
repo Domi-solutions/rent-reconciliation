@@ -9,22 +9,23 @@
     body { margin: 0; background: linear-gradient(180deg, var(--forest) 0, var(--forest-2) 300px, var(--bg) 300px); background-repeat: no-repeat; }
     .wrap { max-width: 560px; margin: 0 auto; padding: 36px 18px 40px; }
     .hero { color: #fff; text-align: center; margin-bottom: 22px; }
-    .hero .brand { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
-    .hero h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 14px 0 6px; line-height: 1.15; }
+    .hero .brand { font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
+    .hero h1 { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin: 14px 0 6px; line-height: 1.15; }
     .hero h1 span { color: var(--sage); }
     .hero p { color: rgba(255,255,255,.78); font-size: 14px; margin: 0; }
-    .role { display: block; background: #fff; border-radius: 22px; padding: 16px 18px; margin-bottom: 12px;
+    .role { display: block; background: #fff; border-radius: var(--r-card); padding: 16px 18px; margin-bottom: 12px;
             box-shadow: var(--shadow-md); text-decoration: none; color: var(--ink); }
-    .role .t { font-size: 17px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    .role .t { font-size: 17px; font-weight: 650; display: flex; justify-content: space-between; align-items: center; }
     .role .d { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
-    .cred { margin-top: 10px; background: var(--mint); border-radius: 14px; padding: 9px 12px; font-size: 13px; color: var(--forest); }
+    .cred { margin-top: 10px; background: var(--mint); border-radius: var(--r-card); padding: 9px 12px; font-size: 13px; color: var(--forest); }
     .cred b { font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
     .arrow { color: var(--accent); font-size: 20px; }
-    .flash { background: var(--mint); color: var(--forest); border-radius: 14px; padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
+    .flash { background: var(--mint); color: var(--forest); border-radius: var(--r-card); padding: 10px 14px; font-size: 14px; margin-bottom: 12px; }
     .reset { text-align: center; margin-top: 18px; }
-    .reset button { background: none; border: 1px solid var(--border-strong); border-radius: 999px; padding: 8px 16px; font: 600 13px var(--font); color: var(--ink-2); cursor: pointer; }
+    .reset button { background: none; border: 1px solid var(--border-strong); border-radius: var(--r-btn); padding: 8px 16px; font: 600 13px var(--font); color: var(--ink-2); cursor: pointer; }
     .foot { text-align: center; font-size: 12px; color: var(--ink-3); margin-top: 14px; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
 </head>
 <body>
 {% include 'partials/demo_banner.html' %}

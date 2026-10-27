@@ -1,19 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Units — {{ property.name }}{% endblock %}
 
-{% block body_class %}units-preview{% endblock %}
+{% block body_class %}units-screen{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='units.css') }}">
 {% endblock %}
-
-{% macro icon(name) -%}
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-{% if name == 'plus' %}<path d="M12 5v14M5 12h14"/>
-{% elif name == 'search' %}<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>
-{% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
-{% elif name == 'person' %}<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M19 7v6M16 10h6"/>
-{% endif %}</svg>
-{%- endmacro %}
 
 {% block content %}
 <section class="units-page" aria-labelledby="units-heading">

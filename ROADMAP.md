@@ -304,7 +304,7 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Bug fixed: `property_notifications` query was missing `sent_by`, `template_body`, `channel`, `recipient_count` columns — now selects all required fields
 
 ### Mobile & UX
-- [x] Units & Tenants single-screen design trial: scoped typography, visible edit affordances, search/status filters and stacked narrow-screen register (2026-10-27; local preview, awaiting user feedback before rollout).
+- [x] Shared UI refresh across admin, tenant, caretaker, owner, auth and platform shells: system typography with stronger reading weight, restrained corners, visible click/edit controls, consistent SVG icons and clearer conversation bubbles/composers. Units retains search/status filtering and its narrow-screen register (2026-10-27; local review only, not deployed).
 - [x] Admin sidebar: backdrop overlay on mobile, closes on tap-outside
 - [x] Report two-column sections collapse to single column ≤600px
 - [x] Report tables scroll horizontally on mobile

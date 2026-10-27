@@ -12,9 +12,9 @@
   .lease-form .field { margin-bottom: 12px; }
   .prior { background: var(--bg); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
   .prior dl { display: grid; grid-template-columns: auto auto; gap: 2px 16px; margin: 6px 0 0; }
-  .prior dt { font-weight: 400; color: var(--ink-3); }
+  .prior dt { font-weight: 500; color: var(--ink-3); }
   .prior dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .choice { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-weight: 400 !important; cursor: pointer; }
+  .choice { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-weight: 500 !important; cursor: pointer; }
   .choice input { margin-top: 3px; }
 </style>
 {% endblock %}
@@ -109,7 +109,7 @@
 
     <section>
       <h3>Signed copy and documents</h3>
-      <label class="choice" style="font-weight:400;"><input type="checkbox" name="signed" value="1" id="signed" {% if form.signed == '1' %}checked{% endif %}>
+      <label class="choice" style="font-weight:500;"><input type="checkbox" name="signed" value="1" id="signed" {% if form.signed == '1' %}checked{% endif %}>
         <span>The signed lease is back</span></label>
       <div class="field" id="signed-on" style="display:none;"><label>Date signed</label>
         <input class="form-control" type="date" name="signed_on" value="{{ form.signed_on or '' }}" style="max-width:220px;"></div>
@@ -124,7 +124,7 @@
     </section>
 
     <section>
-      <div class="field mb-0"><label>Notes <span class="text-muted" style="font-weight:400;">(optional)</span></label>
+      <div class="field mb-0"><label>Notes <span class="text-muted" style="font-weight:500;">(optional)</span></label>
         <textarea class="form-control" name="notes" rows="2">{{ form.notes or '' }}</textarea></div>
     </section>
 

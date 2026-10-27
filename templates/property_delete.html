@@ -16,7 +16,7 @@
       </div>
       <hr style="margin: 16px 0; border-color: var(--border);">
       <div style="padding: 0 20px 20px;">
-        <div class="data-row-meta mb-3" style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Records that will be preserved</div>
+        <div class="data-row-meta mb-3" style="font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: .01em;">Records that will be preserved</div>
         <div class="row g-2">
           {% set items = [
             (unit_count, 'unit', 'units'),
@@ -49,7 +49,7 @@
       </ul>
     </div>
 
-    <div style="padding: 20px; border: 2px solid #ef4444; border-radius: 10px; background: #fff5f5;">
+    <div style="padding: 20px; border: 2px solid #ef4444; border-radius: var(--r-card); background: #fff5f5;">
       <div style="font-size: 13px; font-weight: 600; color: #dc2626; margin-bottom: 16px;">
         Type <strong>{{ prop.name }}</strong> to submit the deletion request
       </div>
@@ -73,7 +73,7 @@
 
   <div class="col-lg-4 offset-lg-1">
     <div style="padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
-      <div class="data-row-meta mb-2" style="font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;">Owner protection</div>
+      <div class="data-row-meta mb-2" style="font-weight: 600; font-size: 12px; text-transform: none; letter-spacing: .01em;">Owner protection</div>
       <div class="data-row-meta" style="font-size: 13px; line-height: 1.6;">
         Deletion requires Domi platform approval. Owners can dispute and recover all data within the 14-day window. A new agency can be assigned to take over this property if needed.
       </div>

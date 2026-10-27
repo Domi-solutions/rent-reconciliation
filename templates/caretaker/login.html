@@ -14,15 +14,16 @@
            background-repeat: no-repeat; }
     .auth { max-width: 400px; margin: 0 auto; padding: 48px 20px 32px; }
     .brand { text-align: center; margin-bottom: 24px; }
-    .brand b { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -.02em; }
-    .brand div { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--sage); margin-top: 4px; }
-    .box { background: #fff; border-radius: 22px; padding: 26px 24px; box-shadow: var(--shadow-md); }
-    .box h1 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
+    .brand b { font-size: 26px; font-weight: 650; color: #fff; letter-spacing: -.02em; }
+    .brand div { font-size: 12px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--sage); margin-top: 4px; }
+    .box { background: #fff; border-radius: var(--r-card); padding: 26px 24px; box-shadow: var(--shadow-md); }
+    .box h1 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; }
     .box p.lead { font-size: 14px; color: var(--ink-2); margin-bottom: 18px; }
     .box .form-label { font-size: 15px; font-weight: 600; color: var(--ink); }
     .box .form-control { padding: 12px 14px; font-size: 17px; }
     .btn-go { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
 </head>
 <body>
 {% include 'partials/demo_banner.html' %}

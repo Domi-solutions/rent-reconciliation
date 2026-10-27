@@ -17,11 +17,11 @@
       align-items: center;
     }
     .owner-header .brand { font-size: 16px; font-weight: 700; }
-    .stat-card { background: #fff; border-radius: 10px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .stat-card { background: #fff; border-radius: var(--r-card); padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     .stat-num { font-size: 28px; font-weight: 700; line-height: 1; }
-    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); margin-top: 4px; }
+    .stat-label { font-size: 11px; text-transform: none; letter-spacing: .01em; color: var(--ink-2); margin-top: 4px; }
     .prop-card {
-      background: #fff; border-radius: 10px; padding: 20px 24px;
+      background: #fff; border-radius: var(--r-card); padding: 20px 24px;
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
       text-decoration: none; color: inherit; display: block;
       transition: box-shadow .15s;
@@ -32,14 +32,15 @@
     .kpi-row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
     .kpi { }
     .kpi .val { font-size: 18px; font-weight: 700; }
-    .kpi .lbl { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+    .kpi .lbl { font-size: 11px; color: var(--ink-2); text-transform: none; letter-spacing: .01em; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
 </head>
 <body>
 {% include 'partials/demo_banner.html' %}
 
 <div class="owner-header">
-  <div class="brand">Domi{% if person_name %} <span style="font-weight:400; color:var(--ink-2);">— {{ person_name }}</span>{% endif %}</div>
+  <div class="brand">Domi{% if person_name %} <span style="font-weight:500; color:var(--ink-2);">— {{ person_name }}</span>{% endif %}</div>
   <a href="{{ url_for('owner.logout') }}" style="font-size: 13px; color: var(--ink-2); text-decoration: none;">Log out</a>
 </div>
 
@@ -82,7 +83,7 @@
     </div>
   </div>
 
-  <h6 class="mb-3" style="font-size: 12px; text-transform: uppercase; letter-spacing:.05em; color:var(--ink-2);">Properties</h6>
+  <h6 class="mb-3" style="font-size: 12px; text-transform: none; letter-spacing:.01em; color:var(--ink-2);">Properties</h6>
   <div class="d-flex flex-column gap-3">
     {% for prop in properties %}
     <a href="{{ url_for('owner.property_view', property_id=prop.id) }}" class="prop-card">

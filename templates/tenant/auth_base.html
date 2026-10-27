@@ -13,26 +13,27 @@
     body { background: linear-gradient(180deg, var(--forest) 0, var(--forest-2) 230px, var(--bg) 230px);
            background-repeat: no-repeat; min-height: 100vh; margin: 0; color: var(--ink); font-family: var(--font); }
     .form-label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 15px; }
-    .form-control { display: block; width: 100%; padding: 12px 14px; font-size: 18px; border: 1px solid var(--border-strong); border-radius: 12px; background: #fff; }
+    .form-control { display: block; width: 100%; padding: 12px 14px; font-size: 18px; border: 1px solid var(--border-strong); border-radius: var(--r-card); background: #fff; }
     .form-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,139,98,.14); }
     .mb-3 { margin-bottom: 16px; } .mb-4 { margin-bottom: 22px; }
-    .btn-dark { background: var(--accent); border-radius: 999px; color: #fff; border: none; cursor: pointer; }
-    .alert-danger { background: var(--red-soft); color: var(--red); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
+    .btn-dark { background: var(--accent); border-radius: var(--r-btn); color: #fff; border: none; cursor: pointer; }
+    .alert-danger { background: var(--red-soft); color: var(--red); border-radius: var(--r-card); padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
     a { color: var(--accent); }
     .text-muted { color: var(--ink-2); }
     .auth { max-width: 400px; margin: 0 auto; padding: 48px 20px 32px; }
     .brand { text-align: center; margin-bottom: 24px; }
-    .brand b { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -.02em; }
-    .brand div { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--sage); margin-top: 4px; }
-    .box { background: #fff; border: none; border-radius: 22px; padding: 26px 24px; box-shadow: var(--shadow-md); }
-    .box h1 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin-bottom: 6px; }
+    .brand b { font-size: 26px; font-weight: 650; color: #fff; letter-spacing: -.02em; }
+    .brand div { font-size: 12px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: var(--sage); margin-top: 4px; }
+    .box { background: #fff; border: none; border-radius: var(--r-card); padding: 26px 24px; box-shadow: var(--shadow-md); }
+    .box h1 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin-bottom: 6px; }
     .box p.lead { font-size: 14px; color: var(--ink-2); margin-bottom: 18px; }
     .pin { font-size: 28px; letter-spacing: 12px; text-align: center; font-variant-numeric: tabular-nums; }
     .code { font-size: 24px; letter-spacing: 8px; text-align: center; font-variant-numeric: tabular-nums; }
-    .btn-go { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 999px; }
+    .btn-go { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; border-radius: var(--r-btn); }
     .alt { text-align: center; margin-top: 16px; font-size: 14px; }
-    .who { background: var(--bg); border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+    .who { background: var(--bg); border-radius: var(--r-card); padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
 </head>
 <body>
 {% include 'partials/demo_banner.html' %}

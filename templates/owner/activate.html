@@ -9,12 +9,13 @@
 <style>
     body { background: var(--bg); }
     .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .card-box { background: #fff; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,.08); padding: 40px 36px; width: 100%; max-width: 420px; }
+    .card-box { background: #fff; border-radius: var(--r-card); box-shadow: 0 2px 16px rgba(0,0,0,.08); padding: 40px 36px; width: 100%; max-width: 420px; }
     .step-bar { display: flex; gap: 8px; margin-bottom: 28px; }
     .step { flex: 1; height: 4px; border-radius: 2px; background: var(--border-strong); }
     .step.active { background: var(--forest); }
     .step.done { background: #22c55e; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
 </head>
 <body>
 <div class="wrap">
@@ -35,7 +36,7 @@
         <div class="step active"></div>
         <div class="step"></div>
       </div>
-      <div style="font-size: 11px; color: var(--ink-2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .06em;">Step 1 of 2</div>
+      <div style="font-size: 11px; color: var(--ink-2); margin-bottom: 4px; text-transform: none; letter-spacing: .01em;">Step 1 of 2</div>
       <div style="font-weight: 700; font-size: 18px; margin-bottom: 4px;">
         Welcome{% if person_name %}, {{ person_name }}{% endif %}
       </div>

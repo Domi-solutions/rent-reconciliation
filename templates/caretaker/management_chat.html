@@ -2,14 +2,14 @@
 {% block title %}Management — {{ property.name }}{% endblock %}
 {% block extra_css %}
 <style>
-  .bubble { max-width: 85%; padding: 10px 12px; border-radius: 14px; margin-bottom: 10px; font-size: 14px; }
+  .bubble { max-width: 85%; padding: 10px 12px; border-radius: var(--r-card); margin-bottom: 10px; font-size: 14px; }
   .body { white-space: pre-wrap; }
   .them { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
   .us { margin-left: auto; background: var(--forest); color: #fff; border-bottom-right-radius: 4px; }
   .report { border-left: 4px solid #3b82f6; }
-  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #93c5fd; margin-bottom: 4px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .01em; text-transform: none; color: #93c5fd; margin-bottom: 4px; }
   .meta { font-size: 11px; opacity: .7; margin-top: 4px; }
-  .photos img { max-width: 240px; width: 100%; border-radius: 10px; margin-top: 8px; display: block; }
+  .photos img { max-width: 240px; width: 100%; border-radius: var(--r-card); margin-top: 8px; display: block; }
   .card2 { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px; margin-bottom: 14px; }
 </style>
 {% endblock %}
@@ -20,6 +20,7 @@
 {% if no_account %}
 <div class="alert alert-warning" style="font-size:13px;">Messages need your own caretaker account. Ask management to create one for you, then sign in with your name.</div>
 {% else %}
+<section class="chat-transcript" aria-label="Conversation messages">
 {% for m in msgs %}
 <div class="bubble {{ 'us' if m.sender_type == 'caretaker' else 'them' }} {{ 'report' if m.kind == 'report' }}">
   {% if m.kind == 'report' %}<div class="tag">Report</div>{% endif %}
@@ -30,22 +31,25 @@
 {% else %}
 <p style="font-size:14px;color:var(--ink-3);">No messages yet. Send a report or a question below.</p>
 {% endfor %}
+</section>
 
-<div class="card2">
+<div class="card2 chat-composer">
   <form method="POST" enctype="multipart/form-data">
-    <textarea name="body" id="body" class="form-control mb-2" rows="5" placeholder="Write to management" required></textarea>
+    <label class="form-label" for="reply-body">Your message</label>
+      <textarea name="body" id="reply-body" class="message-input form-control mb-2" rows="5" placeholder="Write to management" required></textarea>
     <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="start-report">Start a report</button>
       <label style="font-size:13px;"><input type="checkbox" name="kind" value="report" id="is-report"> This is a report</label>
     </div>
-    <input type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
+    <label class="form-label" for="reply-photos">Photos <span class="chat-optional">(optional)</span></label>
+      <input id="reply-photos" type="file" name="photos" class="form-control mb-2" accept="image/*" multiple>
     <button type="submit" class="btn btn-dark">Send</button>
   </form>
   <div style="font-size:12px;color:var(--ink-3);margin-top:8px;">Up to 3 photos. Messages cannot be edited — send another message to correct something.</div>
 </div>
 <script>
   document.getElementById('start-report').addEventListener('click', function () {
-    var b = document.getElementById('body');
+    var b = document.getElementById('reply-body');
     if (!b.value.trim()) b.value = {{ outline|tojson }};
     document.getElementById('is-report').checked = true;
     b.focus();

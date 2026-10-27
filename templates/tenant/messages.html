@@ -1,12 +1,14 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'partials/icons.html' import icon %}
+
 {% block title %}Messages — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
 <div class="doc">
   <h2>Write to management</h2>
   <div class="muted" style="margin-bottom:12px">Every message is kept with its date. Nothing can be edited or deleted — by you or by management.</div>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='money') }}">💰 {{ topics.money }}</a>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">🔧 {{ topics.repair }}</a>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='other') }}">✉️ {{ topics.other }}</a>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='money') }}">{{ icon('wallet') }} {{ topics.money }}</a>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">{{ icon('wrench') }} {{ topics.repair }}</a>
+  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='other') }}">{{ icon('mail') }} {{ topics.other }}</a>
 </div>
 
 <div class="doc">

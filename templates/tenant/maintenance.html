@@ -1,10 +1,12 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'partials/icons.html' import icon %}
+
 {% block title %}Repairs — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
 <div class="doc">
   <h2>Repairs</h2>
   <div class="muted" style="margin-bottom:12px">Report a problem with a photo. Management and the caretaker see it, and you can follow it in one conversation.</div>
-  <a class="btn btn-dark w-100" style="padding:12px;border-radius:12px;font-weight:600" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">🔧 Report a repair</a>
+  <a class="btn btn-dark w-100" style="padding:12px;border-radius:var(--r-card);font-weight:600" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">{{ icon('wrench') }} Report a repair</a>
 </div>
 <div class="doc">
   <h2>Your repair requests</h2>

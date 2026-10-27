@@ -27,20 +27,20 @@
   <div class="col-6 col-md-3">
     <div class="surface-card text-center" style="padding:16px;">
       <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ upload.unit_count }}</div>
-      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Units</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform: none; letter-spacing:.01em; margin-top:2px;">Units</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="surface-card text-center" style="padding:16px;">
       <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ '{:,.0f}'.format(total_amount) }}</div>
-      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Total KES</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform: none; letter-spacing:.01em; margin-top:2px;">Total KES</div>
     </div>
   </div>
   {% if total_consumed %}
   <div class="col-6 col-md-3">
     <div class="surface-card text-center" style="padding:16px;">
       <div style="font-size:22px; font-weight:700; color:var(--ink);">{{ '{:,.0f}'.format(total_consumed) }}</div>
-      <div style="font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Units Consumed</div>
+      <div style="font-size:11px; color:var(--ink-3); text-transform: none; letter-spacing:.01em; margin-top:2px;">Units Consumed</div>
     </div>
   </div>
   {% endif %}
@@ -48,7 +48,7 @@
   <div class="col-6 col-md-3">
     <div class="surface-card text-center" style="padding:16px; border-color:#fbbf24;">
       <div style="font-size:22px; font-weight:700; color:#b45309;">{{ anomalies|length }}</div>
-      <div style="font-size:11px; color:#b45309; text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Anomalies</div>
+      <div style="font-size:11px; color:#b45309; text-transform: none; letter-spacing:.01em; margin-top:2px;">Anomalies</div>
     </div>
   </div>
   {% endif %}
