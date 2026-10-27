@@ -1,0 +1,19 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ name }} — caretaker ↔ management{% endblock %}
+{% block extra_css %}{% include 'viewer/_chat_styles.html' %}{% endblock %}
+{% block content %}
+<div style="max-width:720px">
+  <a href="{{ url_for('viewer.property_conversations', property_id=property.id, show='caretaker') }}" style="font-size:13px">← Conversations</a>
+  <div class="page-title mt-2">{{ name }} ↔ management</div>
+  <div class="page-meta mb-3">Caretaker reports, questions and instructions at {{ property.name|title }}.</div>
+  {% for m in msgs %}
+  <div class="bubble {{ 'b-staff' if m.sender_type == 'admin' else 'b-ct' }} {{ 'b-report' if m.kind == 'report' }}">
+    {% if m.kind == 'report' %}<div class="eyebrow" style="color:var(--blue)">Report</div>{% endif %}
+    <div class="body">{{ m.body }}</div>
+    {% for p in m.photos %}<div class="photos"><a target="_blank" href="{{ url_for('viewer.caretaker_chat_photo', property_id=property.id, photo_id=p.id) }}"><img src="{{ url_for('viewer.caretaker_chat_photo', property_id=property.id, photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
+    <div class="meta">{{ ('Management · ' ~ (m.account_name or m.sender_name)) if m.sender_type == 'admin' else (m.sender_name ~ ' (caretaker)') }} · {{ (m.created_at or '')[:16] }}</div>
+  </div>
+  {% endfor %}
+  <div class="readonly">You are viewing this conversation.</div>
+</div>
+{% endblock %}

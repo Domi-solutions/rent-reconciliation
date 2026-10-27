@@ -1,0 +1,42 @@
+{% extends "viewer/base_viewer.html" %}
+{% block title %}{{ property.name }} — Conversations{% endblock %}
+{% block extra_css %}{% include 'viewer/_chat_styles.html' %}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <div class="page-title">Conversations</div>
+  <div class="page-meta">Everything said between tenants, management and the caretaker at {{ property.name|title }}.</div>
+</div>
+<div class="cv-tabs">
+  <a class="cv-tab {% if show == 'all' %}active{% endif %}" href="{{ url_for('viewer.property_conversations', property_id=property.id) }}">All</a>
+  <a class="cv-tab {% if show == 'tenants' %}active{% endif %}" href="{{ url_for('viewer.property_conversations', property_id=property.id, show='tenants') }}">With tenants ({{ tenant_convs|length }})</a>
+  <a class="cv-tab {% if show == 'caretaker' %}active{% endif %}" href="{{ url_for('viewer.property_conversations', property_id=property.id, show='caretaker') }}">Caretaker ↔ management ({{ caretaker_chats|length }})</a>
+</div>
+
+{% if show in ('all', 'caretaker') and caretaker_chats %}
+<div class="eyebrow mb-2">Caretaker ↔ management</div>
+{% for c in caretaker_chats %}
+<a class="cv-row" href="{{ url_for('viewer.property_caretaker_chat', property_id=property.id, caretaker_id=c.caretaker_id) }}">
+  <div class="top"><strong>{{ c.name }}</strong><span class="sub">{{ (c.last_at or '')[:16] }}</span></div>
+  <div class="sub">{{ (c.last_body or '')[:110] }}</div>
+</a>
+{% endfor %}
+{% endif %}
+
+{% if show in ('all', 'tenants') %}
+<div class="eyebrow mb-2 mt-3">Tenants ↔ management and caretaker</div>
+{% for c in tenant_convs %}
+<a class="cv-row" href="{{ url_for('viewer.property_conversation', property_id=property.id, conv_id=c.id) }}">
+  <div class="top">
+    <div><strong>{{ c.unit_number }}</strong> · {{ c.tenant_name|title }}
+      {% if c.topic == 'repair' %}<span class="tag tag-rep">Repair</span>{% endif %}
+      {% if c.id in caretaker_involved %}<span class="tag tag-ct">Caretaker replied</span>{% endif %}
+      {% if c.status == 'awaiting_reply' %}<span class="tag tag-wait">Waiting for a reply</span>{% endif %}</div>
+    <span class="sub">{{ (c.last_message_at or '')[:16] }}</span>
+  </div>
+  <div class="sub"><b>{{ c.subject }}</b> — {{ (c.last_body or '')[:90] }}</div>
+</a>
+{% else %}
+<p class="sub">No tenant conversations yet.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

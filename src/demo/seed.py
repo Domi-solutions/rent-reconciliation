@@ -186,6 +186,37 @@ def seed(conn, today=None):
     threads.start_conversation(conn, dict(tenant6), unit6, prop, 'money', 'Water bill higher this month',
                                'Hello, my water bill went up. Can you confirm the meter reading?')
 
+    # A question management already answered, and a second repair the caretaker took care of
+    def _conv(num, topic, subject, first, replies, category='general'):
+        t = tenants[num]
+        u = conn.execute("SELECT * FROM units WHERE id = ?", (t['unit_id'],)).fetchone()
+        tn = conn.execute("SELECT * FROM tenants WHERE id = ?", (t['id'],)).fetchone()
+        cid, _, _ = threads.start_conversation(conn, dict(tn), u, prop, topic, subject, first, category=category)
+        for who, body in replies:
+            if who == 'admin':
+                threads.add_message(conn, cid, 'admin', threads.STAFF_LABEL, body)
+            elif who == 'caretaker':
+                threads.add_message(conn, cid, 'caretaker', c['name'], body, account_id=ct_id)
+            else:
+                threads.add_message(conn, cid, 'tenant', t['name'], body)
+        return cid
+    _conv('A5', 'money', 'Paying in two parts this month',
+          'Hello, can I pay half of my rent now and the rest on the 20th?',
+          [('admin', 'Yes, that is fine. Please pay the second half by the 20th and keep the M-Pesa messages.'),
+           ('tenant', 'Thank you, I have paid the first half.'),
+           ('admin', 'Received — it shows on your statement. Thank you.')])
+    door = _conv('B4', 'repair', 'Front door lock is stuck', 'The lock on my front door is hard to open since Monday.',
+          [('caretaker', 'I checked it — the lock needs replacing. I will fit a new one tomorrow morning.'),
+           ('tenant', 'Okay, I will be home after 8am.'),
+           ('caretaker', 'Done — new lock fitted, two keys given to you.')], category='doors')
+    # The caretaker marked it fixed, the way the caretaker portal does
+    threads.add_message(conn, door, 'system', None, 'Marked fixed by the caretaker.')
+    conn.execute("""UPDATE maintenance_issues SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP,
+                    resolved_note = 'New lock fitted' WHERE id = (SELECT issue_id FROM conversations WHERE id = ?)""", (door,))
+    threads.close(conn, door, 'caretaker:' + c['name'])
+    _conv('A6', 'other', 'Parking for a visitor', 'My brother is visiting for a week. Can he park inside?',
+          [('admin', 'Yes — please give the caretaker the car registration so security knows.')])
+
     # A notice to everyone
     batch = generate_id('BATCH')
     for t in tenants.values():
@@ -202,6 +233,9 @@ def seed(conn, today=None):
                     .replace('- Repairs / maintenance:', '- Repairs / maintenance: A2 sink fixed')
                     .replace('- Tenants to follow up:', '- Tenants to follow up: A6, B2'), kind='report', account_id=ct_id)
     staff_chat.post(conn, pid, ct_id, 'admin', a['name'], 'Thanks Juma. Please get a quote for the B2 meter.')
+    staff_chat.post(conn, pid, ct_id, 'caretaker', c['name'],
+                    'Quote for the B2 meter glass is KES 1,800 from Mavoko Water. Shall I go ahead?', account_id=ct_id)
+    staff_chat.post(conn, pid, ct_id, 'admin', a['name'], 'Yes, go ahead and send the receipt under Expenses.')
 
     # Money out
     ago = lambda d: (today - timedelta(days=d)).isoformat()

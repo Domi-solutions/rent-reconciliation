@@ -1211,3 +1211,87 @@ def expense_receipt(property_id, expense_id, receipt_id):
     if not r:
         abort(404)
     return send_from_directory(ex.receipts_dir(), r['file_name'], mimetype=r['content_type'])
+
+
+# ── Conversations (read-only for the owner) ──────────────────────────────────
+#
+# Management acts for the owner, so the owner sees every conversation on the
+# property: tenants with management, the caretaker's replies to tenants on
+# repairs, and the caretaker with management. Reading here marks nothing read.
+
+def _owner_property(conn, property_id):
+    prop = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+    if not prop:
+        abort(404)
+    if not conn.execute("SELECT 1 FROM property_owners WHERE property_id = ? AND owner_id = ?",
+                        (property_id, session.get('owner_id'))).fetchone():
+        abort(403)
+    return prop
+
+
+@viewer_bp.route('/<property_id>/conversations')
+def property_conversations(property_id):
+    from src.messaging import staff_chat, threads
+    with get_connection() as conn:
+        prop = _owner_property(conn, property_id)
+        tenant_convs = threads.list_for_staff(conn, property_id)
+        caretaker_chats = [c for c in staff_chat.chats_for_admin(conn, property_id) if c['last_at']]
+        involved = {r['conversation_id'] for r in conn.execute("""
+            SELECT DISTINCT m.conversation_id FROM conversation_messages m
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.property_id = ? AND m.sender_type = 'caretaker'""", (property_id,))}
+    show = request.args.get('show', 'all')
+    return render_template('viewer/conversations.html', property=prop, tenant_convs=tenant_convs,
+                           caretaker_chats=caretaker_chats, caretaker_involved=involved, show=show,
+                           topics=threads.TOPICS, active_tab='conversations')
+
+
+@viewer_bp.route('/<property_id>/conversations/<conv_id>')
+def property_conversation(property_id, conv_id):
+    from src.messaging import threads
+    with get_connection() as conn:
+        prop = _owner_property(conn, property_id)
+        conv, msgs = threads.thread(conn, conv_id)
+        if not conv or conv['property_id'] != property_id:
+            abort(404)
+    return render_template('viewer/conversation.html', property=prop, conv=conv, msgs=msgs,
+                           topics=threads.TOPICS, active_tab='conversations')
+
+
+@viewer_bp.route('/<property_id>/caretaker-chat/<caretaker_id>')
+def property_caretaker_chat(property_id, caretaker_id):
+    from src.messaging import staff_chat
+    with get_connection() as conn:
+        prop = _owner_property(conn, property_id)
+        msgs = [m for m in staff_chat.thread(conn, caretaker_id) if m['property_id'] == property_id]
+        if not msgs:
+            abort(404)
+        ct = conn.execute("SELECT name FROM caretakers WHERE id = ?", (caretaker_id,)).fetchone()
+    name = ct['name'] if ct else next((m['sender_name'] for m in msgs if m['sender_type'] == 'caretaker'), 'Caretaker')
+    return render_template('viewer/caretaker_chat.html', property=prop, msgs=msgs, name=name,
+                           active_tab='conversations')
+
+
+@viewer_bp.route('/<property_id>/conversation-photo/<photo_id>')
+def conversation_photo(property_id, photo_id):
+    from flask import send_from_directory
+    from src.messaging import threads
+    with get_connection() as conn:
+        _owner_property(conn, property_id)
+        p = conn.execute("""SELECT ph.file_name FROM conversation_photos ph JOIN conversations c ON c.id = ph.conversation_id
+                            WHERE ph.id = ? AND c.property_id = ?""", (photo_id, property_id)).fetchone()
+    if not p:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+
+
+@viewer_bp.route('/<property_id>/caretaker-photo/<photo_id>')
+def caretaker_chat_photo(property_id, photo_id):
+    from flask import send_from_directory
+    from src.messaging import staff_chat, threads
+    with get_connection() as conn:
+        _owner_property(conn, property_id)
+        p, m = staff_chat.photo(conn, photo_id)
+    if not p or m['property_id'] != property_id:
+        abort(404)
+    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')

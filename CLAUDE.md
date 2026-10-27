@@ -327,6 +327,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - Ownership check on every `/view/<property_id>/...` route — returns 403 if not in `property_owners`
 - Shared `VIEWER_PASSWORD` signs in as the first owner and sets `session['viewer_shared']`: it can look but the payout routes (request-otp/confirm-otp) return 403 — payout changes need the owner's own sign-in. Unset `VIEWER_PASSWORD` means closed in production, open only in dev.
 - Templates extend `viewer/base_viewer.html`; pass `active_tab`
+- **Conversations tab** (`/view/<pid>/conversations`): owner reads every tenant↔management conversation (incl. caretaker replies on repairs) and every caretaker↔management chat, read-only; viewing marks nothing read. Photos via ownership-checked `/view/<pid>/conversation-photo/…` and `/caretaker-photo/…`. Tenants are not told owners can read (management acts for the owner).
 - Notifications page: SELECT all columns from `owner_messages` — omitting any silently hides data
 - Broadcasts show `template_body` (unsubstituted). `sent_by` badge: blue=Admin, amber=Caretaker, gray=System
 - Reports tab: always call `enrich_report_data()` before rendering (back-fills fields on old reports)

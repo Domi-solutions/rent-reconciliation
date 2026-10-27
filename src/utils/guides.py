@@ -288,6 +288,13 @@ _T = {
             'The owner sees this same page in their portal.',
         ]),
     },
+    'viewer.property_conversations': {
+        'en': ('Conversations', 'Every conversation at the property, as it happened.', [
+            'Tenants with management, the caretaker\'s replies to tenants on repairs, and the caretaker with management.',
+            '"Waiting for a reply" means the tenant wrote last and management has not answered yet.',
+            'You are reading only — replies are written by management.',
+        ]),
+    },
     'leases.board': {
         'en': ('Leases', 'Every unit and where its lease stands. Work down this list to onboard a property.', [
             '"Old record only" means someone is on the old records but no lease has been entered for them yet.',
