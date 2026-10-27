@@ -10,7 +10,13 @@ import calendar
 
 from src.utils.statement import get_tenant_statement
 
-CHARGE_LABELS = {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water'}
+CHARGE_LABELS = {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water',
+                 'brought_forward': 'Brought forward'}
+
+
+def charge_label(charge_type):
+    """Display name for a charge type — also the `charge_label` template filter."""
+    return CHARGE_LABELS.get(charge_type or '', (charge_type or '').replace('_', ' ').capitalize())
 
 
 def period_label(period):

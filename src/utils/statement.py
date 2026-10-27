@@ -207,7 +207,8 @@ def get_tenant_statement(conn, tenant_id, property_id):
         open_claims.append(claim)
 
     # ── Build ledger ───────────────────────────────────────────
-    CHARGE_LABELS = {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water charge'}
+    CHARGE_LABELS = {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water charge',
+                     'brought_forward': 'Balance brought forward'}
 
     rows = []
     for c in charges:
@@ -221,7 +222,12 @@ def get_tenant_statement(conn, tenant_id, property_id):
             status = 'Outstanding'
         label = CHARGE_LABELS.get(c['charge_type'], c['charge_type'].title())
         is_arrears = c['period'] == 'ARREARS'
-        description = f"Opening arrears — {label}" if is_arrears else f"{label} — {c['period']}"
+        if c['charge_type'] == 'brought_forward':
+            description = label                      # carried from before the lease, with evidence
+        elif is_arrears:
+            description = f"Opening arrears — {label}"
+        else:
+            description = f"{label} — {c['period']}"
         rows.append({
             'row_type':    'charge',
             'charge_id':   c['id'],

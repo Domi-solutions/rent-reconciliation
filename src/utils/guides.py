@@ -237,6 +237,26 @@ _T = {
             'Give a temporary password in person; they change it under Account Settings.',
         ]),
     },
+    'leases.board': {
+        'en': ('Leases', 'Every unit and where its lease stands. Work down this list to onboard a property.', [
+            '"Old record only" means someone is on the old records but no lease has been entered for them yet.',
+            'Record a lease as soon as it is agreed. If the signed copy is not back, mark it signed later.',
+            'Nothing here texts tenants.',
+        ]),
+    },
+    'leases.new': {
+        'en': ('Record a lease', 'Opens the tenant\'s account on the lease\'s terms.', [
+            'Renewing someone already recorded keeps their old record as history. The new account starts clean.',
+            'Old debt carries over only as a brought-forward amount you enter, with what it is based on.',
+            'If someone else signed, record the previous tenant\'s move-out first.',
+        ]),
+    },
+    'leases.detail': {
+        'en': ('Lease', 'Terms, documents and the opening balance for this tenancy.', [
+            'Correct the brought-forward amount here once old statements are reconciled. Every change is logged.',
+            'Documents (lease, ID copy) are visible to admins only.',
+        ]),
+    },
     'mpesa_admin.payments': {
         'en': ('M-Pesa payments', 'Where tenants are told to pay, and payments into the property\'s own paybill.', [
             'Changing where tenants pay is SMSed to the owners and reported to Domi.',

@@ -17,6 +17,7 @@
     else 'inbox'      if request.endpoint.startswith('messaging.inbox')
     else 'messages'   if request.endpoint.startswith('messaging.')
     else 'units'      if request.endpoint in ('manage_units', 'add_unit', 'manage_tenants', 'add_tenant', 'generate_tenant_token', 'edit_unit_field', 'edit_tenant_field', 'move_out_tenant')
+    else 'leases'     if request.endpoint.startswith('leases.')
     else 'lookup'     if request.endpoint == 'reports.payment_lookup'
     else 'reports'    if request.endpoint.startswith('reports.')
     else 'activity'   if request.endpoint == 'activity'
@@ -51,6 +52,11 @@
       <a class="sidebar-item {% if active_nav == 'units' %}active{% endif %}" href="{{ url_for('manage_units') }}">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
         Units
+      </a>
+
+      <a class="sidebar-item {% if active_nav == 'leases' %}active{% endif %}" href="{{ url_for('leases.board') }}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        Leases
       </a>
 
       <a class="sidebar-item {% if active_nav == 'payments' %}active{% endif %}" href="{{ url_for('review') }}">

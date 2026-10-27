@@ -1924,3 +1924,59 @@ def migrate_add_payment_instructions():
             if name not in cols:
                 conn.execute(f"ALTER TABLE properties ADD COLUMN {name} TEXT")
         print("Migration complete: properties payment instructions ready.")
+
+
+def migrate_add_leases():
+    """Tenancy agreements and their scanned documents. Idempotent.
+
+    A lease opens a tenancy: one row per signed (or awaited) agreement, linked
+    to the tenants row that holds that tenancy's money. Re-leasing someone who
+    was already recorded opens a fresh tenants row and freezes the old one
+    (prior_tenant_id) — so a new lease starts clean, and anything owed from
+    before it is carried only as an explicit, evidenced brought-forward charge.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS leases (
+                id TEXT PRIMARY KEY,
+                org_id TEXT REFERENCES organizations(id),
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                unit_id TEXT NOT NULL REFERENCES units(id),
+                tenant_id TEXT NOT NULL REFERENCES tenants(id),
+                status TEXT NOT NULL DEFAULT 'pending',      -- pending (signed copy not back) | signed | ended
+                start_date DATE NOT NULL,                     -- "with effect from" on the lease
+                monthly_rent REAL NOT NULL DEFAULT 0,
+                service_charge REAL NOT NULL DEFAULT 0,
+                deposit_required REAL NOT NULL DEFAULT 0,
+                deposit_held REAL NOT NULL DEFAULT 0,
+                national_id TEXT,
+                signed_on DATE,
+                prior_tenant_id TEXT REFERENCES tenants(id),  -- the record this lease froze, if any
+                prior_balance REAL,                           -- that record's balance when it was frozen
+                brought_forward REAL NOT NULL DEFAULT 0,
+                brought_forward_evidence TEXT,
+                brought_forward_charge_id TEXT REFERENCES rent_charges(id),
+                notes TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leases_property ON leases(property_id, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leases_unit ON leases(unit_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_leases_tenant ON leases(tenant_id)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS lease_documents (
+                id TEXT PRIMARY KEY,
+                lease_id TEXT NOT NULL REFERENCES leases(id),
+                kind TEXT NOT NULL DEFAULT 'lease',           -- lease | id_copy | other
+                file_name TEXT NOT NULL,                      -- stored name in <db dir>/lease_documents/
+                original_name TEXT,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER,
+                uploaded_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_lease_documents_lease ON lease_documents(lease_id)")
+        print("Migration complete: leases, lease_documents ready.")

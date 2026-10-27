@@ -317,7 +317,7 @@
             {% for a in r.allocations %}
             <div class="l-alloc-line">
               {% if a.period == 'ARREARS' %}Opening arrears
-              {% else %}{{ a.charge_type|capitalize }} {{ a.period }}{% endif %}
+              {% else %}{{ a.charge_type|charge_label }} {{ a.period }}{% endif %}
               — <strong style="color:var(--ink-2);">KES {{ "{:,.0f}".format(a.amount) }}</strong>
             </div>
             {% endfor %}

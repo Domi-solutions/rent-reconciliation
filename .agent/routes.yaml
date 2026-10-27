@@ -280,3 +280,18 @@ blueprints:
     note: "Dispute submission added to tenant blueprint in src/routes/tenant_routes.py"
     key_routes:
       - "POST /tenant/<token>/dispute — tenant raises concern; writes to tenant_disputes; goes to platform not agency"
+
+  leases:
+    file: src/routes/lease_routes.py
+    prefix: /leases
+    auth: admin (require_admin_auth)
+    status: live
+    note: "Lease intake / repeatable property onboarding. Logic in src/leases/intake.py. Sends no SMS."
+    key_routes:
+      - "GET /leases/ — every unit with lease phase (signed | pending | recorded | empty | not_rentable); ?phase= filter"
+      - "GET|POST /leases/new?unit_id= — record a lease; re-lease freezes old record; someone new → move-out first"
+      - "GET /leases/<id> — terms, account balance, old record, documents"
+      - "POST /leases/<id>/signed — mark signed (+ ID no., signed copy upload)"
+      - "POST /leases/<id>/documents — attach lease / ID copy / other"
+      - "POST /leases/<id>/brought-forward — correct brought-forward amount (evidence required; audit + platform_log)"
+      - "GET /leases/<id>/documents/<doc_id> — admin-only file, Cache-Control no-store"

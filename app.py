@@ -132,6 +132,7 @@ from src.database.db import (
     migrate_add_admin_users,
     migrate_add_mpesa_fields,
     migrate_add_payment_instructions,
+    migrate_add_leases,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -192,10 +193,12 @@ migrate_add_conversations()
 migrate_add_admin_users()
 migrate_add_mpesa_fields()
 migrate_add_payment_instructions()
+migrate_add_leases()
 
 from src.routes.tenant_routes import tenant_bp
 from src.routes.messaging_routes import messaging_bp
 from src.routes.team_routes import team_bp
+from src.routes.lease_routes import lease_bp
 from src.routes.mpesa_admin_routes import mpesa_admin_bp, unmatched_count as mpesa_unmatched_count
 from src.messaging.reminders import generate_due_reminders
 
@@ -213,6 +216,10 @@ app.register_blueprint(inbound_bp)
 app.register_blueprint(platform_bp)
 app.register_blueprint(owner_bp)
 app.register_blueprint(team_bp)
+app.register_blueprint(lease_bp)
+
+from src.utils.tenant_documents import charge_label as _charge_label
+app.jinja_env.filters['charge_label'] = _charge_label
 app.register_blueprint(mpesa_admin_bp)
 
 

@@ -159,7 +159,7 @@
           <tbody>
             {% for a in c.allocations %}
             <tr>
-              <td class="ps-0">{{ a.charge_type | capitalize }} — {{ a.period }}</td>
+              <td class="ps-0">{{ a.charge_type|charge_label }} — {{ a.period }}</td>
               <td class="text-end pe-0">
                 KES {{ "{:,.0f}".format(a.alloc_amount) }}
                 {% if a.charge_settled %}<span class="badge bg-success ms-1" style="font-size: 0.7rem;">Settled</span>{% endif %}

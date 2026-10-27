@@ -207,7 +207,7 @@ tables:
       property_id: {type: TEXT, fk: properties.id, required: true}
       unit_id: {type: TEXT, fk: units.id, required: true}
       period: {type: TEXT, required: true, note: "YYYY-MM or 'ARREARS'"}
-      charge_type: {type: TEXT, default: rent, values: [rent, service, water], added_by: migrate_add_charge_type}
+      charge_type: {type: TEXT, default: rent, values: [rent, service, water, brought_forward], added_by: migrate_add_charge_type, note: "brought_forward (period='ARREARS') = debt carried onto a new lease's account with evidence; written only by src/leases/intake.py"}
       amount: {type: DECIMAL(10,2), required: true}
       due_date: {type: DATE, added_by: migrate_set_rent_charge_due_dates}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
@@ -714,6 +714,49 @@ tables:
     indexes:
       - idx_outbox_created ON (created_at)
       - idx_outbox_channel ON (channel)
+
+  leases:
+    status: live
+    migration: migrate_add_leases
+    note: "One row per tenancy agreement. Re-leasing a recorded tenant freezes their old tenants row (status inactive, move_out_date = day before the start month; portal token/short code move to the new row) and opens a new one; prior_tenant_id points at the frozen row. All writes via src/leases/intake.py."
+    columns:
+      id: {type: TEXT, pk: true, note: "LEASE-…"}
+      org_id: {type: TEXT, fk: organizations.id}
+      property_id: {type: TEXT, fk: properties.id, required: true}
+      unit_id: {type: TEXT, fk: units.id, required: true}
+      tenant_id: {type: TEXT, fk: tenants.id, required: true, note: "the tenancy (account) this lease opened"}
+      status: {type: TEXT, values: [pending, signed, ended], note: "pending = profile open, signed copy not back"}
+      start_date: {type: DATE, required: true, note: "'with effect from' on the lease"}
+      monthly_rent: {type: REAL}
+      service_charge: {type: REAL}
+      deposit_required: {type: REAL}
+      deposit_held: {type: REAL}
+      national_id: {type: TEXT, note: "admin-only; never in tenant/owner views or SMS"}
+      signed_on: {type: DATE}
+      prior_tenant_id: {type: TEXT, fk: tenants.id, note: "frozen pre-lease record, if any"}
+      prior_balance: {type: REAL, note: "that record's balance when the lease was recorded"}
+      brought_forward: {type: REAL, default: 0}
+      brought_forward_evidence: {type: TEXT, note: "required when brought_forward > 0"}
+      brought_forward_charge_id: {type: TEXT, fk: rent_charges.id}
+      notes: {type: TEXT}
+      created_by: {type: TEXT, note: "staff.actor()"}
+      created_at: {type: TIMESTAMP}
+      updated_at: {type: TIMESTAMP}
+
+  lease_documents:
+    status: live
+    migration: migrate_add_leases
+    note: "Scans of signed leases / ID copies. Files in <db dir>/lease_documents/ (PDF as-is; images re-encoded JPEG, EXIF dropped; HEIC via pillow-heif). Served only by /leases/<id>/documents/<doc_id> (admin)."
+    columns:
+      id: {type: TEXT, pk: true}
+      lease_id: {type: TEXT, fk: leases.id, required: true}
+      kind: {type: TEXT, values: [lease, id_copy, other]}
+      file_name: {type: TEXT, required: true}
+      original_name: {type: TEXT}
+      content_type: {type: TEXT, required: true}
+      size_bytes: {type: INTEGER}
+      uploaded_by: {type: TEXT}
+      created_at: {type: TIMESTAMP}
 
   tenant_departures:
     status: live

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Leases — {{ property.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .lease-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .lease-stat { display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface); text-decoration: none; color: var(--ink); }
+  .lease-stat.active { border-color: var(--ink); box-shadow: var(--shadow-sm); }
+  .lease-stat .n { font-size: 22px; font-weight: 700; line-height: 1.1; }
+  .lease-stat .l { font-size: 12px; color: var(--ink-3); }
+  .phase { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-badge); white-space: nowrap; }
+  .phase-signed { background: var(--green-soft); color: var(--green-dark); }
+  .phase-pending { background: var(--orange-soft); color: var(--orange); }
+  .phase-recorded { background: var(--blue-soft); color: var(--blue); }
+  .phase-empty { background: var(--bg); color: var(--ink-3); border: 1px solid var(--border); }
+  .phase-not_rentable { background: var(--bg); color: var(--ink-4); }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set labels = {'signed': 'Lease signed', 'pending': 'Signed copy pending', 'recorded': 'Old record only', 'empty': 'No tenant recorded', 'not_rentable': 'Owner use / short-term'} %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <div class="page-title">Leases</div>
+    <div class="page-meta">{{ counts.signed }} of {{ counts.rentable }} rentable units have a signed lease on record.</div>
+  </div>
+</div>
+
+<div class="lease-stats">
+  {% for key in ['signed', 'pending', 'recorded', 'empty'] %}
+  <a class="lease-stat {% if phase == key %}active{% endif %}" href="{{ url_for('leases.board', phase=('' if phase == key else key)) }}">
+    <div class="n">{{ counts[key] }}</div><div class="l">{{ labels[key] }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="surface-card" style="overflow-x:auto;">
+  <table class="table table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Unit</th>
+        <th>Lease</th>
+        <th>Tenant</th>
+        <th class="text-end">Rent (KES)</th>
+        <th class="text-end">Balance</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows if not phase or r.phase == phase %}
+      <tr>
+        <td class="fw-semibold">{{ r.unit_number }}</td>
+        <td><span class="phase phase-{{ r.phase }}">{{ labels[r.phase] }}</span></td>
+        <td>
+          {% if r.tenant_name %}{{ r.tenant_name }}
+            <div class="text-muted" style="font-size:12px;">{{ r.tenant_phone or 'No phone' }}{% if r.lease and r.lease.start_date %} · from {{ r.lease.start_date }}{% endif %}</div>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td class="text-end">{{ "{:,.0f}".format((r.lease.monthly_rent if r.lease else r.monthly_rent) or 0) }}</td>
+        <td class="text-end">{% if r.tenant_id %}{{ "{:,.0f}".format(r.balance or 0) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-end">
+          {% if r.lease %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('leases.detail', lease_id=r.lease.id) }}">Open</a>
+          {% elif r.phase in ('recorded', 'empty') %}
+            <a class="btn btn-sm btn-primary text-nowrap" href="{{ url_for('leases.new', unit_id=r.id) }}">Record lease</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center py-4">No units in this group.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

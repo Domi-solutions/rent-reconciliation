@@ -40,7 +40,7 @@
             <tbody>
               {% for c in items %}
               <tr>
-                <td>{{ c.charge_type|capitalize }}</td>
+                <td>{{ c.charge_type|charge_label }}</td>
                 <td class="text-end">KES {{ "{:,.0f}".format(c.amount) }}</td>
                 <td class="text-end">KES {{ "{:,.0f}".format(c.paid) }}</td>
                 <td class="text-end">KES {{ "{:,.0f}".format(c.outstanding) }}</td>

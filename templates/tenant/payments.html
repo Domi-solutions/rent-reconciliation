@@ -63,7 +63,7 @@
           <tbody>
             {% for a in item.allocations %}
             <tr>
-              <td>{{ a.charge_type|capitalize }}</td>
+              <td>{{ a.charge_type|charge_label }}</td>
               <td>{{ a.period }}</td>
               <td class="text-end">KES {{ "{:,.0f}".format(a.alloc_amount) }}</td>
             </tr>

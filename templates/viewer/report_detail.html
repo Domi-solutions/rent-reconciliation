@@ -301,7 +301,7 @@
         {% set collected = collected_map.get(charge_type, 0) if collected_map else 0 %}
         {% set remaining = billed - collected %}
         <tr>
-          <td style="padding:9px 20px;text-transform:capitalize;">{{ charge_type }}</td>
+          <td style="padding:9px 20px;">{{ charge_type|charge_label }}</td>
           <td>{{ data.count }}</td>
           <td class="text-end">KES {{ "{:,.0f}".format(billed) }}</td>
           <td class="text-end">KES {{ "{:,.0f}".format(collected) }}</td>
