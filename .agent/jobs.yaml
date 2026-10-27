@@ -63,6 +63,7 @@ jobs:
   weekly_digest_job:
     status: live
     function: src/agent/coordinator.py::weekly_digest_job
+    note: "Owner SMS held unless AUTOMATIC_ALERTS_ENABLED=true (default off since 2026-10-27)."
     trigger: "cron, day_of_week=mon, hour=8, minute=0 (Monday 8am EAT)"
     owns: "Reads balance_snapshots for arrears comparison. Delivers via route_message()."
     description: "Generate weekly digest for owners: payment velocity, arrears changes, claim aging, occupancy events. Brevity is the signal — stable = silence."

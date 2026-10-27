@@ -14,6 +14,7 @@ from src.messaging import threads
 from src.reconciliation.unassigned import get_unassigned_credits
 from src.reports.landlord_report import enrich_report_data
 from src.utils.metrics import get_property_occupancy, get_months_behind
+from src.utils.runtime import is_production
 
 caretaker_bp = Blueprint('caretaker', __name__, url_prefix='/caretaker')
 
@@ -101,7 +102,7 @@ def require_caretaker_auth():
 
     # Dev mode: open if no CARETAKER_PASSWORD, no DB accounts — never in production
     if (not os.environ.get('CARETAKER_PASSWORD') and not _has_db_caretakers()
-            and os.environ.get('FLASK_ENV') != 'production'):
+            and not is_production()):
         return None
 
     return redirect(url_for('caretaker.login', next=request.url))
@@ -132,7 +133,7 @@ def login():
             # Legacy shared-password mode
             password = os.environ.get('CARETAKER_PASSWORD')
             if not password:
-                if os.environ.get('FLASK_ENV') == 'production':
+                if is_production():
                     return render_template('caretaker/login.html', use_db=use_db,
                                            error='Caretaker sign-in is not set up. Ask management for an account.')
                 return redirect(url_for('caretaker.index'))

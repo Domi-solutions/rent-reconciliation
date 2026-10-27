@@ -552,6 +552,24 @@ The goal: after 3-4 build cycles, this file becomes precise enough that Cursor m
 
 ---
 
+## Session 28 — 2026-10-27
+
+### A safety check keyed on an environment variable that production never sets
+**File(s):** `src/payments/mpesa.py` (`callback_allowed`, `_confirm_with_safaricom`), `app.py` (test blueprint registration)
+**What was done:** "Am I in production?" was answered by `ENVIRONMENT == 'production'` in some files and `FLASK_ENV == 'production'` in others. `fly.toml` sets only `FLASK_ENV`; `ENVIRONMENT` was documented in `env.yaml` but never set on Fly. So the M-Pesa callback guard (refuse callbacks without a token in production) and the dev-only `/test/*` routes both treated the live site as development. The unit tests passed because they set `ENVIRONMENT` themselves — they proved the branch, not the deployment.
+**What it should do:** Use `src/utils/runtime.is_production()` (true for either variable). Before relying on an env var for a security decision, check it is actually set where it matters: `fly.toml [env]` or `fly secrets list` — not just `env.yaml`.
+**Why:** With the law firm's paybill configured, an unauthenticated POST to the C2B confirmation URL would have booked a fake payment against a tenant's debt.
+**Spotted:** 2026-10-27
+
+### Side effects on GET
+**File(s):** `app.py` `delete_payment` (was GET+POST, linked from an "Undo" flash), `verify_payments` (`GET /verify/<id>` sends SMS)
+**What was done:** Deleting a payment was reachable by a plain link; verification sends texts on a GET that the upload redirects into, so a refresh/back/prefetch re-runs it.
+**What it should do:** Anything that deletes money records or sends messages is POST-only; an "Undo" is a one-button form. `delete_payment` fixed; `verify_payments` still GET (its texts are now held behind `AUTOMATIC_ALERTS_ENABLED`, except tenant receipts) — convert when that page is next touched.
+**Why:** Browsers, link previewers and refreshes fire GETs without a person meaning to.
+**Spotted:** 2026-10-27
+
+---
+
 ## Performance Backlog
 
 Known bottlenecks that are acceptable at current scale (1 property, ~50 units) but should be addressed as the platform grows. Reviewed 2026-05-20.

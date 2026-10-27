@@ -394,6 +394,7 @@ def detect_stale_claims(conn, property_id):
 
     from src.platform.guardian import raise_alert, platform_log
     from src.messaging.delivery import send_sms_async
+    from src.messaging.outreach import automatic_alerts_enabled
 
     caretakers = conn.execute(
         "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
@@ -428,6 +429,9 @@ def detect_stale_claims(conn, property_id):
              f"Ref: {claim['mpesa_ref']} | Unit: {claim['unit_number']} | {amt_str} | reason: stale_30_days",
              'system')
         )
+
+        if not automatic_alerts_enabled():
+            continue
 
         for ct in caretakers:
             send_sms_async([{'phone': ct['phone']}],

@@ -42,8 +42,9 @@ def login():
     if request.method == 'POST':
         password = request.form.get('password', '')
         import hmac
+        from src.utils.runtime import is_production
         viewer_pw = os.environ.get('VIEWER_PASSWORD', '')
-        if not viewer_pw and os.environ.get('FLASK_ENV') == 'production':
+        if not viewer_pw and is_production():
             # Unset must mean closed, not open to anyone.
             return render_template('viewer/login.html', error='Owners sign in at /login with their email.')
         if not viewer_pw or hmac.compare_digest(password, viewer_pw):

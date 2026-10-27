@@ -94,7 +94,8 @@ src/reports/payment_lookup.py        # find_payer(), month_coverage() — admin 
 scripts/payment_coverage_check.py    # read-only: find a payer by name/phone; payments + statements per month per property
 src/reports/landlord_report.py # generate_report(), enrich_report_data()
 src/messaging/delivery.py      # send_sms(), send_sms_async(); SMS_PROVIDER africastalking|textsms; SMS_SENDER_ID; plain_sms()/sms_parts() keep text GSM-7 (Unicode costs 2-3x)
-src/messaging/outreach.py      # TENANT_OUTREACH_ENABLED default-off gate for invites, due reminders, monthly check-ins
+src/messaging/outreach.py      # TENANT_OUTREACH_ENABLED default-off gate for invites, due reminders, monthly check-ins; AUTOMATIC_ALERTS_ENABLED default-off gate for system-initiated alerts (owner digest, stale/not-found claim SMS)
+src/utils/runtime.py           # is_production() — FLASK_ENV or ENVIRONMENT; never read either directly
 src/messaging/outbox.py        # log_outbox() — every outbound message to platform_outbox
 src/messaging/owner_notify.py  # notify_property_owners()
 src/payments/daraja.py         # STK Push (initiate), stk_query (confirm), configured()
@@ -384,6 +385,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
 - Sign-in invitations: `/messages/invite` — `messages.message_type='invite'`; signed up = `persons.pin_hash` set. Sending (including a forged POST) is blocked unless `TENANT_OUTREACH_ENABLED=true`; the preview stays visible.
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
+- **Reactive, not proactive (2026-10-27):** the system sends nothing on its own except payment confirmations. The Monday owner digest SMS, stale-claim texts and verify-time "not found"/mismatch texts are held unless `AUTOMATIC_ALERTS_ENABLED=true`; flags and dashboard lists still update so a person follows up.
 - Due-date reminders and monthly tenant check-ins are also gated by `TENANT_OUTREACH_ENABLED`. Keep it false until the current roll, opening balances, due dates, and payment instructions are approved. Direct one-phone SMS testing uses `send_sms()` and does not require enabling bulk outreach.
 - `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications
 - Payment SMS wording: "payment confirmed" — never mention bank statements

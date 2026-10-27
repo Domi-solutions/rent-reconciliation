@@ -34,6 +34,7 @@ from src.utils.metrics import get_property_occupancy, get_expected_monthly_incom
 from src.utils import staff
 from src.messaging import delivery as sms_delivery
 from src.messaging.tenant_payment import payment_confirmation_body
+from src.messaging.outreach import automatic_alerts_enabled
 from src.payments import daraja
 from src.parsers.excel_parser import parse_tenant_excel
 from src.parsers.water_parser import parse_water_excel
@@ -198,7 +199,8 @@ from src.routes.team_routes import team_bp
 from src.routes.mpesa_admin_routes import mpesa_admin_bp, unmatched_count as mpesa_unmatched_count
 from src.messaging.reminders import generate_due_reminders
 
-if os.environ.get('ENVIRONMENT') != 'production':
+from src.utils.runtime import is_production
+if not is_production():
     app.register_blueprint(test_bp)
 app.register_blueprint(viewer_bp)
 app.register_blueprint(report_bp)
@@ -3116,7 +3118,7 @@ def verify_payments(statement_id):
                     pass
                 # SMS caretaker so they can follow up with the tenant
                 from src.messaging.delivery import send_sms_async as _sms_async
-                for _ct in _caretakers_for_alert:
+                for _ct in (_caretakers_for_alert if automatic_alerts_enabled() else []):
                     _sms_async([{'phone': _ct['phone']}],
                         f"Domi: Payment ref {ref} (Unit {unit_number}) was logged as {claimed_fmt} "
                         f"but the bank record shows {bank_fmt}. "
@@ -3260,7 +3262,7 @@ def verify_payments(statement_id):
                 (pay_property_id,)
             ).fetchall()
             from src.messaging.delivery import send_sms_async as _sms_res
-            for _ct in _res_ct_phones:
+            for _ct in (_res_ct_phones if automatic_alerts_enabled() else []):
                 try:
                     _sms_res([{'phone': _ct['phone']}],
                         f"Domi: Payment ref {ref} (Unit {_res_unit}, {_res_amt}) "
@@ -3373,10 +3375,12 @@ def verify_payments(statement_id):
                  'system')
             )
 
-            # SMS caretaker + tenant (async — DB work already committed at this point)
+            # SMS caretaker + tenant (async — DB work already committed at this point).
+            # Off by default: the flagged claim shows on the dashboard for a person to follow up.
             from src.messaging.delivery import send_sms_async
             _amt_str = f"KES {float(claim['claimed_amount'] or 0):,.0f}"
-            for _ct in _caretakers_for_alert:
+            _send_alerts = automatic_alerts_enabled()
+            for _ct in (_caretakers_for_alert if _send_alerts else []):
                 try:
                     send_sms_async([{'phone': _ct['phone']}],
                         f"ALERT: Payment claim {claim['mpesa_ref']} ({_amt_str}, Unit {_unit_number}) "
@@ -3385,7 +3389,7 @@ def verify_payments(statement_id):
                 except Exception:
                     pass
 
-            if _info and _info['phone']:
+            if _send_alerts and _info and _info['phone']:
                 try:
                     send_sms_async([{'phone': _info['phone']}],
                         f"Hi {_info['name'] or 'Tenant'}, your payment reference "
@@ -3928,7 +3932,7 @@ def unignore_transaction(txn_id):
 @app.route('/payments/auto-assign/<txn_id>', methods=['POST'])
 def auto_assign_payment(txn_id):
     """One-click auto-assign using unit_hint extracted from narration. Logs full suggestion trail."""
-    from markupsafe import Markup
+    from markupsafe import Markup, escape
     with get_connection() as conn:
         property_row = get_current_property(conn)
         if not property_row:
@@ -3999,15 +4003,17 @@ def auto_assign_payment(txn_id):
         except Exception:
             pass
 
+    # A form, not a link: a GET that deletes can be fired by a refresh or link prefetch.
     undo_url = url_for('delete_payment', payment_id=payment_id)
     flash(Markup(
-        f'KES {amount:,.0f} assigned to Unit {unit_number} via narration hint. '
-        f'<a href="{undo_url}" class="alert-link fw-semibold">Undo</a>'
+        f'KES {amount:,.0f} assigned to Unit {escape(str(unit_number))} via narration hint. '
+        f'<form method="post" action="{undo_url}" class="d-inline">'
+        f'<button type="submit" class="btn btn-link alert-link fw-semibold p-0 align-baseline">Undo</button></form>'
     ), 'success')
     return redirect(url_for('review', tab='unreported'))
 
 
-@app.route('/payments/<payment_id>/delete', methods=['GET', 'POST'])
+@app.route('/payments/<payment_id>/delete', methods=['POST'])
 def delete_payment(payment_id):
     """Delete a payment and cascade its allocations. Resets linked claim to pending. Audits the deletion."""
     with get_connection() as conn:

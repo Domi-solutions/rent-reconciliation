@@ -26,64 +26,56 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex (credential-free go-live preflight and payment hardening)
-**Date:** 2026-10-20
+**Who:** Claude (Codex/ChatGPT no longer in use — Claude now builds and reviews)
+**Date:** 2026-10-27
 
-### What changed
+### Product direction agreed with stakeholders (see ROADMAP / memory)
 
-- Audited the 2026-10-20 backup read-only, then ran migration and ledger repair on
-  a disposable copy only. Its 42 active tenants all had distinct, normalizable
-  phones and short codes; 34 had portal tokens, 8 did not. No active unit had
-  two active tenants. The backup is not a substitute for a current roll call.
-- Ledger dry run found no active balance changes or cross-tenant allocations,
-  but one unattributed 6C water charge (KES 1,200, 2026-04) and one unattributed
-  6A payment (KES 3,600, 2026-02-27). These were not reassigned.
-- On the copy, 11 tenants had both unapplied credit and unpaid charges. Running
-  `scripts/tenant_ledger_report.py --execute` on that copy applied KES 121,600
-  from 15 payments; no overlap remained. Total tenant balance was unchanged
-  (KES 1,259,900). Allocation-over-payment, allocation-over-charge, and
-  cross-tenant checks returned zero; SQLite integrity check passed. Nothing
-  equivalent was run on production.
-- The copied ledger built 42 statements, 126 invoices, and 102 receipts without
-  error; invoice arithmetic held. Existing due dates reflect the old policy and
-  remain subject to the owners' decision.
-- Hardened M-Pesa handling in `src/payments/mpesa.py`: production callbacks need
-  a token even if `DARAJA_ENV` is still sandbox; production STK bookings need
-  query credentials; STK callback amount must match exactly and include a receipt;
-  zero/invalid amounts cannot book; claims resolve only for the paying tenant;
-  receipt links are omitted when portal access is disabled.
-- Added offline TextSMS and payment regression tests; no provider network calls
-  were made. All 9 parser regressions passed.
-- Moved admin dashboard follow-up ahead of monthly bank upload: unanswered
-  tenant conversations (with the oldest three linked), flagged/pending claims,
-  unmatched payments, then recorded balances. Tested a synthetic waiting
-  conversation on a copied database and added two template regressions. The
-  due-date-specific "late" status was not added.
-- Added default-off `TENANT_OUTREACH_ENABLED` to prevent invitations, automatic
-  due-date reminders, and scheduled monthly check-ins until onboarding is
-  approved. The invitation preview remains visible but sending is disabled
-  both in the UI and on POST. Direct provider testing remains separate. All
-  26 unittest cases now pass.
+- **Reactive, not proactive:** nothing is texted automatically except payment
+  receipts; admin and caretaker act on lists (e.g. tenants >1 month behind).
+- **Paybill:** the law firm (drew the lease) is applying for its **own M-Pesa
+  Paybill**; account number = house number. Portal STK waits for it.
+- **Lease (Mowin):** rent due on/before the **5th, in advance**; water with the
+  rent; one-month deposit. This settles the due-date go-live blocker.
+- **Onboarding must be repeatable:** new lease = clean start; old debt only as
+  an evidenced "brought forward" line; profiles can be "lease pending".
+- **Owners see all tenant↔management conversations** (no notice to tenants).
+- **Move-out:** one month's notice expected; also handle walk-outs.
 
-### Release status and next steps
+### What changed (local, on `main`, not deployed)
 
-1. Obtain the current Mowin roll; review the eight blocked portal accounts and
-   the two unattributed ledger rows against source evidence. Do not bulk-enable
-   access or reassign money by inference.
-2. Owners must approve rent/water due dates, opening balances, and payment
-   instructions before any invitation. Historical invoice due dates may change.
-   Keep `TENANT_OUTREACH_ENABLED` unset/false until this approval and a current
-   tenant roll are complete; changing SMS provider alone must not enable outreach.
-3. Before release, review the payment changes and run a fresh backup-first ledger
-   preflight. The copied `--execute` result shows a potential repair, not approval
-   to perform it on the live database.
-4. Finish TextSMS signup and a one-phone real delivery test. The local mock test
-   proves request construction and disabled-mode behavior, not provider delivery.
-5. Keep Daraja live money disabled until the law-firm paybill arrangement,
-   credentials, callbacks, and real-money reconciliation are approved.
-6. Work is local only, on `main` (still unpushed and undeployed). No production
-   DB write, live token generation, real SMS, or M-Pesa transaction occurred.
-   The pre-existing untracked `.agents/` directory was left untouched.
+- Reviewed Codex's 2026-10-20 commits — sound, except: production detection.
+  `ENVIRONMENT` is never set on Fly (fly.toml sets `FLASK_ENV`), so the M-Pesa
+  "no token → refuse callbacks in production" guard and the dev-only `/test`
+  blueprint treated production as dev. New `src/utils/runtime.is_production()`
+  used everywhere. Test added.
+- New default-off `AUTOMATIC_ALERTS_ENABLED`: holds the Monday owner digest SMS,
+  stale-claim SMS, and verify-time not-found / mismatch / flag-cleared SMS.
+  Flags, alerts and audit rows still written. Receipts unaffected. 4 tests.
+- `delete_payment` is POST-only; the "Undo" flash is a one-button form.
+- 31/31 tests pass.
+
+### Build order (agreed)
+
+0. **Make SMS safe and deploy** — code done; deploy + TextSMS switch-over per
+   RUNBOOK "Switching production SMS to TextSMS". Awaiting user's TextSMS keys
+   and go-ahead. Nov 1 monthly check-in is gated on current main, not on v91.
+1. Lease intake + repeatable onboarding (lease-pending profiles, ID no., lease
+   start, deposit, evidenced brought-forward balance), then all 44 units.
+2. Receipt SMS includes remaining balance; broadcast to portal **and** SMS.
+3. ">1 month behind" lists for admin and caretaker.
+4. Admin ↔ caretaker chat (caretaker reports).
+5. Tenant move-out notice + admin "left without notice".
+6. Owner view of conversations + per-unit performance.
+7. Portal payments once the law firm's Paybill exists. Note: `resolve_account`
+   matches the house number org-wide — two properties with a "6A" under one
+   Paybill would be ambiguous; needs a per-property prefix before property #2.
+
+### Still open from Codex's list
+
+Eight tenants without portal access and two unattributed ledger rows (6C water
+KES 1,200 2026-04; 6A payment KES 3,600 2026-02-27) — resolve during onboarding,
+not by inference. No CSRF protection anywhere (forms are session-cookie only).
 
 ---
 

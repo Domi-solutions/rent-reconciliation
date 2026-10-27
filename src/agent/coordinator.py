@@ -84,7 +84,8 @@ def weekly_digest_job():
                 """,
                 (property_id,),
             ).fetchall()
-            for owner in owners:
+            from src.messaging.outreach import automatic_alerts_enabled
+            for owner in (owners if automatic_alerts_enabled() else []):
                 route_message({
                     "recipient_phone": owner["phone"],
                     "recipient_role": "owner",

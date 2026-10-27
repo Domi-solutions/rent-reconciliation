@@ -81,6 +81,28 @@ as part of a provider-only test.
 
 ---
 
+## Switching production SMS to TextSMS
+
+Production (release v91, 2026-10-19) predates the TextSMS code, the outreach
+hold and the automatic-alerts hold, and its Africa's Talking account is
+sandbox — so today no SMS reaches a real phone. The first deploy of current
+`main` together with TextSMS keys is the first time real texts can go out.
+Order:
+
+1. Local one-phone test first (the user's own phone), keys in the user's shell only.
+2. Back up production (`./scripts/download_prod_db.sh`), then
+   `fly secrets set AT_SMS_ENABLED=false` (stages; no restart needed with `--stage`).
+3. Deploy `main`. Confirm `TENANT_OUTREACH_ENABLED` and `AUTOMATIC_ALERTS_ENABLED`
+   are unset (`fly secrets list`).
+4. `fly secrets set SMS_PROVIDER=textsms TEXTSMS_API_KEY=... TEXTSMS_PARTNER_ID=... SMS_SENDER_ID=...`
+   (the user runs this; keys never go in chat or the repo).
+5. One-phone test from production with `AT_SMS_ENABLED` still false is impossible
+   (it blocks all sends), so flip `AT_SMS_ENABLED=true` and immediately send one
+   direct message to the user's own test tenant/phone. While both holds are off,
+   only human-triggered messages and payment receipts can go out.
+
+---
+
 ## Safe hotfix deploy procedure
 
 **Always back up before deploying.** The app runs on a single Fly machine with no redundancy

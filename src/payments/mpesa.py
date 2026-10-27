@@ -30,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 from src.database.db import allocate_payment, generate_id, get_connection
+from src.utils.runtime import is_production
 from src.payments import daraja
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,7 @@ def callback_allowed(request):
     setting refuses everything rather than accepting anything."""
     expected = os.environ.get('MPESA_CALLBACK_TOKEN', '')
     if not expected:
-        return (os.environ.get('ENVIRONMENT') != 'production'
-                and os.environ.get('DARAJA_ENV') != 'production')
+        return not is_production() and os.environ.get('DARAJA_ENV') != 'production'
     given = request.args.get('t', '')
     if not hmac.compare_digest(given, expected):
         return False
@@ -240,7 +240,7 @@ def _confirm_with_safaricom(conn, txn):
         _fail(conn, txn['id'], 'STK callback has no M-Pesa receipt number')
         return 'stop'
     if not daraja.configured():
-        if os.environ.get('ENVIRONMENT') == 'production' or os.environ.get('DARAJA_ENV') == 'production':
+        if is_production() or os.environ.get('DARAJA_ENV') == 'production':
             _fail(conn, txn['id'], 'Daraja not configured — cannot confirm with Safaricom')
             return 'stop'
         conn.execute("UPDATE payment_transactions SET verified_via = 'callback only (sandbox)' WHERE id = ?", (txn['id'],))

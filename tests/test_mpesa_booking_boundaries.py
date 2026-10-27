@@ -208,6 +208,14 @@ class MpesaBookingBoundaries(unittest.TestCase):
             with app.test_request_context('/inbound/payment/mpesa?t=test-token'):
                 self.assertTrue(mpesa.callback_allowed(request))
 
+    def test_fly_production_flag_alone_refuses_untokened_callbacks(self):
+        # fly.toml sets FLASK_ENV=production and never ENVIRONMENT; that must be enough.
+        app = Flask(__name__)
+        with patch.dict(os.environ, {'FLASK_ENV': 'production', 'ENVIRONMENT': '', 'DARAJA_ENV': 'sandbox',
+                                     'MPESA_CALLBACK_TOKEN': ''}):
+            with app.test_request_context('/inbound/payment/mpesa'):
+                self.assertFalse(mpesa.callback_allowed(request))
+
     def test_production_never_books_stk_callback_without_query_credentials(self):
         with get_connection() as conn:
             conn.execute("""INSERT INTO payment_transactions
