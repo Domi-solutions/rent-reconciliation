@@ -25,6 +25,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Units screen design trial (2026-10-27)
+
+`templates/units.html` loads `static/units.css` and sets the `body_class` block in `base.html` to `units-preview`. This scopes typography, shell styling and component treatment to the units screen; `theme.css` remains unchanged. The same editable row markup becomes a stacked register at widths ≤1050px. Search and status filters run locally on the authorised rows; the existing `?q=` unit deep-link remains supported. Pencil icons and dotted underlines mark editable values; inline persistence uses the existing endpoints. This is a local trial pending user feedback, not a site-wide design decision.
+
 ## Development Commands
 
 ```bash

@@ -26,16 +26,18 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — UI design review; prior implementation handoff retained below.
-**Date:** 2026-10-27 · **Deployment:** no deployment or product changes in this review. Prior deployment notes follow below.
+**Who:** Codex — Units & Tenants design trial; previous operational handoff retained below.
+**Date:** 2026-10-27 · **Deployment:** local preview only; no deployment.
 
-### UI review this session
+### UI trial this session
 
-- User likes the existing colours and asked for an opinion on the font, icons and buttons feeling AI-generated.
-- Inspected the rendered demo start page, management overview, units table and mobile sidebar at domi-demo.fly.dev, plus the shared theme and templates.
-- Assessment: keep forest green / sage / warm paper. Figtree with frequent heavy weights, pill buttons, 22px card corners, shadows and small uppercase labels collectively feel generic. Sidebar icons also have weak associations (dollar sign for expenses, upload arrow for water charges).
-- Suggested direction for discussion: calmer typography, less rounding and shadow, consistent purposeful icons, clearer action hierarchy, stronger secondary-text legibility. Units table also crowds and clips at the inspected narrow viewport.
-- No redesign implemented. Next UI step depends on the user's response to this critique; operational priorities and reconciliation blockers below remain outstanding.
+- User requested a single busy screen to judge a design direction, preserving the colours. Implemented the admin Units & Tenants screen (`templates/units.html`, new `static/units.css`).
+- System sans typography, smaller corners, restrained button hierarchy, tenant + phone grouped together, explicit owed/credit/settled balances, local search/status filtering, and secondary row actions in a native details menu. At narrow widths the same rows become a stacked register; inline edits and existing action endpoints remain available.
+- User feedback during preview: type was too thin and click targets unclear. Increased weights; editable fields now have persistent pencil icons and dotted underlines; Statement and More actions have visible borders. Awaiting feedback on this revision.
+- `base.html` adds an empty-by-default body_class block. Only units.html opts in, so the shell styling changes apply only to this screen. Shared theme colours unchanged.
+- Verified local demo at 1280px and 390px (no page overflow), browser search/status/no-results, inline-edit cancellation, row menu, no console errors; Flask render smoke checks for units, occupied view, empty state and unchanged dashboard all pass.
+- Local preview: http://127.0.0.1:5051/units (disposable `/tmp/domi-ui-review.db`, demo@demo / demo). SMS and outreach disabled; Flask CLI without reloader keeps scheduler off. Server left running for review.
+- Next: get user's reaction before extending the design to other screens. Operational priorities and reconciliation blockers below remain outstanding.
 
 ### Previous implementation handoff
 

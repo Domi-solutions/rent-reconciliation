@@ -1,168 +1,101 @@
 {% extends "base.html" %}
 {% block title %}Units — {{ property.name }}{% endblock %}
 
+{% block body_class %}units-preview{% endblock %}
 {% block extra_css %}
-<style>
-  .editable {
-    cursor: text;
-    border-radius: 4px;
-    padding: 2px 4px;
-    transition: background 0.15s;
-  }
-  .editable:hover { background: rgba(0,0,0,0.05); }
-  .inline-input {
-    border: 1px solid var(--bs-primary);
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: inherit;
-    font-family: inherit;
-    width: 100%;
-    min-width: 80px;
-    outline: none;
-    background: white;
-  }
-  .edit-saving { opacity: 0.5; }
-  .edit-error { color: var(--red); font-size: 11px; display: block; margin-top: 2px; }
-  td.status-cell select { font-size: 12px; padding: 2px 2rem 2px 6px; width: auto; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='units.css') }}">
 {% endblock %}
 
+{% macro icon(name) -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'plus' %}<path d="M12 5v14M5 12h14"/>
+{% elif name == 'search' %}<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>
+{% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+{% elif name == 'person' %}<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M19 7v6M16 10h6"/>
+{% endif %}</svg>
+{%- endmacro %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <div>
-    <div class="page-title">Units &amp; Tenants</div>
-    <div class="page-meta">Click any cell to edit. Changes are logged to activity.</div>
+<section class="units-page" aria-labelledby="units-heading">
+  <header class="units-heading">
+    <div>
+      <p class="units-property">{{ property.name }}</p>
+      <h1 id="units-heading">Units &amp; tenants</h1>
+      <p class="units-description">The people, charges and balances behind each door.</p>
+    </div>
+    <div class="units-heading-actions">
+      <a href="{{ url_for('add_unit') }}" class="unit-button unit-button-secondary">{{ icon('plus') }}Add unit</a>
+      <a href="{{ url_for('add_tenant') }}" class="unit-button unit-button-primary">{{ icon('person') }}Add tenant</a>
+    </div>
+  </header>
+
+  {% set occupied = units|selectattr('status', 'equalto', 'occupied')|list|length %}
+  {% set vacant = units|selectattr('status', 'equalto', 'vacant')|list|length %}
+  <div class="units-overview" aria-label="Summary of listed units">
+    <div><strong>{{ units|length }}</strong><span>Units{% if filter_status or filter_pending_claims %} in this view{% endif %}</span></div>
+    <div><strong>{{ occupied }}</strong><span><i class="status-dot occupied-dot"></i>Occupied</span></div>
+    <div><strong>{{ vacant }}</strong><span><i class="status-dot vacant-dot"></i>Vacant</span></div>
+    <p>Rent &amp; service are monthly.<br>All amounts in KES.</p>
   </div>
-  <div class="d-flex gap-2">
-    <a href="{{ url_for('add_tenant') }}" class="btn btn-outline-secondary">Add Tenant</a>
-    <a href="{{ url_for('add_unit') }}" class="btn btn-primary">Add Unit</a>
-  </div>
-</div>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for cat, msg in messages %}
-  <div class="alert alert-{{ 'danger' if cat == 'error' else 'success' }} alert-dismissible" role="alert">
-    {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-  </div>
-  {% endfor %}
-{% endwith %}
+  {% if filter_status or filter_pending_claims %}
+  <p class="units-scope">Showing {% if filter_status %}occupied units{% else %}units{% endif %}{% if filter_pending_claims %} with pending payment claims{% endif %}. <a href="{{ url_for('manage_units') }}">View all units</a></p>
+  {% endif %}
 
-<div class="surface-card" style="overflow-x:auto;">
-  <table class="table table-hover mb-0" id="units-table">
-    <thead>
-      <tr>
-        <th>Unit</th>
-        <th>Status</th>
-        <th>Rent (KES)</th>
-        <th>Service (KES)</th>
-        <th>Tenant Name</th>
-        <th>Phone</th>
-        <th class="text-end">Balance</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in units %}
-      <tr data-unit-id="{{ u.id }}" data-tenant-id="{{ u.tenant_id or '' }}">
-
-        {# Unit number #}
-        <td>
-          <span class="editable"
-                data-entity="unit" data-id="{{ u.id }}" data-field="unit_number"
-                data-value="{{ u.unit_number }}">{{ u.unit_number }}</span>
-        </td>
-
-        {# Status dropdown — occupied units must use the move-out flow #}
-        <td class="status-cell">
-          {% if u.status == 'occupied' %}
-          <span style="font-size: 12px; color: #16a34a; font-weight: 600;">Occupied</span>
-          {% else %}
-          <select class="form-select form-select-sm status-select"
-                  data-unit-id="{{ u.id }}" data-current="{{ u.status }}">
-            <option value="vacant"     {% if u.status == 'vacant'     %}selected{% endif %}>Vacant</option>
-            <option value="owner_use"  {% if u.status in ('owner_use', 'office') %}selected{% endif %}>Owner Use</option>
-            <option value="short_term" {% if u.status == 'short_term' %}selected{% endif %}>Short-term</option>
-          </select>
-          {% endif %}
-        </td>
-
-        {# Monthly rent #}
-        <td>
-          <span class="editable"
-                data-entity="unit" data-id="{{ u.id }}" data-field="monthly_rent"
-                data-value="{{ u.monthly_rent }}">{{ "{:,.0f}".format(u.monthly_rent or 0) }}</span>
-        </td>
-
-        {# Service charge #}
-        <td>
-          <span class="editable"
-                data-entity="unit" data-id="{{ u.id }}" data-field="service_charge"
-                data-value="{{ u.service_charge or 0 }}">{{ "{:,.0f}".format(u.service_charge or 0) }}</span>
-        </td>
-
-        {# Tenant name #}
-        <td>
-          {% if u.tenant_id %}
-          <span class="editable"
-                data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="name"
-                data-value="{{ u.tenant_name }}">{{ u.tenant_name }}</span>
-          {% elif u.status == 'vacant' %}
-          <a href="{{ url_for('add_tenant') }}" class="data-row-meta" style="font-style:italic;">Move in tenant</a>
-          {% elif u.status == 'short_term' %}
-          <span class="data-row-meta" style="font-style:italic; color: var(--ink-3);">Short-term</span>
-          {% elif u.status in ('owner_use', 'office') %}
-          <span class="data-row-meta" style="font-style:italic; color: var(--ink-3);">Owner use</span>
-          {% endif %}
-        </td>
-
-        {# Phone #}
-        <td>
-          {% if u.tenant_id %}
-          <span class="editable"
-                data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="phone"
-                data-value="{{ u.tenant_phone or '' }}">{{ u.tenant_phone or '—' }}</span>
-          {% else %}
-          <span class="data-row-meta">—</span>
-          {% endif %}
-        </td>
-
-        {# Balance #}
-        <td class="text-end">
+  <div class="units-register">
+    <div class="units-toolbar">
+      <label class="units-search">{{ icon('search') }}<input id="unit-search" type="search" placeholder="Find a unit, tenant or phone…" aria-label="Find a unit, tenant or phone"></label>
+      <label class="units-filter"><span>Status</span><select id="unit-status-filter"><option value="">All statuses</option><option value="occupied">Occupied</option><option value="vacant">Vacant</option><option value="owner_use">Owner use</option><option value="short_term">Short-term</option></select></label>
+    </div>
+    <div class="units-table-wrap">
+      <table class="table mb-0" id="units-table">
+        <caption class="visually-hidden">Units, active tenants, monthly charges and account balances. Unit, rent, service, tenant name and phone values can be edited.</caption>
+        <thead><tr><th scope="col">Unit</th><th scope="col">Tenant</th><th scope="col">Status</th><th scope="col" class="unit-number">Rent</th><th scope="col" class="unit-number">Service</th><th scope="col" class="unit-number">Balance</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+        {% for u in units %}
           {% set bal = u.balance if u.balance is not none else 0 %}
-          {% if bal > 0 %}
-          <span class="amount-danger">{{ "{:,.0f}".format(bal) }}</span>
-          {% else %}
-          <span class="text-muted">{{ "{:,.0f}".format(bal) }}</span>
-          {% endif %}
-        </td>
-
-        {# Actions #}
-        <td style="white-space:nowrap;">
-          {% if u.tenant_id %}
-            {% if u.access_token %}
-            <button class="btn btn-sm btn-outline-secondary copy-portal-link"
-                    data-url="{{ host_url }}/tenant/{{ u.access_token }}">Portal</button>
-            {% else %}
-            <form method="post" action="{{ url_for('generate_tenant_token', tenant_id=u.tenant_id) }}" class="d-inline">
-              <button type="submit" class="btn btn-sm btn-outline-secondary">Gen link</button>
-            </form>
-            {% endif %}
-            <a href="{{ url_for('tenant_statement', tenant_id=u.tenant_id) }}"
-               class="btn btn-sm btn-outline-secondary">Statement</a>
-            <a href="{{ url_for('messaging.thread', tenant_id=u.tenant_id) }}"
-               class="btn btn-sm btn-outline-secondary">Message</a>
-            <a href="{{ url_for('move_out_tenant', unit_id=u.id) }}"
-               class="btn btn-sm btn-outline-secondary"
-               style="color:var(--red);border-color:rgba(255,59,48,0.3);">Move out</a>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="8" class="text-muted" style="padding:32px 16px;text-align:center;">No units yet. Add one above.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+          <tr data-unit-id="{{ u.id }}" data-tenant-id="{{ u.tenant_id or '' }}" data-status="{{ 'owner_use' if u.status == 'office' else u.status }}">
+            <td class="unit-identity"><span class="editable unit-name" tabindex="0" role="button" aria-label="Edit unit {{ u.unit_number }}" data-entity="unit" data-id="{{ u.id }}" data-field="unit_number" data-value="{{ u.unit_number }}">{{ u.unit_number }}</span></td>
+            <td class="unit-tenant">
+              {% if u.tenant_id %}
+              <span class="editable tenant-name" tabindex="0" role="button" aria-label="Edit tenant name for unit {{ u.unit_number }}" data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="name" data-value="{{ u.tenant_name }}">{{ u.tenant_name }}</span>
+              <span class="editable tenant-phone" tabindex="0" role="button" aria-label="Edit phone for unit {{ u.unit_number }}" data-entity="tenant" data-id="{{ u.tenant_id }}" data-field="phone" data-value="{{ u.tenant_phone or '' }}">{{ u.tenant_phone or 'Add phone' }}</span>
+              {% elif u.status == 'vacant' %}<a class="move-in-link" href="{{ url_for('add_tenant') }}">Move in a tenant <span aria-hidden="true">↗</span></a><span class="tenant-phone">No active tenancy</span>
+              {% else %}<span class="tenant-phone">No active tenancy</span>{% endif %}
+            </td>
+            <td class="status-cell">
+              {% if u.status == 'occupied' %}<span class="unit-status"><i class="status-dot occupied-dot"></i>Occupied</span>
+              {% else %}<select class="form-select form-select-sm status-select" aria-label="Status for unit {{ u.unit_number }}" data-unit-id="{{ u.id }}" data-current="{{ u.status }}">
+                <option value="vacant" {% if u.status == 'vacant' %}selected{% endif %}>Vacant</option>
+                <option value="owner_use" {% if u.status in ('owner_use', 'office') %}selected{% endif %}>Owner use</option>
+                <option value="short_term" {% if u.status == 'short_term' %}selected{% endif %}>Short-term</option>
+              </select>{% endif %}
+            </td>
+            <td class="unit-rent unit-number" data-label="Rent"><span class="editable" tabindex="0" role="button" aria-label="Edit rent for unit {{ u.unit_number }}" data-entity="unit" data-id="{{ u.id }}" data-field="monthly_rent" data-value="{{ u.monthly_rent }}">{{ '{:,.0f}'.format(u.monthly_rent or 0) }}</span></td>
+            <td class="unit-service unit-number" data-label="Service"><span class="editable" tabindex="0" role="button" aria-label="Edit service charge for unit {{ u.unit_number }}" data-entity="unit" data-id="{{ u.id }}" data-field="service_charge" data-value="{{ u.service_charge or 0 }}">{{ '{:,.0f}'.format(u.service_charge or 0) }}</span></td>
+            <td class="unit-balance unit-number"><span class="balance-label">{% if bal > 0 %}Owed{% elif bal < 0 %}Credit{% else %}Settled{% endif %}</span><span class="balance-value {% if bal > 0 %}balance-owed{% elif bal < 0 %}balance-credit{% endif %}">{{ '{:,.0f}'.format(bal|abs) }}</span></td>
+            <td class="unit-row-actions">
+              {% if u.tenant_id %}
+              <div class="unit-actions-wrap"><a class="unit-statement" href="{{ url_for('tenant_statement', tenant_id=u.tenant_id) }}">Statement <span aria-hidden="true">↗</span></a>
+              <details class="unit-more"><summary aria-label="More actions for unit {{ u.unit_number }}">{{ icon('more') }}</summary>
+                <div class="unit-more-links">
+                {% if u.access_token %}<button type="button" class="copy-portal-link" data-url="{{ host_url }}/tenant/{{ u.access_token }}">Copy portal link</button>
+                {% else %}<form method="post" action="{{ url_for('generate_tenant_token', tenant_id=u.tenant_id) }}"><button type="submit">Generate portal link</button></form>{% endif %}
+                <a href="{{ url_for('messaging.thread', tenant_id=u.tenant_id) }}">Message tenant</a>
+                <a class="unit-move-out" href="{{ url_for('move_out_tenant', unit_id=u.id) }}">Move out</a>
+                </div>
+              </details></div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="units-empty" id="units-empty" {% if units %}hidden{% endif %}>No units{% if units %} match this search{% else %} recorded yet. Add a unit to get started{% endif %}.</p>
+    <footer class="units-footer"><span id="units-result-count" role="status">{{ units|length }} units</span><span>Fields with a pencil can be edited. Changes appear in Activity.</span></footer>
+  </div>
+</section>
 {% endblock %}
 
 {% block extra_js %}
@@ -170,6 +103,11 @@
 // ── Inline editing ──────────────────────────────────────────
 document.querySelectorAll('.editable').forEach(function(cell) {
   cell.addEventListener('click', function() { startEdit(this); });
+  cell.addEventListener('keydown', function(e) {
+    if (e.target === cell && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); startEdit(cell);
+    }
+  });
 });
 
 function startEdit(cell) {
@@ -269,6 +207,9 @@ document.querySelectorAll('.status-select').forEach(function(sel) {
     .then(function(data) {
       if (data.ok) {
         selEl.dataset.current = newVal;
+        selEl.closest('tr').dataset.status = newVal;
+        filterUnits();
+        window.location.reload();
       } else {
         alert(data.error);
         selEl.value = current;
@@ -277,25 +218,37 @@ document.querySelectorAll('.status-select').forEach(function(sel) {
   });
 });
 
-// ── URL filter (?q=unit_number) — from search results deep-link ─
-(function() {
-  const params = new URLSearchParams(window.location.search);
-  const q = (params.get('q') || '').trim().toLowerCase();
-  if (!q) return;
-  document.querySelectorAll('#units-table tbody tr').forEach(function(row) {
-    const unitCell = row.querySelector('td:first-child');
-    if (!unitCell) return;
-    const unitNum = unitCell.textContent.trim().toLowerCase();
-    if (!unitNum.includes(q)) row.style.display = 'none';
+// Search and status filters stay local to the already authorised property rows.
+const unitSearch = document.getElementById('unit-search');
+const unitStatusFilter = document.getElementById('unit-status-filter');
+const unitRows = Array.from(document.querySelectorAll('#units-table tbody tr'));
+const initialUnitQuery = (new URLSearchParams(window.location.search).get('q') || '').trim().toLowerCase();
+unitSearch.value = initialUnitQuery;
+let preserveUnitDeepLink = Boolean(initialUnitQuery);
+function filterUnits() {
+  const q = unitSearch.value.trim().toLowerCase();
+  let visible = 0;
+  unitRows.forEach(function(row) {
+    const searchText = preserveUnitDeepLink
+      ? row.querySelector('.unit-identity').textContent.toLowerCase()
+      : [row.querySelector('.unit-identity').textContent, row.querySelector('.unit-tenant').textContent].join(' ').toLowerCase();
+    row.hidden = !(searchText.includes(q) && (!unitStatusFilter.value || row.dataset.status === unitStatusFilter.value));
+    if (!row.hidden) visible++;
   });
-})();
+  document.getElementById('units-result-count').textContent = visible + ' of ' + unitRows.length + ' units';
+  document.getElementById('units-empty').hidden = visible > 0;
+}
+unitSearch.addEventListener('input', function() { preserveUnitDeepLink = false; filterUnits(); });
+unitStatusFilter.addEventListener('change', filterUnits);
+filterUnits();
 
 // ── Portal link copy ─────────────────────────────────────────
 document.querySelectorAll('.copy-portal-link').forEach(function(btn) {
   btn.addEventListener('click', function() {
+    const label = btn.textContent;
     navigator.clipboard.writeText(this.dataset.url).then(function() {
       btn.textContent = 'Copied';
-      setTimeout(function() { btn.textContent = 'Portal'; }, 1500);
+      setTimeout(function() { btn.textContent = label; }, 1500);
     });
   });
 });
