@@ -385,13 +385,14 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 
 - Scope: current property only
 - Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed "Management" to the tenant (the replying person is stored in `conversation_messages.sender_account_id` and shown to admins only), logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
-- Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template
+- Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template. Recipients = active tenants only. Channel `both` (form value; legacy `sms`) = portal + full text by SMS, prefixed with the property name; `portal` = portal only (+ "new message" SMS with link only once outreach is approved). `{portal_link}` substitutes to empty until then. "Copy for WhatsApp" copies subject + body minus sentences with personal variables, for the tenants' WhatsApp group (outside Domi).
+- Move-in welcome SMS (`add_tenant`) is a sign-in invitation: held until `TENANT_OUTREACH_ENABLED`. Lease intake sends none.
 - Sign-in invitations: `/messages/invite` — `messages.message_type='invite'`; signed up = `persons.pin_hash` set. Sending (including a forged POST) is blocked unless `TENANT_OUTREACH_ENABLED=true`; the preview stays visible.
 - Two coexisting reminder systems: `reminder_settings` (legacy hardcoded keys) + `reminder_schedules` (flexible per-property). Both idempotent per day. Due dates use `properties.rent_due_day` + `rent_charges.due_date`
 - **Reactive, not proactive (2026-10-27):** the system sends nothing on its own except payment confirmations. The Monday owner digest SMS, stale-claim texts and verify-time "not found"/mismatch texts are held unless `AUTOMATIC_ALERTS_ENABLED=true`; flags and dashboard lists still update so a person follows up.
 - Due-date reminders and monthly tenant check-ins are also gated by `TENANT_OUTREACH_ENABLED`. Keep it false until the current roll, opening balances, due dates, and payment instructions are approved. Direct one-phone SMS testing uses `send_sms()` and does not require enabling bulk outreach.
 - `notify_property_owners()` in `owner_notify.py` — stores in `owner_messages` + SMS to owners with phones. Uses `send_sms_async()` internally — never blocks the HTTP request. Called from broadcasts, reminders, payment verifications, report generation, caretaker claims, property deletion notifications
-- Payment SMS wording: "payment confirmed" — never mention bank statements
+- Payment SMS wording: "payment confirmed" — never mention bank statements. **One receipt for every path** (assign, auto-assign, group, verify, flag-cleared, tenant self-report, M-Pesa booking): `src/messaging/tenant_payment.receipt_sms(conn, payment_id, base_url)` → "<Property>: payment of KES X confirmed (ref, date). Applied: Oct rent …. Balance: KES Y owed." Never compose payment SMS inline. The portal link is added only when `TENANT_OUTREACH_ENABLED` (a receipt must not be a sign-in invite before approval); an STK payer's phone gets a receipt without being saved to the tenancy.
 
 ---
 
@@ -449,7 +450,7 @@ Production means `ENVIRONMENT=production` even if `DARAJA_ENV` is still `sandbox
 
 **Where tenants pay:** `properties.pay_paybill/pay_account/pay_account_name`, shown on the tenant Pay page as the only rent account. A change is a fraud vector (redirects every tenant's rent): shadow log + critical platform alert + owner SMS.
 
-**FIFO transparency (required):** Confirmation SMS + portal must show allocation detail. "KES 10,000 confirmed — applied: KES 5,000 to Oct service charge, KES 5,000 to Nov rent." Data in `payment_allocations`.
+**FIFO transparency (required):** Confirmation SMS + portal must show allocation detail and the balance — built by `receipt_sms()` from `payment_allocations` + `tenant_balances`.
 
 Tables: `payment_transactions` (raw callbacks; `external_reference` UNIQUE dedup; FK to `payments.id`), `disbursements` (pending → processing → completed/failed).
 

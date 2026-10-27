@@ -33,7 +33,7 @@ from src.utils.phone import normalize_to_e164 as _normalize_phone
 from src.utils.metrics import get_property_occupancy, get_expected_monthly_income, get_months_behind
 from src.utils import staff
 from src.messaging import delivery as sms_delivery
-from src.messaging.tenant_payment import payment_confirmation_body
+from src.messaging.tenant_payment import receipt_sms
 from src.messaging.outreach import automatic_alerts_enabled
 from src.payments import daraja
 from src.parsers.excel_parser import parse_tenant_excel
@@ -1557,12 +1557,14 @@ def add_tenant():
                  staff.actor()),
             )
 
-            # Welcome SMS if phone provided
-            portal_url = f"{request.host_url.rstrip('/')}/tenant/{access_token}"
-            if phone_norm:
+            # Welcome SMS — it is a sign-in invitation, so it waits for outreach approval like
+            # /messages/invite does. Short link, same as every other SMS.
+            from src.messaging.outreach import enabled as _outreach_enabled
+            _base = (os.environ.get('APP_BASE_URL') or request.host_url).rstrip('/')
+            if phone_norm and _outreach_enabled():
                 welcome_msg = (
-                    f"Welcome to {property_row['name']}! "
-                    f"Your rent portal (view balance, charges, payments): {portal_url}"
+                    f"Welcome to {property_row['name'].title()}! "
+                    f"See your balance, charges and receipts at {_base}/t/{short_code}"
                 )
                 try:
                     send_sms_async([phone_norm], welcome_msg)
@@ -1582,7 +1584,7 @@ def add_tenant():
 
             flash(
                 f'{name} moved in to Unit {unit_number}. '
-                f'Portal link generated{" and welcome SMS sent" if phone_norm else ""}.',
+                f'Portal link generated{" and welcome SMS sent" if phone_norm and _outreach_enabled() else ""}.',
                 'success'
             )
             return redirect(url_for('manage_units'))
@@ -3135,32 +3137,10 @@ def verify_payments(statement_id):
             verified_count += 1
 
             try:
-                _tenant = conn.execute(
-                    "SELECT name, phone, short_code FROM tenants WHERE unit_id = ? AND status = 'active'",
-                    (claim['unit_id'],),
-                ).fetchone()
-                if _tenant and _tenant['phone']:
-                    _base = os.environ.get('APP_BASE_URL', request.host_url).rstrip('/')
-                    _sc = _tenant['short_code']
-                    _link = f" View: {_base}/t/{_sc}" if _sc else ''
-                    # Build allocation summary
-                    _allocs = conn.execute("""
-                        SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
-                        FROM payment_allocations pa
-                        JOIN rent_charges rc ON pa.charge_id = rc.id
-                        WHERE pa.payment_id = ?
-                        ORDER BY rc.period, rc.charge_type
-                    """, (payment_id,)).fetchall()
-                    _alloc_lines = ', '.join(
-                        f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
-                        for a in _allocs
-                    ) if _allocs else f"KES {float(bank_txn['amount']):,.0f}"
-                    _sms = (
-                        f"Hi {_tenant['name']}, payment ref {ref} confirmed.\n"
-                        f"Applied: {_alloc_lines}.{_link}"
-                    )
+                _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                if _receipt:
                     from src.messaging.delivery import send_sms_async
-                    send_sms_async([{'phone': _tenant['phone']}], _sms)
+                    send_sms_async([{'phone': _receipt[0]}], _receipt[1])
             except Exception:
                 pass
 
@@ -3279,26 +3259,12 @@ def verify_payments(statement_id):
                 except Exception:
                     pass
 
-            if _res_info and _res_info['phone']:
+            if _res_info:
                 try:
-                    _base = os.environ.get('APP_BASE_URL', request.host_url).rstrip('/')
-                    _sc = _res_info['short_code']
-                    _link = f" View: {_base}/t/{_sc}" if _sc else ''
-                    _allocs_res = conn.execute("""
-                        SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
-                        FROM payment_allocations pa
-                        JOIN rent_charges rc ON pa.charge_id = rc.id
-                        WHERE pa.payment_id = ?
-                        ORDER BY rc.period, rc.charge_type
-                    """, (payment_id,)).fetchall()
-                    _alloc_lines_res = ', '.join(
-                        f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
-                        for a in _allocs_res
-                    ) if _allocs_res else f"KES {float(bank_txn['amount']):,.0f}"
-                    from src.messaging.delivery import send_sms_async
-                    send_sms_async([{'phone': _res_info['phone']}],
-                        f"Hi {_res_info['tenant_name'] or 'Tenant'}, payment ref {ref} confirmed.\n"
-                        f"Applied: {_alloc_lines_res}.{_link}")
+                    _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                    if _receipt:
+                        from src.messaging.delivery import send_sms_async
+                        send_sms_async([{'phone': _receipt[0]}], _receipt[1])
                 except Exception:
                     pass
 
@@ -3707,13 +3673,10 @@ def statement_auto_assign(statement_id, txn_id):
              staff.actor()),
         )
         try:
-            _tenant = conn.execute(
-                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
-                (unit['id'],)).fetchone()
-            if _tenant and _tenant['phone']:
-                _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
+            _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+            if _receipt:
                 from src.messaging.delivery import send_sms_async
-                send_sms_async([{'phone': _tenant['phone']}], _sms)
+                send_sms_async([{'phone': _receipt[0]}], _receipt[1])
         except Exception:
             pass
 
@@ -3773,13 +3736,10 @@ def statement_assign_payment(statement_id, txn_id):
              staff.actor()),
         )
         try:
-            _tenant = conn.execute(
-                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
-                (unit_id,)).fetchone()
-            if _tenant and _tenant['phone']:
-                _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
+            _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+            if _receipt:
                 from src.messaging.delivery import send_sms_async
-                send_sms_async([{'phone': _tenant['phone']}], _sms)
+                send_sms_async([{'phone': _receipt[0]}], _receipt[1])
         except Exception:
             pass
 
@@ -4000,14 +3960,10 @@ def auto_assign_payment(txn_id):
         )
 
         try:
-            _tenant = conn.execute(
-                "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
-                (unit_id,),
-            ).fetchone()
-            if _tenant and _tenant['phone']:
-                _sms = payment_confirmation_body(_tenant, amount, request.host_url)
+            _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+            if _receipt:
                 from src.messaging.delivery import send_sms_async
-                send_sms_async([{'phone': _tenant['phone']}], _sms)
+                send_sms_async([{'phone': _receipt[0]}], _receipt[1])
         except Exception:
             pass
 
@@ -4174,14 +4130,10 @@ def assign_payment(txn_id):
                 ('payment_manual_assigned', 'payment', payment_id, details, staff.actor()),
             )
             try:
-                _tenant = conn.execute(
-                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
-                    (unit_id,),
-                ).fetchone()
-                if _tenant and _tenant['phone']:
-                    _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
+                _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                if _receipt:
                     from src.messaging.delivery import send_sms_async
-                    send_sms_async([{'phone': _tenant['phone']}], _sms)
+                    send_sms_async([{'phone': _receipt[0]}], _receipt[1])
             except Exception:
                 pass
             flash('Payment assigned successfully!', 'success')
@@ -4305,14 +4257,10 @@ def assign_group():
             )
 
             try:
-                _tenant = conn.execute(
-                    "SELECT name, phone, access_token FROM tenants WHERE unit_id = ? AND status = 'active'",
-                    (unit_id,),
-                ).fetchone()
-                if _tenant and _tenant['phone']:
-                    _sms = payment_confirmation_body(_tenant, txn['amount'], request.host_url)
+                _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                if _receipt:
                     from src.messaging.delivery import send_sms_async
-                    send_sms_async([{'phone': _tenant['phone']}], _sms)
+                    send_sms_async([{'phone': _receipt[0]}], _receipt[1])
             except Exception:
                 pass
 

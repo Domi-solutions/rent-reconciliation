@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from src.messaging.tenant_payment import payment_confirmation_body
 from src.routes.messaging_routes import messaging_bp
 
 
@@ -107,18 +106,6 @@ class TenantInviteReadiness(unittest.TestCase):
         count = conn.execute("SELECT COUNT(*) FROM messages WHERE message_type = 'invite'").fetchone()[0]
         conn.close()
         self.assertEqual(count, 0)
-
-
-class PaymentConfirmationAccess(unittest.TestCase):
-    def test_missing_token_never_creates_a_portal_link(self):
-        body = payment_confirmation_body({'name': 'Tenant', 'access_token': None}, 1200,
-                                         'https://example.test/')
-        self.assertEqual(body, 'Hi Tenant, KES 1,200 payment confirmed.')
-
-    def test_existing_token_is_used_without_changing_it(self):
-        body = payment_confirmation_body({'name': 'Tenant', 'access_token': 'existing-token'}, 1200,
-                                         'https://example.test/')
-        self.assertIn('https://example.test/tenant/existing-token', body)
 
 
 class TenantShortLink(unittest.TestCase):

@@ -260,17 +260,6 @@ def _confirm_with_safaricom(conn, txn):
     return 'wait'
 
 
-def _format_allocations(allocations):
-    """'KES 5,000 to Oct service, KES 5,000 to Nov rent'."""
-    parts = []
-    for a in allocations:
-        period = a.get('period', '')
-        label = datetime.strptime(period, '%Y-%m').strftime('%b %Y') if re.fullmatch(r'\d{4}-\d{2}', period) \
-            else ('arrears' if period == 'ARREARS' else period)
-        parts.append(f"KES {a.get('allocated', 0):,.0f} to {label} {a.get('charge_type', '')}".rstrip())
-    return ', '.join(parts)
-
-
 def book(txn_id, base_url=None):
     """Book one received M-Pesa payment. Returns an SMS dict {'phone', 'body'}
     for the caller to send, or None (nothing to send, or not ready yet)."""
@@ -353,16 +342,15 @@ def book(txn_id, base_url=None):
             ('mpesa_payment_booked', 'payment', payment_id,
              f"{txn['source']} | KES {amount:,.0f} | ref {txn['mpesa_ref'] or '-'} | tenant {tenant['name']}", 'system'))
 
-        prop = conn.execute("SELECT name FROM properties WHERE id = ?", (txn['property_id'],)).fetchone()
-        phone = tenant['phone'] or (txn['phone'] if txn['source'] == 'daraja' else None)
-        breakdown = _format_allocations(allocations)
-        body = (f"{(prop['name'] if prop else '').title()}: KES {amount:,.0f} payment confirmed"
-                + (f", M-Pesa {txn['mpesa_ref']}" if txn['mpesa_ref'] else '') + '.'
-                + (f" Applied: {breakdown}." if breakdown else ' Held as credit for your next charges.'))
-        base = base_url or os.environ.get('APP_BASE_URL')
-        if base and tenant['short_code'] and tenant['access_token']:
-            body += f" Receipt: {base.rstrip('/')}/t/{tenant['short_code']}"
-        return {'phone': phone, 'body': body, 'property_id': txn['property_id']} if phone else None
+        # Same receipt wording as every other way a payment is recorded (what it settled,
+        # balance today; portal link only once outreach is approved).
+        from src.messaging.tenant_payment import receipt_sms
+        # No phone on the tenancy: the phone that paid by STK gets the receipt — without
+        # being saved to the tenancy (tenants sign in with that phone; a payer is not the tenant).
+        receipt = receipt_sms(conn, payment_id, base_url or os.environ.get('APP_BASE_URL'),
+                              fallback_phone=txn['phone'] if txn['source'] == 'daraja' else None)
+        return ({'phone': receipt[0], 'body': receipt[1], 'property_id': txn['property_id']}
+                if receipt else None)
 
 
 def book_pending(base_url=None):

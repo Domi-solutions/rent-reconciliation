@@ -85,7 +85,9 @@ def _build_variables(conn, tenant, prop, base_url=None):
 
     base = (base_url or os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
     short_code = tenant['short_code'] if 'short_code' in tenant.keys() else None
-    portal_link = f"{base}/t/{short_code}" if short_code else ''
+    # A portal link is a sign-in invitation: none until tenant outreach is approved.
+    from src.messaging.outreach import enabled as _outreach_enabled
+    portal_link = f"{base}/t/{short_code}" if short_code and _outreach_enabled() else ''
 
     rent_due_day = prop['rent_due_day'] if prop and 'rent_due_day' in prop.keys() else 1
 
@@ -255,12 +257,14 @@ def broadcast():
             return redirect(url_for('property_list'))
         pid = prop['id']
 
+        # Current tenants only: a re-leased tenant's frozen old record is 'inactive' and
+        # would otherwise appear (and be messaged) twice.
         tenants = conn.execute("""
             SELECT t.id, t.name, t.phone, t.unit_id, t.short_code, u.unit_number
             FROM tenants t
             LEFT JOIN units u ON t.unit_id = u.id
-            WHERE t.property_id = ?
-            ORDER BY t.name
+            WHERE t.property_id = ? AND t.status = 'active'
+            ORDER BY u.unit_number, t.name
         """, (pid,)).fetchall()
 
         templates = conn.execute("""
@@ -296,7 +300,10 @@ def broadcast():
                 flash('Subject is required.', 'error')
                 return redirect(url_for('messaging.broadcast'))
 
-            delivery_channel = 'sms' if channel == 'sms' else 'portal'
+            # Every broadcast is kept in each tenant's portal. "both" (old value "sms") also
+            # texts the full message, so tenants who never sign in don't miss it.
+            channel = 'both' if channel in ('both', 'sms') else 'portal'
+            delivery_channel = 'sms' if channel == 'both' else 'portal'
             batch_id = generate_id('BATCH')
             selected_tenants = []
             for tenant_id in recipient_ids:
@@ -313,7 +320,8 @@ def broadcast():
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
                 """, (msg_id, pid, tenant_id, batch_id, subj, b, body, delivery_channel))
 
-                if delivery_channel == 'portal' and t['phone'] and t['short_code']:
+                from src.messaging.outreach import enabled as _outreach_enabled
+                if delivery_channel == 'portal' and t['phone'] and t['short_code'] and _outreach_enabled():
                     try:
                         from src.messaging.delivery import send_sms
                         _base = (os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
@@ -349,8 +357,9 @@ def broadcast():
             except Exception:
                 pass
 
-            if channel == 'sms':
+            if channel == 'both':
                 from src.messaging.delivery import send_sms
+                _prefix = prop['name'].title() + ': '
                 # Send per-tenant so each gets their own substituted body
                 sent, failed, errors = 0, 0, []
                 for t in selected_tenants:
@@ -358,19 +367,25 @@ def broadcast():
                         failed += 1
                         continue
                     v = _build_variables(conn, t, prop)
-                    sms_text = _substitute(f"{subject}\n\n{body}", v)
+                    sms_text = _substitute(f"{subject}\n{body}", v)
+                    if not sms_text.lower().startswith(prop['name'].lower()):
+                        sms_text = _prefix + sms_text       # every SMS says which property it is about
                     s, f, e = send_sms([{'phone': t['phone']}], sms_text)
                     sent += s
                     failed += f
                     errors += e
-                if failed == 0:
-                    flash(f'SMS sent to {sent} tenant(s).', 'success')
+                posted = f'Posted to {len(selected_tenants)} tenant portal(s). '
+                if errors and all('disabled' in str(e) for e in errors) and not sent:
+                    flash(posted + 'SMS sending is switched off on this system, so no SMS went out.', 'warning')
+                elif failed == 0:
+                    flash(posted + f'SMS sent to {sent} tenant(s).', 'success')
                 elif sent > 0:
-                    flash(f'SMS sent to {sent} tenant(s); {failed} failed.', 'success')
+                    flash(posted + f'SMS sent to {sent}; {failed} not sent (no or invalid phone number, '
+                                   'or the SMS provider refused).', 'warning')
                 else:
-                    flash(f'SMS delivery failed: {errors[0] if errors else "unknown error"}', 'error')
+                    flash(posted + f'No SMS went out: {errors[0] if errors else "unknown error"}', 'error')
             else:
-                flash(f'Broadcast sent to {len(recipient_ids)} tenant(s).', 'success')
+                flash(f'Broadcast posted to {len(recipient_ids)} tenant portal(s).', 'success')
             return redirect(url_for('messaging.dashboard'))
 
     return render_template(
@@ -378,6 +393,8 @@ def broadcast():
         property=prop,
         tenants=tenants,
         templates=templates,
+        outreach_enabled=__import__('src.messaging.outreach', fromlist=['enabled']).enabled(),
+        sms_on=os.environ.get('AT_SMS_ENABLED', 'true').lower() != 'false',
     )
 
 

@@ -49,6 +49,13 @@ class MpesaBookingBoundaries(unittest.TestCase):
                                          tenant_id TEXT, mpesa_ref TEXT, status TEXT, verified_at TEXT);
             CREATE TABLE audit_log (action TEXT, entity_type TEXT, entity_id TEXT,
                                     details TEXT, user_id TEXT);
+            CREATE TABLE bank_transactions (id TEXT PRIMARY KEY, mpesa_ref TEXT);
+            -- The receipt SMS reads the tenant's balance from this view.
+            CREATE VIEW tenant_balances AS
+                SELECT t.id AS tenant_id,
+                       COALESCE((SELECT SUM(amount) FROM rent_charges WHERE tenant_id = t.id), 0)
+                     - COALESCE((SELECT SUM(amount) FROM payments WHERE tenant_id = t.id), 0) AS balance
+                FROM tenants t;
             INSERT INTO organizations VALUES ('ORG1'), ('ORG2');
             INSERT INTO properties VALUES ('PROP1', 'ORG1', '123456', 'active', 'One Property'),
                                           ('PROP2', 'ORG2', '654321', 'active', 'Two Property');

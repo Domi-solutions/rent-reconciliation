@@ -2,14 +2,14 @@
 {% block title %}Send broadcast — {{ property.name }}{% endblock %}
 {% block content %}
 <h1 class="mb-2">Send broadcast</h1>
-<p class="text-muted mb-4">Select recipients and compose a message. Variables: {tenant_name}, {unit_number}, {balance}, {monthly_rent}, {total_paid}, {due_date}, {caretaker_phone}, {portal_link}.</p>
+<p class="text-muted mb-4">Select recipients and compose a message. Variables: {tenant_name}, {unit_number}, {balance}, {monthly_rent}, {total_paid}, {due_date}, {caretaker_phone}, {portal_link} (left empty until tenant sign-in is switched on).</p>
 <form method="post" action="{{ url_for('messaging.broadcast') }}">
   <div class="card mb-3">
     <div class="card-header">Recipients</div>
     <div class="card-body">
       <label class="form-label">Select tenants</label>
-      <div class="mb-2"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('input[name=tenant_ids]').forEach(c => c.checked = true)">Select all</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.querySelectorAll('input[name=tenant_ids]').forEach(c => c.checked = false)">Clear</button></div>
+      <div class="mb-2"><button type="button" class="btn btn-sm btn-outline-secondary" data-select-all onclick="document.querySelectorAll('input[name=tenant_ids]').forEach(c => c.checked = true)">Select all</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-select-all onclick="document.querySelectorAll('input[name=tenant_ids]').forEach(c => c.checked = false)">Clear</button></div>
       <div class="row g-2">
         {% for t in tenants %}
         <div class="col-md-4 col-lg-3">
@@ -43,13 +43,28 @@
         <textarea class="form-control" name="body" rows="5" id="body"></textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label">Delivery channel</label>
-        <select class="form-select" name="channel" style="max-width: 240px;">
-          <option value="portal">In-app portal only</option>
-          <option value="sms">SMS to phone number</option>
-        </select>
-        <div class="form-text">SMS uses Africa's Talking. Tenants receive the message on their phone regardless of portal login.</div>
+        <label class="form-label">Send to</label>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="channel" value="both" id="ch_both" checked>
+          <label class="form-check-label" for="ch_both"><strong>Portal + SMS</strong> — the full message by SMS too, so tenants who don't sign in still get it</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="channel" value="portal" id="ch_portal">
+          <label class="form-check-label" for="ch_portal"><strong>Portal only</strong>{% if outreach_enabled %} — with a short SMS saying there is a new message{% else %} — no SMS (sign-in links wait for onboarding approval){% endif %}</label>
+        </div>
+        <div class="form-text" id="sms_count"></div>
+        {% if not sms_on %}<div class="form-text text-warning">SMS sending is switched off on this system right now: messages are posted to portals, and SMS will not go out.</div>{% endif %}
       </div>
+    </div>
+  </div>
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>WhatsApp community group</span>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="copy_wa">Copy for WhatsApp</button>
+    </div>
+    <div class="card-body">
+      <div class="form-text mb-0">Copies the subject and message so the same wording can be pasted into the tenants' WhatsApp group.
+        Sentences with personal fields like {balance} are left out — the group is shared. <span id="copy_done" class="text-success" style="display:none;">Copied.</span></div>
     </div>
   </div>
   <button type="submit" class="btn btn-primary">Send broadcast</button>
@@ -57,12 +72,40 @@
 </form>
 {% block extra_js %}
 <script>
+var subjectEl = document.getElementById('subject'), bodyEl = document.getElementById('body');
 document.getElementById('template_select').addEventListener('change', function() {
   var opt = this.options[this.selectedIndex];
   if (opt.value && opt.dataset.subject) {
-    document.getElementById('subject').value = opt.dataset.subject || '';
-    document.getElementById('body').value = opt.dataset.body || '';
+    subjectEl.value = opt.dataset.subject || '';
+    bodyEl.value = opt.dataset.body || '';
+    countSms();
   }
+});
+// SMS cost guide: 160 characters is one SMS; longer messages are billed per 153.
+var prefix = {{ (property.name|title ~ ': ')|tojson }};
+function countSms() {
+  var n = (prefix + subjectEl.value + '\n' + bodyEl.value).length;
+  var parts = n <= 160 ? 1 : Math.ceil(n / 153);
+  var picked = document.querySelectorAll('input[name=tenant_ids]:checked').length;
+  document.getElementById('sms_count').textContent =
+    'About ' + n + ' characters = ' + parts + ' SMS per tenant' + (picked ? ' × ' + picked + ' tenants = ' + (parts * picked) + ' SMS.' : '.') +
+    ' Variables like {balance} change the length per tenant.';
+}
+[subjectEl, bodyEl].forEach(function (el) { el.addEventListener('input', countSms); });
+document.querySelectorAll('input[name=tenant_ids]').forEach(function (c) { c.addEventListener('change', countSms); });
+document.querySelectorAll('[data-select-all]').forEach(function (b) { b.addEventListener('click', countSms); });
+countSms();
+document.getElementById('copy_wa').addEventListener('click', function () {
+  // The group is shared: drop any sentence carrying a personal field ({balance}, {unit_number}, …).
+  var strip = function (t) {
+    return t.split(/(?<=[.!?])\s+|\n/).filter(function (x) { return !/\{[a-z_]+\}/.test(x); })
+            .join(' ').replace(/ {2,}/g, ' ').trim();
+  };
+  var text = '*' + strip(subjectEl.value) + '*\n' + strip(bodyEl.value);
+  navigator.clipboard.writeText(text).then(function () {
+    var d = document.getElementById('copy_done'); d.style.display = 'inline';
+    setTimeout(function () { d.style.display = 'none'; }, 2500);
+  });
 });
 </script>
 {% endblock %}

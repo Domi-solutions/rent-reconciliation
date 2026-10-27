@@ -864,25 +864,10 @@ def report_payment(token):
                         (_bank_txn['id'],)
                     )
 
-                # Build allocation summary for SMS
-                _allocs = conn.execute("""
-                    SELECT pa.amount AS alloc_amount, rc.charge_type, rc.period
-                    FROM payment_allocations pa
-                    JOIN rent_charges rc ON pa.charge_id = rc.id
-                    WHERE pa.payment_id = ?
-                    ORDER BY rc.period, rc.charge_type
-                """, (_pay_id_for_sms,)).fetchall()
-                _alloc_lines = ', '.join(
-                    f"KES {float(a['alloc_amount']):,.0f} {a['charge_type']} {a['period']}"
-                    for a in _allocs
-                ) if _allocs else f"KES {float(_bank_txn['amount']):,.0f}"
-
-                _base = (os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
-                _sc = tenant['short_code'] if 'short_code' in tenant.keys() and tenant['short_code'] else None
-                _link = f" View: {_base}/t/{_sc}" if _sc else ''
-                _notify = ('verified',
-                    f"Hi {tenant['name']}, your payment ref {reference} has been confirmed.\n"
-                    f"Applied: {_alloc_lines}.{_link}")
+                from src.messaging.tenant_payment import receipt_sms
+                _receipt = receipt_sms(conn, _pay_id_for_sms,
+                                       os.environ.get('APP_BASE_URL') or request.host_url)
+                _notify = ('verified', _receipt[1]) if _receipt else ('verified', None)
             else:
                 # Ref absent — flag claim and flag tenant
                 conn.execute("""
@@ -901,7 +886,7 @@ def report_payment(token):
                     "Please contact your caretaker to resolve this.")
 
     # Send notifications outside the DB transaction
-    if _notify and tenant.get('phone'):
+    if _notify and _notify[1] and tenant.get('phone'):
         try:
             from src.messaging.delivery import send_sms_async
             send_sms_async([{'phone': tenant['phone']}], _notify[1])
