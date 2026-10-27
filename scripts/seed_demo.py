@@ -26,13 +26,18 @@ def build(target):
     # 1. schema + every migration, exactly as the app builds it
     subprocess.run([sys.executable, '-c', 'import app'], cwd=ROOT, env=env, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # 2. demo data, in its own process against the fresh file
-    subprocess.run([sys.executable, '-c',
-                    'from src.database.db import get_connection\n'
-                    'from src.demo.seed import seed\n'
-                    'with get_connection() as conn:\n'
-                    '    print("demo property", seed(conn))'],
-                   cwd=ROOT, env=env, check=True)
+    # 2. demo data — on a demo the app already seeds an empty database at start-up (step 1),
+    #    so only seed here if that did not happen.
+    import sqlite3
+    with sqlite3.connect(tmp) as c:
+        seeded = c.execute("SELECT 1 FROM properties LIMIT 1").fetchone() is not None
+    if not seeded:
+      subprocess.run([sys.executable, '-c',
+                      'from src.database.db import get_connection\n'
+                      'from src.demo.seed import seed\n'
+                      'with get_connection() as conn:\n'
+                      '    print("demo property", seed(conn))'],
+                     cwd=ROOT, env=env, check=True)
     os.replace(tmp, target)
     for suffix in ('-wal', '-shm'):
         if os.path.exists(target + suffix):
