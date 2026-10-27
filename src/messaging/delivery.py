@@ -21,6 +21,7 @@ import json
 import math
 import os
 import threading
+import urllib.error
 import urllib.request
 
 from src.utils.phone import normalize_to_e164 as _normalize_phone
@@ -99,6 +100,13 @@ def _send_textsms(numbers, message):
             code = first.get('response-code', first.get('respose-code'))   # their API spells it both ways
             ok = str(code) == '200'
             out.append((num, ok, None if ok else str(first.get('response-description') or data)[:200]))
+        except urllib.error.HTTPError as e:
+            # Their reason is in the body ("invalid sender id", "insufficient balance", …).
+            try:
+                detail = e.read().decode('utf-8', 'replace').strip()
+            except Exception:
+                detail = ''
+            out.append((num, False, f'HTTP {e.code}: {detail or e.reason}'[:300]))
         except Exception as e:
             out.append((num, False, str(e)[:200]))
     return out

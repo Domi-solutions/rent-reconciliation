@@ -14,13 +14,9 @@ def normalize_to_e164(raw):
     if not raw:
         return None
     phone = re.sub(r'[\s\-\(\)]', '', str(raw).strip())
-    if phone.startswith('+254') and len(phone) == 13:
-        return phone
-    if phone.startswith('254') and len(phone) == 12:
-        return '+' + phone
-    if phone.startswith('0') and len(phone) == 10:
-        return '+254' + phone[1:]
-    return None
+    # Digits only after the optional "+": "07XXXXXXXX" (a placeholder) is not a number.
+    m = re.fullmatch(r'(?:\+?254|0)(\d{9})', phone)
+    return '+254' + m.group(1) if m else None
 
 
 def normalize_to_daraja(raw):
