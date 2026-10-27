@@ -486,33 +486,23 @@ def migrate_add_messaging():
 
 
 def migrate_set_rent_charge_due_dates():
-    """Backfill due_date for existing rent_charges based on period (YYYY-MM -> 5th of next month). Idempotent."""
+    """Fill due_date where a charge was saved without one (water uploads did), using
+    the lease rule in src/utils/due_dates.py. Idempotent; never changes a set date."""
+    from src.utils.due_dates import charge_due_date
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, period FROM rent_charges WHERE due_date IS NULL AND period LIKE '____-__'"
-        ).fetchall()
+        # Runs before migrate_add_rent_due_day on a fresh database: default to the 5th then.
+        has_day = 'rent_due_day' in {r[1] for r in conn.execute("PRAGMA table_info(properties)")}
+        rows = conn.execute(f"""
+            SELECT rc.id, rc.period, {'p.rent_due_day' if has_day else '5'} AS rent_due_day FROM rent_charges rc
+            LEFT JOIN properties p ON p.id = rc.property_id
+            WHERE rc.due_date IS NULL AND rc.period LIKE '____-__'
+        """).fetchall()
         updated = 0
         for row in rows:
-            period = row['period']
-            try:
-                year_str, month_str = period.split('-', 1)
-                year = int(year_str)
-                month = int(month_str)
-                if month < 1 or month > 12:
-                    continue
-            except Exception:
+            due_date = charge_due_date(row['period'], row['rent_due_day'])
+            if not due_date:
                 continue
-            if month == 12:
-                due_year = year + 1
-                due_month = 1
-            else:
-                due_year = year
-                due_month = month + 1
-            due_date = f"{due_year:04d}-{due_month:02d}-05"
-            conn.execute(
-                "UPDATE rent_charges SET due_date = ? WHERE id = ?",
-                (due_date, row['id']),
-            )
+            conn.execute("UPDATE rent_charges SET due_date = ? WHERE id = ?", (due_date, row['id']))
             updated += 1
         if updated:
             print(f"Migration complete: due_date set for {updated} rent_charges.")

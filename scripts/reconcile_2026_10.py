@@ -10,7 +10,7 @@ What it does (in one transaction):
      (CSV: only the Mowin lines; the scanner's own reading was unreliable).
   3. Adds the missing monthly rent + service charges (default May–Oct 2026) for
      every occupied unit with a tenant on record, the same way "Generate
-     charges" does (due the 5th of the following month), then applies any
+     charges" does (due the 5th of that month, per the lease), then applies any
      unallocated credit.
   4. review: writes a spreadsheet of every unmatched payment with a suggested
      unit. apply: reads the reviewed spreadsheet back and assigns the payments
@@ -167,16 +167,15 @@ def add_verified_rows(conn, org_id, csv_path):
 
 
 def add_missing_charges(conn, prop, periods):
-    """Same rule as Generate charges: occupied units, rent + service, due the 5th of the next month."""
+    """Same rule as Generate charges: occupied units, rent + service, due per the lease (5th of that month)."""
     units = conn.execute("""
         SELECT u.* FROM units u WHERE u.property_id = ? AND u.status = 'occupied'
           AND EXISTS (SELECT 1 FROM tenants t WHERE t.unit_id = u.id AND t.status = 'active')
     """, (prop['id'],)).fetchall()
-    due_day = min(int(prop['rent_due_day'] or 5), 28) or 28
+    from src.utils.due_dates import charge_due_date
     created = []
     for period in periods:
-        y, m = map(int, period.split('-'))
-        due = f'{y + (m == 12):04d}-{m % 12 + 1:02d}-{due_day:02d}'
+        due = charge_due_date(period, prop['rent_due_day'])
         for u in units:
             for ctype, amount in (('rent', u['monthly_rent']), ('service', u['service_charge'])):
                 if not amount or float(amount) <= 0:

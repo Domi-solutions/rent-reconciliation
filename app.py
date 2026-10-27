@@ -4350,21 +4350,8 @@ def generate_charges():
                 flash('Please enter a period (e.g. 2026-01).', 'error')
                 return redirect(url_for('generate_charges'))
 
-            import calendar as _cal
-            try:
-                y, m = period.split('-')
-                y, m = int(y), int(m)
-                due_month = m + 1 if m < 12 else 1
-                due_year = y if m < 12 else y + 1
-                due_day = int(property_row['rent_due_day'] if property_row['rent_due_day'] is not None else 5)
-                if due_day == 0:
-                    last_day = _cal.monthrange(due_year, due_month)[1]
-                    due_date = f"{due_year:04d}-{due_month:02d}-{last_day:02d}"
-                else:
-                    safe_day = min(due_day, 28)
-                    due_date = f"{due_year:04d}-{due_month:02d}-{safe_day:02d}"
-            except (ValueError, TypeError):
-                due_date = None
+            from src.utils.due_dates import charge_due_date
+            due_date = charge_due_date(period, property_row['rent_due_day'])
 
             units = conn.execute("""
                 SELECT * FROM units WHERE property_id = ? AND status = 'occupied'
@@ -4583,9 +4570,12 @@ def upload_water_charges():
                     continue
 
                 charge_id = generate_id('CHG')
+                from src.utils.due_dates import charge_due_date
                 conn.execute(
-                    "INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount) VALUES (?, ?, ?, ?, 'water', ?)",
-                    (charge_id, property_row['id'], unit_id, period, row['water_charge'])
+                    "INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date) "
+                    "VALUES (?, ?, ?, ?, 'water', ?, ?)",
+                    (charge_id, property_row['id'], unit_id, period, row['water_charge'],
+                     charge_due_date(period, property_row['rent_due_day']))
                 )
                 created += 1
 

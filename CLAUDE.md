@@ -127,7 +127,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `payment_allocations` — ON DELETE CASCADE on `payment_id`; never delete allocations manually
 - `messages` requires `tenant_id NOT NULL` — owner inbox uses `owner_messages` (separate table)
 - `owner_messages` query must SELECT all columns — omitting any silently hides data in the viewer. **FK constraint (PRAGMA foreign_keys = ON):** `DELETE FROM owners` is blocked because `owner_messages.owner_id → owners.id`. Always `DELETE FROM owner_messages WHERE owner_id = ?` before `DELETE FROM owners`.
-- `properties.rent_due_day` — 0 = last day of month; drives charge generation and reminder due-date logic
+- `properties.rent_due_day` — 0 = last day of month. A period's charges (rent, service, water) are due on that day of the SAME month, per the lease (rent "on or before the 5th, in advance"): `src/utils/due_dates.charge_due_date(period, rent_due_day)` is the only place that computes it. Charges created before 2026-10-27 keep their old next-month date.
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
 - `bank_statements` is **org-scoped**: always query `WHERE org_id = ?`. `property_id` nullable (NULL = org-wide); upload never forces it. Statements list shows per-statement coverage badge. `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = Haiku vision; balance validation skipped.

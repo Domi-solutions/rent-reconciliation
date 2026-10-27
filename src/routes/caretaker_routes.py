@@ -1250,9 +1250,14 @@ def water_new(property_id):
                 ).fetchone()
                 if not existing_charge:
                     charge_id = generate_id('CHG')
+                    from src.utils.due_dates import charge_due_date
+                    _due_day = conn.execute("SELECT rent_due_day FROM properties WHERE id = ?",
+                                            (property_id,)).fetchone()
                     conn.execute(
-                        "INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount) VALUES (?, ?, ?, ?, 'water', ?)",
-                        (charge_id, property_id, r['unit_id'], cp, r['amount'])
+                        "INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date) "
+                        "VALUES (?, ?, ?, ?, 'water', ?, ?)",
+                        (charge_id, property_id, r['unit_id'], cp, r['amount'],
+                         charge_due_date(cp, _due_day['rent_due_day'] if _due_day else 5))
                     )
                     created += 1
                 else:
