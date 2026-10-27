@@ -148,8 +148,13 @@ def send_sms(recipients, message):
         # Demo site: real SMS only to phones someone typed into the demo, within daily caps.
         from src.database.db import get_connection
         from src.demo.phones import allowed
-        with get_connection() as conn:
-            numbers, held = allowed(conn, numbers)
+        try:
+            with get_connection() as conn:
+                numbers, held = allowed(conn, numbers)
+        except Exception as e:                       # never fail silently: log it like any send
+            for num in numbers:
+                _log_sms(num, message, 'failed', f'demo SMS check failed: {e}')
+            return 0, len(recipients), [str(e)]
         for num, why in held:
             _log_sms(num, message, 'simulated', why)
         if not numbers:

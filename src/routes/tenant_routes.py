@@ -146,34 +146,46 @@ def login():
 @tenant_bp.route("/verify", methods=["GET", "POST"])
 def verify():
     """Send a 6-digit code to the phone on record — first-time setup and forgotten PINs."""
+    from src.utils.runtime import is_demo
+    code_sms = phone = None
     with get_connection() as conn:
         entry = _entry_tenancy(conn)
-        if request.method == "POST":
-            phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
-            from src.utils.runtime import is_demo
-            if is_demo():
-                # Demo: your own number becomes the new tenant's, so the code really reaches you.
-                from src.demo.phones import claim_first_time
-                claim_first_time(conn, phone)
-            tenancies = tenancies_for_phone(conn, phone)
-            session['tenant_verify_person'] = None
-            if tenancies:
-                person_id = person_for_phone(conn, phone, tenancies)
-                session['tenant_verify_person'] = person_id
-                code = issue_otp(conn, person_id)
-                from src.utils.runtime import is_demo
-                if code and is_demo():
-                    session['demo_sms_code'] = code      # the demo shows the code instead of texting it
-                if code:
-                    send_sms_async([phone],
-                                   f"Your {(tenancies[0]['property_name'] or '').title()} tenant code is {code}. "
-                                   f"It expires in 10 minutes. Do not share it.")
-            # Same answer whether or not the number is a tenant's, so the page
-            # cannot be used to find out who rents where.
-            session['tenant_verify_masked'] = mask_phone(phone)
-            return redirect(url_for('tenant.verify_code'))
-    return render_template("tenant/verify.html", entry=entry,
-                           masked=mask_phone(entry['phone']) if entry else None)
+        if request.method != "POST":
+            return render_template("tenant/verify.html", entry=entry,
+                                   masked=mask_phone(entry['phone']) if entry else None)
+        phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
+        if is_demo():
+            # Demo: your own number becomes the new tenant's, so the code really reaches you.
+            from src.demo.phones import claim_first_time
+            claim_first_time(conn, phone)
+        tenancies = tenancies_for_phone(conn, phone)
+        session['tenant_verify_person'] = None
+        if tenancies:
+            person_id = person_for_phone(conn, phone, tenancies)
+            session['tenant_verify_person'] = person_id
+            code = issue_otp(conn, person_id)
+            if code and is_demo():
+                session['demo_sms_code'] = code          # also shown on screen in the demo
+            elif not code and is_demo():
+                session['demo_sms_status'] = 'recent'    # one code a minute: the last one still works
+            if code:
+                code_sms = (f"Your {(tenancies[0]['property_name'] or '').title()} tenant code is {code}. "
+                            f"It expires in 10 minutes. Do not share it.")
+    # The code is saved (the block above committed) before the SMS goes: sending
+    # from inside the transaction raced the write and could fail without a trace.
+    if code_sms:
+        session.pop('demo_sms_status', None)
+    if code_sms:
+        if is_demo():
+            from src.messaging.delivery import send_sms
+            sent, _, errors = send_sms([phone], code_sms)     # wait, so the presenter sees the outcome
+            session['demo_sms_status'] = 'sent' if sent else (errors[0] if errors else 'not sent')
+        else:
+            send_sms_async([phone], code_sms)
+    # Same answer whether or not the number is a tenant's, so the page
+    # cannot be used to find out who rents where.
+    session['tenant_verify_masked'] = mask_phone(phone)
+    return redirect(url_for('tenant.verify_code'))
 
 
 @tenant_bp.route("/verify/code", methods=["GET", "POST"])

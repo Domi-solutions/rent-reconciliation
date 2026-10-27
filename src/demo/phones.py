@@ -12,8 +12,8 @@ from datetime import date
 
 from src.utils.phone import normalize_to_e164
 
-DAILY_CAP = 40          # all demo SMS in a day
-PER_PHONE_CAP = 8       # per claimed number in a day
+DAILY_CAP = 60          # all demo SMS in a day
+PER_PHONE_CAP = 15      # per claimed number in a day
 FAKE_PREFIX = '+2547000001'
 
 

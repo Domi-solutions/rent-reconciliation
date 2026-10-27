@@ -47,7 +47,7 @@ class DemoSms(unittest.TestCase):
             self.assertEqual(name, 'Amina Wanjiku')
             delivery.send_sms(['0711222333', '0700000101'], 'receipt')
             self.assertEqual(sent, ['+254711222333'])
-            for _ in range(10):
+            for _ in range(phones.PER_PHONE_CAP + 5):
                 delivery.send_sms(['0711222333'], 'again')
             self.assertEqual(len(sent), phones.PER_PHONE_CAP)          # capped per number
 
