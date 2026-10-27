@@ -130,7 +130,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `properties.rent_due_day` — 0 = last day of month. A period's charges (rent, service, water) are due on that day of the SAME month, per the lease (rent "on or before the 5th, in advance"): `src/utils/due_dates.charge_due_date(period, rent_due_day)` is the only place that computes it. Charges created before 2026-10-27 keep their old next-month date.
 - `balance_snapshots` UNIQUE(unit_id, snapshot_date) — insert idempotently
 - `inbound_sessions` keyed on (phone, property_id) — 24h TTL; resolves "yes"/"no"/"skip" replies
-- `bank_statements` is **org-scoped**: always query `WHERE org_id = ?`. `property_id` nullable (NULL = org-wide); upload never forces it. Statements list shows per-statement coverage badge. `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = Haiku vision; balance validation skipped.
+- `bank_statements` is **org-scoped**: always query `WHERE org_id = ?`. `property_id` nullable (NULL = org-wide); upload never forces it. Statements list shows per-statement coverage badge. `bank_format` values: `cooperative`|`family_bank`|`national_bank`|`tabular_kes`|`scanned`|`unknown`. `scanned` = Haiku vision; accepted, but its totals are checked — a mismatch is saved as a `validation` parse error and flashed ("check each line against the paper"). An upload supersedes an earlier statement only if same `bank_format`, the new one balances, and its period fully covers the old one; scanned/unknown uploads supersede nothing.
 - `water_uploads` UNIQUE(property_id, charge_period). `charge_period` = reading_period + 1 month (billing in arrears). Rate snapshotted from `properties.water_rate` at upload.
 - `water_readings` — one row per unit per upload. `previous_reading` auto-populated from last `current_reading`. `amount` = units_consumed × rate → written to `rent_charges` as `charge_type='water'`.
 - `property_owners.is_primary` — auto-set to 1 on the first owner assigned to a property. Admin cannot remove a primary owner via the UI; must contact platform to transfer. `remove_property_from_owner` route blocks with 400 if `is_primary=1`. Existing rows migrated by `migrate_add_primary_owner` using `MIN(rowid)` per property.
@@ -264,7 +264,7 @@ label = bank_display_name('scanned')      # → 'Scanned PDF (AI)'
 # add detection branch in detect_bank_statement_format() in pdf_parser.py
 ```
 
-**Scanned PDF parsing — LLM vision fallback:** Triggered when pdfplumber extracts zero text. Requires `ANTHROPIC_API_KEY`; Claude Haiku, 2 pages/chunk; balance validation bypassed; ~$0.05–$0.20/upload.
+**Scanned PDF parsing — LLM vision fallback:** Triggered when pdfplumber extracts zero text. Requires `ANTHROPIC_API_KEY`; Claude Haiku, 2 pages/chunk; ~$0.05–$0.20/upload. Unreliable on photocopies (2026 National Bank scans were off by up to KES 1.45M) — totals checked and flagged; prefer downloaded statements.
 
 **Platform guardian — call from any route that performs a sensitive agency action:**
 ```python

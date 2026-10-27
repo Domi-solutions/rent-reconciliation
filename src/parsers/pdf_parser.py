@@ -1752,10 +1752,24 @@ def _parse_scanned_statement(pdf_path: str) -> dict:
     # extract per-transaction running balances. Accept the statement as long as at
     # least one transaction was extracted successfully.
     if result['summary']['total_transactions'] > 0:
+        # Still accepted (the bank's own copy may be all there is), but the totals are
+        # checked: on the 2026 National Bank scans the reading was off by up to
+        # KES 1.45M. A mismatch is recorded as an error so nobody assigns from it unchecked.
+        check = (validate_balance_checksum(all_txns, opening_balance, closing_balance)
+                 if opening_balance is not None and closing_balance is not None else None)
         result['validation'] = {
             'valid': True,
-            'note': 'Scanned PDF — balance validation skipped (AI vision extraction)',
+            'note': 'Scanned PDF — AI vision extraction',
+            'totals_check': check,
         }
+        if check is None:
+            result['errors'].append('Scanned statement: opening or closing balance not read, so the totals '
+                                    'could not be checked. Check each line against the paper copy.')
+        elif not check.get('valid'):
+            result['errors'].append(
+                f"Scanned statement totals do not add up: opening + money in − money out is off from the "
+                f"closing balance by KES {abs(check.get('discrepancy') or 0):,.2f}. Some amounts were misread — "
+                "check each line against the paper copy before assigning it, or get a downloaded statement.")
         result['success'] = len(result['errors']) == 0
     result['warnings'] = result.get('warnings', []) + [
         'This is a scanned (image) PDF. AI vision was used to extract transactions — accuracy may vary. '

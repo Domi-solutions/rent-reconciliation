@@ -2706,20 +2706,19 @@ def upload_statement():
             stmt_errors = result.get('errors') or []
 
             with get_connection() as conn:
-                # Supersede overlapping active statements — scoped to same property tag
-                if period_start and period_end:
-                    if tagged_property_id:
-                        conn.execute("""
-                            UPDATE bank_statements SET status = 'superseded'
-                            WHERE org_id = ? AND property_id = ? AND status = 'active'
-                            AND period_start <= ? AND period_end >= ?
-                        """, (org_id, tagged_property_id, period_end, period_start))
-                    else:
-                        conn.execute("""
-                            UPDATE bank_statements SET status = 'superseded'
-                            WHERE org_id = ? AND (property_id IS NULL OR property_id = '') AND status = 'active'
-                            AND period_start <= ? AND period_end >= ?
-                        """, (org_id, period_end, period_start))
+                # Retire an earlier upload only when this one replaces it: same bank, a
+                # statement that balances, and a period covering the old one entirely.
+                # Any overlap used to retire statements from every bank (a Family Bank
+                # May–June upload hid National Bank and Family Bank March–May lines).
+                # Partial overlaps stay active; the same M-Pesa reference counts once.
+                if (period_start and period_end and validation.get('valid')
+                        and bank_format not in ('scanned', 'unknown')):
+                    conn.execute("""
+                        UPDATE bank_statements SET status = 'superseded'
+                        WHERE org_id = ? AND status = 'active' AND bank_format = ?
+                          AND COALESCE(property_id, '') = COALESCE(?, '')
+                          AND period_start >= ? AND period_end <= ?
+                    """, (org_id, bank_format, tagged_property_id, period_start, period_end))
 
                 stmt_status = 'active' if validation.get('valid') else 'parse_failed'
                 conn.execute("""
@@ -2821,6 +2820,8 @@ def upload_statement():
 
             for w in parse_warnings:
                 flash(w, 'warning')
+            for err_msg in stmt_errors:          # e.g. a scanned statement whose totals don't add up
+                flash(err_msg, 'warning')
 
             return redirect(url_for('verify_payments', statement_id=statement_id))
 

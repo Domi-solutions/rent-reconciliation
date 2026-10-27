@@ -570,6 +570,21 @@ The goal: after 3-4 build cycles, this file becomes precise enough that Cursor m
 
 ---
 
+### An overlap rule that ignored which bank the statement came from
+**File(s):** `app.py` `upload_statement`
+**What was done:** Any new upload marked every active statement in the org with an overlapping period `superseded` — any bank, any partial overlap, and before knowing whether the new upload even parsed. A Family Bank May–June upload would have retired Family Bank March–May (one shared week) and could retire a National Bank statement.
+**What it should do:** Supersede only a statement the new one replaces: same `bank_format`, new one balances, period fully covers the old. Partial overlaps stay active; duplicate refs are de-duplicated downstream.
+**Why:** Superseded statements drop out of the unassigned list, so real unmatched payments silently vanished from review.
+**Spotted:** 2026-10-27
+
+### Trusting AI-vision readings of scanned statements without arithmetic
+**File(s):** `src/parsers/pdf_parser.py` `_parse_scanned_statement`
+**What was done:** Balance validation was skipped for scans "because the model doesn't extract running balances". The opening/closing balances were extracted, so opening + credits − debits = closing could still be checked; it was off by KES 414,848 and 1,453,481 on two real statements, and amounts/names were misread (28,400 for 28,800).
+**What it should do:** Always run the totals check when both balances exist; record a mismatch as a visible error. For money that matters, verify lines against the image.
+**Spotted:** 2026-10-27
+
+---
+
 ## Performance Backlog
 
 Known bottlenecks that are acceptable at current scale (1 property, ~50 units) but should be addressed as the platform grows. Reviewed 2026-05-20.
