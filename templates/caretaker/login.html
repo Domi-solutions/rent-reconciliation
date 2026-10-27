@@ -3,35 +3,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Caretaker Login</title>
+  <title>Caretaker sign in — Domi</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* Same look as the tenant and management sign-in pages: a deep-green band with the
+       brand, the card sitting across its edge. Block layout, so the demo banner stays on top. */
+    body { margin: 0; min-height: 100vh;
+           background: linear-gradient(180deg, var(--forest) 0, var(--forest-2) 230px, var(--bg) 230px);
+           background-repeat: no-repeat; }
+    .auth { max-width: 400px; margin: 0 auto; padding: 48px 20px 32px; }
+    .brand { text-align: center; margin-bottom: 24px; }
+    .brand b { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -.02em; }
+    .brand div { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--sage); margin-top: 4px; }
+    .box { background: #fff; border-radius: 22px; padding: 26px 24px; box-shadow: var(--shadow-md); }
+    .box h1 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
+    .box p.lead { font-size: 14px; color: var(--ink-2); margin-bottom: 18px; }
+    .box .form-label { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .box .form-control { padding: 12px 14px; font-size: 17px; }
+    .btn-go { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; }
+  </style>
 </head>
-<body style="background: var(--bg); display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+<body>
 {% include 'partials/demo_banner.html' %}
-<div style="width: 100%; max-width: 360px; padding: 24px;">
-  <div class="surface-card" style="padding: 32px;">
-    <div style="text-align: center; margin-bottom: 24px;">
-      <div style="font-size: 18px; font-weight: 700; color: var(--ink);">Caretaker Portal</div>
-      <div style="font-size: 13px; color: var(--ink-3); margin-top: 4px;">
-        {% if use_db %}Sign in with your name and password{% else %}Enter your access password{% endif %}
-      </div>
-    </div>
+<div class="auth">
+  <div class="brand"><b>Domi</b><div>Caretaker</div></div>
+  <div class="box">
+    <h1>Sign in</h1>
+    <p class="lead">{% if use_db %}Your name and the password management gave you.{% else %}Enter your access password.{% endif %}</p>
     {% if error %}
-    <div class="alert alert-danger" style="font-size: 13px;">{{ error }}</div>
+    <div class="alert alert-danger" style="font-size: 14px;">{{ error }}</div>
     {% endif %}
     <form method="post">
       {% if use_db %}
       <div class="mb-3">
-        <label class="form-label" style="font-size: 13px;">Name</label>
+        <label class="form-label">Name</label>
         <input type="text" name="name" class="form-control" autofocus required autocomplete="username">
       </div>
       {% endif %}
-      <div class="mb-3">
-        <label class="form-label" style="font-size: 13px;">Password</label>
+      <div class="mb-4">
+        <label class="form-label">Password</label>
         <input type="password" name="password" class="form-control" {% if not use_db %}autofocus{% endif %} required autocomplete="current-password">
       </div>
-      <button type="submit" class="btn btn-primary w-100">Sign in</button>
+      <button type="submit" class="btn btn-primary btn-go">Sign in</button>
     </form>
   </div>
 </div>
