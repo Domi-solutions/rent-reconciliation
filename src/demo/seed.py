@@ -15,7 +15,7 @@ from src.database.db import allocate_payment, generate_id
 from src.utils.due_dates import charge_due_date
 
 ORG_NAME = 'Wakili & Associates Advocates'
-PROPERTY_NAME = 'kijani court'
+PROPERTY_NAME = 'Kijani Court'
 LOGINS = {
     'admin': {'email': 'admin@demo.domi.co.ke', 'password': 'Demo2026!', 'name': 'Grace Wanjiru'},
     'owner': {'email': 'owner@demo.domi.co.ke', 'password': 'Demo2026!', 'name': 'Mary Akinyi'},
