@@ -17,8 +17,9 @@ from src.utils.due_dates import charge_due_date
 ORG_NAME = 'Wakili & Associates Advocates'
 PROPERTY_NAME = 'Kijani Court'
 LOGINS = {
-    'admin': {'email': 'admin@demo.domi.co.ke', 'password': 'Demo2026!', 'name': 'Grace Wanjiru'},
-    'owner': {'email': 'owner@demo.domi.co.ke', 'password': 'Demo2026!', 'name': 'Mary Akinyi'},
+    # Short on purpose: typed in front of an audience. Demo site only.
+    'admin': {'email': 'demo@demo', 'password': 'demo', 'name': 'Grace Wanjiru'},
+    'owner': {'email': 'owner@demo', 'password': 'demo', 'name': 'Mary Akinyi'},
     'caretaker': {'name': 'Juma', 'password': '1234'},
     'tenant_new': {'phone': '0700000103', 'name': 'Amina Wanjiku', 'unit': 'A3'},
     'tenant': {'phone': '0700000101', 'name': 'Brian Otieno', 'unit': 'A1', 'pin': '1234'},
