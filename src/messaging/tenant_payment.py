@@ -87,7 +87,8 @@ def receipt_sms(conn, payment_id, base_url=None, fallback_phone=None):
                else f' Balance: KES {-owed:,} in credit.' if owed < 0 else ' Balance: nothing owed.')
 
     link = ''
-    if outreach_enabled() and not payer_only and base_url and tenant['short_code'] and tenant['access_token']:
+    from src.utils.runtime import is_demo
+    if (outreach_enabled() or is_demo()) and not payer_only and base_url and tenant['short_code'] and tenant['access_token']:
         link = f" Receipt: {base_url.rstrip('/')}/t/{tenant['short_code']}"
 
     body = plain_sms(head + settled + balance + link)

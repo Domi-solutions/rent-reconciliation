@@ -1,5 +1,5 @@
 # The stakeholder demo: a separate app and database from the live site.
-# Made-up data (scripts/seed_demo.py), SMS codes shown on screen, M-Pesa simulated.
+# Made-up data (scripts/seed_demo.py), M-Pesa simulated; SMS real only to numbers typed into the demo.
 # DEMO_MODE only works when FLASK_ENV is not "production" (src/utils/runtime.is_demo).
 app = "domi-demo"
 primary_region = "jnb"
@@ -11,7 +11,9 @@ primary_region = "jnb"
   FLASK_DEBUG = "0"
   FLASK_ENV = "demo"
   DEMO_MODE = "true"
-  AT_SMS_ENABLED = "false"
+  # Real SMS, but src/demo/phones.py only lets it reach numbers typed into the demo (capped).
+  AT_SMS_ENABLED = "true"
+  SMS_PROVIDER = "textsms"
   DATABASE_PATH = "/data/demo.db"
   UPLOAD_FOLDER = "/data/statements"
   PYTHONUNBUFFERED = "1"

@@ -150,6 +150,11 @@ def verify():
         entry = _entry_tenancy(conn)
         if request.method == "POST":
             phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
+            from src.utils.runtime import is_demo
+            if is_demo():
+                # Demo: your own number becomes the new tenant's, so the code really reaches you.
+                from src.demo.phones import claim_first_time
+                claim_first_time(conn, phone)
             tenancies = tenancies_for_phone(conn, phone)
             session['tenant_verify_person'] = None
             if tenancies:
@@ -1017,13 +1022,17 @@ def _demo_stk(tenant, unit, prop, phone, amount):
     checkout_id = 'DEMO-' + _secrets.token_hex(8)
     receipt = 'TK' + ''.join(_secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
     with get_connection() as conn:
+        from src.demo.phones import claim_for_tenant
+        claim_for_tenant(conn, tenant['id'], phone)          # the receipt goes to the phone typed here
         mpesa.link_stk_request(conn, checkout_id, prop['organization_id'], prop['id'], unit['id'],
                                tenant['id'], phone, amount)
         row = conn.execute("SELECT id FROM payment_transactions WHERE external_reference = ?", (checkout_id,)).fetchone()
         conn.execute("""UPDATE payment_transactions SET callback_amount = ?, mpesa_ref = ?, paid_at = ?, raw_callback = ?
                         WHERE id = ?""", (amount, receipt, datetime.now().isoformat(timespec='seconds'),
                                           '{"demo": "simulated M-Pesa result"}', row['id']))
-    mpesa.book(row['id'], os.environ.get('APP_BASE_URL') or request.host_url)
+    receipt = mpesa.book(row['id'], os.environ.get('APP_BASE_URL') or request.host_url)
+    if receipt and receipt.get('phone'):
+        send_sms_async([{'phone': receipt['phone']}], receipt['body'])   # the real receipt SMS
     return jsonify({'success': True, 'checkout_request_id': checkout_id})
 
 

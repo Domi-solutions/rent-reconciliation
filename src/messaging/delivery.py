@@ -143,6 +143,18 @@ def send_sms(recipients, message):
             _log_sms(s, message, 'failed', 'Invalid phone number')
         return 0, len(recipients), ['No valid phone numbers to send to'] + skipped
 
+    from src.utils.runtime import is_demo
+    if is_demo():
+        # Demo site: real SMS only to phones someone typed into the demo, within daily caps.
+        from src.database.db import get_connection
+        from src.demo.phones import allowed
+        with get_connection() as conn:
+            numbers, held = allowed(conn, numbers)
+        for num, why in held:
+            _log_sms(num, message, 'simulated', why)
+        if not numbers:
+            return 0, len(recipients), [why for _, why in held]
+
     try:
         results = _send_textsms(numbers, message) if provider() == 'textsms' else _send_africastalking(numbers, message)
     except Exception as e:

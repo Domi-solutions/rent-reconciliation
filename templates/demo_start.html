@@ -38,8 +38,8 @@
 
   <a class="role" href="{{ url_for('tenant.verify') }}">
     <div class="t">1 · Tenant, first time <span class="arrow">→</span></div>
-    <div class="d">{{ logins.tenant_new.name }}, unit {{ logins.tenant_new.unit }}. Gets a code by SMS (shown on screen in the demo), sets a PIN, sees her account and pays.</div>
-    <div class="cred">Phone <b>{{ logins.tenant_new.phone }}</b> · choose any 4-digit PIN</div>
+    <div class="d">{{ logins.tenant_new.name }}, unit {{ logins.tenant_new.unit }}. Gets a code by SMS, sets a PIN, sees her account and pays — and gets the receipt by SMS.</div>
+    <div class="cred"><b>Use your own phone number</b> to get the real SMS code and receipt.<br>Or <b>{{ logins.tenant_new.phone }}</b> to see the code on screen only. Choose any 4-digit PIN.</div>
   </a>
   <a class="role" href="{{ url_for('tenant.login') }}">
     <div class="t">2 · Tenant, returning <span class="arrow">→</span></div>
@@ -65,7 +65,7 @@
   <form class="reset" method="POST" action="{{ url_for('demo_reset') }}" onsubmit="return confirm('Put the demo back to the start? Everyone is signed out.')">
     <button>Reset the demo</button>
   </form>
-  <div class="foot">Sign out from one person before signing in as the next.</div>
+  <div class="foot">Sign out from one person before signing in as the next. Reset forgets any phone numbers typed in.</div>
 </div>
 </body>
 </html>
