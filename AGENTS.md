@@ -26,19 +26,20 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — cross-page UI refresh and messaging surfaces; prior operational handoff retained below.
+**Who:** Codex — MEDVi-reference UI refinement across the local preview; prior operational handoff retained below.
 **Date:** 2026-10-27 · **Deployment:** local preview only; no deployment.
 
-### UI refresh this session
+### UI refinement this session
 
 - LINCKS authorised extending the Units trial across this checkout, then user review and Claude feedback via the hub. Checkout is `/Users/lincksmorara/Desktop/Projects/rent-reconciliation`, branch `main` (the primary checkout, not a newly created managed worktree).
-- `theme.css` promotes system typography, 500 body weight, restrained corners and quieter shadows while preserving forest/sage/emerald/paper and semantic status colours. Secondary ink/borders have stronger contrast. Removed Google font dependency.
+- `theme.css` promotes system typography, 500 body weight, softer 20px panels and quieter shadows while preserving forest/sage/emerald/paper and semantic status colours. Secondary ink/borders have stronger contrast. Removed Google font dependency.
 - New `interface.css` is loaded last by all 20 document roots: admin, tenant, caretaker, owner/viewer, platform, auth, demo and error pages. Local hardcoded shapes/typography were aligned; icons share `partials/icons.html`. Units-specific layout stays in `units.css` (`units-screen`).
+- LINCKS supplied six MEDVi screenshots as the visual blueprint, then authorised further changes. This pass restores warmth: bolder headings, larger summary figures, more generous spacing, soft panels, rounded primary actions and illustrated-by-SVG caretaker action rows. The mobile admin menu is white with larger rows, direction arrows and an explicit close button; Escape closes it and restores focus. Dense table controls and visible edit pencils remain compact. Admin/caretaker dashboards and owner portfolio have clearer heading markup.
 - Clearer actions: underlined content links, bounded controls, focus rings, linked expense/message subjects instead of invisible clickable rows, explicit outbox expansion button, accessible help-language controls. Existing forms/routes preserved.
 - Latest user feedback: messages and textboxes blended into surrounding content. New `chat.css` gives all conversation views a muted green canvas, white incoming and light green outgoing bubbles; labelled reply/photo controls and tinted message inputs. Includes admin/tenant/caretaker threads and read-only owner views. Caretaker report helper still works with `reply-body`.
-- Validation: all 152 Jinja templates compile; 90 rendered GET pages pass smoke checks (plus tenant conversation template fixture; Sarah's demo conversation has no activated tenant login); existing unittest suite passes 55 tests. Representative browser checks cover admin/Units, payments/expenses, auth, tenant messages, caretaker dashboard/management and owner portfolio/property view, including 390px checks. No real messages were sent by Codex; SMS/outreach off.
+- Validation: this refinement compiles all 152 Jinja templates and passes 90 rendered GET page smoke checks (plus tenant conversation template fixture; Sarah's demo conversation has no activated tenant login); the preceding rollout passed all 55 unittest tests. Current browser verification includes the updated admin dashboard, Units, caretaker actions, owner portfolio, 390px layouts and mobile menu close/Escape behavior, with no horizontal page overflow in the checked phone layouts. Representative browser checks cover admin/Units, payments/expenses, auth, tenant messages, caretaker dashboard/management and owner portfolio/property view, including 390px checks. No real messages were sent by Codex; SMS/outreach off.
 - Local preview remains http://127.0.0.1:5051/ (role chooser `/demo`), using `/tmp/domi-ui-review.db`. Credentials in CLAUDE.md. Local platform password is `demo`. Scheduler off; template auto-reload explicitly enabled on Jinja environment. Server left running for review.
-- Hub thread **#63** records this Domi work and will carry the Claude review handoff. The hub's attached code snapshot is stale and belongs to Second Mind: do not use its snapshot or factory for this Domi review. Claude should inspect this local path, compare from `d94703d` (rollout) or `82728c7` (includes Units), and report UX/regression findings without deploying.
+- Hub thread **#63** records this Domi work and carries the Claude review handoff (original entry 1608; follow-up updates reference this refinement). The hub's attached code snapshot is stale and belongs to Second Mind: do not use its snapshot or factory for this Domi review. Claude should inspect this local path, compare from `d94703d` (rollout) or `82728c7` (includes Units), and report UX/regression findings without deploying.
 - Next: user feedback and Claude review, then refine. Operational priorities and reconciliation blockers below remain outstanding.
 
 ### Previous implementation handoff
