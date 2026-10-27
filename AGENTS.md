@@ -26,56 +26,55 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Claude (Codex/ChatGPT no longer in use — Claude now builds and reviews)
-**Date:** 2026-10-27
+**Who:** Claude (Codex/ChatGPT no longer in use — Claude builds and reviews)
+**Date:** 2026-10-27 · **Deployed:** v92 (all of `main` to `caf64c6`). GitHub has up to `dae0094`.
 
-### Product direction agreed with stakeholders (see ROADMAP / memory)
+### Product direction agreed with stakeholders
 
-- **Reactive, not proactive:** nothing is texted automatically except payment
-  receipts; admin and caretaker act on lists (e.g. tenants >1 month behind).
-- **Paybill:** the law firm (drew the lease) is applying for its **own M-Pesa
-  Paybill**; account number = house number. Portal STK waits for it.
-- **Lease (Mowin):** rent due on/before the **5th, in advance**; water with the
-  rent; one-month deposit. This settles the due-date go-live blocker.
-- **Onboarding must be repeatable:** new lease = clean start; old debt only as
-  an evidenced "brought forward" line; profiles can be "lease pending".
-- **Owners see all tenant↔management conversations** (no notice to tenants).
-- **Move-out:** one month's notice expected; also handle walk-outs.
+- **Reactive, not proactive:** nothing texts on its own except payment receipts.
+- **Paybill:** the law firm is applying for its own M-Pesa Paybill; account no. = house no.
+- **Lease (Mowin):** rent due on/before the **5th of the same month, in advance**; water with rent;
+  one-month deposit. Charges now fall due that way (`src/utils/due_dates.py`).
+- **Onboarding is repeatable:** a lease opens a clean account; old debt moves only as an evidenced
+  "brought forward". Owners see all conversations. Move-out: one month's notice, walk-outs handled.
+- **WhatsApp:** admin runs an open tenant community group outside Domi.
 
-### What changed (local, on `main`, not deployed)
+### Shipped this session (v92)
 
-- Reviewed Codex's 2026-10-20 commits — sound, except: production detection.
-  `ENVIRONMENT` is never set on Fly (fly.toml sets `FLASK_ENV`), so the M-Pesa
-  "no token → refuse callbacks in production" guard and the dev-only `/test`
-  blueprint treated production as dev. New `src/utils/runtime.is_production()`
-  used everywhere. Test added.
-- New default-off `AUTOMATIC_ALERTS_ENABLED`: holds the Monday owner digest SMS,
-  stale-claim SMS, and verify-time not-found / mismatch / flag-cleared SMS.
-  Flags, alerts and audit rows still written. Receipts unaffected. 4 tests.
-- `delete_payment` is POST-only; the "Undo" flash is a one-button form.
-- 31/31 tests pass.
+- Production detection via `src/utils/runtime.is_production()` (Fly sets FLASK_ENV, not ENVIRONMENT —
+  M-Pesa callbacks were accepting untokened posts; `/test` routes were live). Verified on prod.
+- `AUTOMATIC_ALERTS_ENABLED` (default off) holds system-initiated alerts; `delete_payment` POST-only.
+- **Lease intake** `/leases` (`src/leases/intake.py`) — see CLAUDE.md.
+- Family Bank `*OPENING BALANCE*` parser fix; due dates per lease; `scripts/sms_test.py`.
+- Prod secrets: `AT_SMS_ENABLED=false` (set), outreach + automatic alerts unset. SMS provider still AT sandbox.
 
-### Build order (agreed)
+### Reconciliation (in progress — nothing applied to prod yet)
 
-0. **Make SMS safe and deploy** — code done; deploy + TextSMS switch-over per
-   RUNBOOK "Switching production SMS to TextSMS". Awaiting user's TextSMS keys
-   and go-ahead. Nov 1 monthly check-in is gated on current main, not on v91.
-1. Lease intake + repeatable onboarding (lease-pending profiles, ID no., lease
-   start, deposit, evidenced brought-forward balance), then all 44 units.
-2. Receipt SMS includes remaining balance; broadcast to portal **and** SMS.
-3. ">1 month behind" lists for admin and caretaker.
-4. Admin ↔ caretaker chat (caretaker reports).
-5. Tenant move-out notice + admin "left without notice".
-6. Owner view of conversations + per-unit performance.
-7. Portal payments once the law firm's Paybill exists. Note: `resolve_account`
-   matches the house number org-wide — two properties with a "6A" under one
-   Paybill would be ambiguous; needs a per-property prefix before property #2.
+- `scripts/reconcile_2026_10.py review|apply` — adds Family Bank May–Jun + 25 Sep–14 Oct, National
+  Bank Mowin lines checked by eye (CSVs; scans were unreliable — totals off by 415k/1.45M), and
+  May–Oct rent+service (504 charges, KES 4.13M). Review sheet sent to user
+  (`data/output/reconciliation_review_2026-10.xlsx`, gitignored).
+- **Blocked on:** Family Bank 1 Jul – 24 Sep statement (without it balances overstate by ~3 months),
+  and the user's decisions on yellow rows (NCBA→4F?, GEOFFREY→4B?, Joel Mukwekwe Mutisya, etc.).
+- Apply on prod after review: copy PDFs/CSVs/sheet to /data, run `apply` dry then `--execute` via
+  `fly ssh console` (backup first). Note: the review sheet was built with next-month due dates;
+  regenerate it before applying (charges now due the same month).
 
-### Still open from Codex's list
+### Next (agreed order)
 
-Eight tenants without portal access and two unattributed ledger rows (6C water
-KES 1,200 2026-04; 6A payment KES 3,600 2026-02-27) — resolve during onboarding,
-not by inference. No CSRF protection anywhere (forms are session-cookie only).
+1. TextSMS: user runs `scripts/sms_test.py` locally; then set SMS_PROVIDER/TEXTSMS_* on Fly, flip
+   AT_SMS_ENABLED=true, one-phone prod test.
+2. Upload safety: statement upload supersedes ANY overlapping active statement org-wide (all banks) —
+   scope to same bank/account and full overlap; add totals check for scanned uploads.
+3. Receipt SMS with remaining balance; broadcast to portal + SMS; "Copy for WhatsApp".
+4. ">1 month behind" lists (admin + caretaker). 5. Admin↔caretaker chat. 6. Move-out (tenant
+   notice + left-without-notice). 7. Owner comms + per-unit performance. 8. KCB parser (needs sample).
+
+### Still open
+
+Eight tenants without portal access; two unattributed ledger rows (6C water 1,200 Apr; 6A payment
+3,600 Feb). No CSRF protection. `verify_payments` sends on GET. Daraja secrets on prod are sandbox —
+tenant Pay button may show; harmless until tenants are invited (outreach off).
 
 ---
 
