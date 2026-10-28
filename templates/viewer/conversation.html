@@ -1,4 +1,5 @@
 {% extends "viewer/base_viewer.html" %}
+{% from 'partials/ticks.html' import ticks %}
 {% block title %}{{ conv.subject }} — {{ conv.unit_number }}{% endblock %}
 {% block extra_css %}{% include 'viewer/_chat_styles.html' %}{% endblock %}
 {% block content %}
@@ -12,7 +13,7 @@
   <div class="bubble {{ 'b-tenant' if m.sender_type == 'tenant' else ('b-staff b-caretaker' if m.sender_type == 'caretaker' else ('b-sys' if m.sender_type == 'system' else 'b-staff')) }}">
     <div class="body">{{ m.body }}</div>
     {% for p in m.photos %}<div class="photos"><a target="_blank" href="{{ url_for('viewer.conversation_photo', property_id=property.id, photo_id=p.id) }}"><img src="{{ url_for('viewer.conversation_photo', property_id=property.id, photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
-    <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }} (tenant){% elif m.sender_type == 'caretaker' %}{{ m.sender_name }} (caretaker){% elif m.sender_type == 'system' %}Update{% else %}Management{% if m.account_name %} · {{ m.account_name }}{% endif %}{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+    <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }} (tenant){% elif m.sender_type == 'caretaker' %}{{ m.sender_name }} (caretaker){% elif m.sender_type == 'system' %}Update{% else %}Management{% if m.account_name %} · {{ m.account_name }}{% endif %}{% endif %} · {{ (m.created_at or '')[:16] }}{% if true %} {{ ticks(m) }}{% endif %}</div>
   </div>
   {% endfor %}
 </section>

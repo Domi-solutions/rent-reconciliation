@@ -153,6 +153,10 @@ def thread(conn, conversation_id):
         photos.setdefault(p['message_id'], []).append(dict(p))
     for m in msgs:
         m['photos'] = photos.get(m['id'], [])
+        # Ticks: seen once the other side has opened the conversation after it was sent
+        other_read = (conv['staff_read_at'] if m['sender_type'] == 'tenant'
+                      else conv['tenant_read_at'] if m['sender_type'] in ('admin', 'caretaker') else None)
+        m['seen'] = None if m['sender_type'] == 'system' else bool(other_read and other_read > m['created_at'])
     return dict(conv), msgs
 
 

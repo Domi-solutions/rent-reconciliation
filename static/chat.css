@@ -65,3 +65,7 @@ body .thread-avatar { background: var(--forest); }
   body .chat-transcript { background: white; border-color: #ccc; }
   body .chat-transcript .bubble { box-shadow: none; break-inside: avoid; }
 }
+/* Ticks (partials/ticks.html): grey = sent, blue = seen. */
+body .ticks { display: inline-flex; align-items: center; vertical-align: -3px; margin-left: 4px; color: var(--ink-3); }
+body .ticks svg { width: 18px; height: 12px; }
+body .ticks.seen { color: var(--blue); }

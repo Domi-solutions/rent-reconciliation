@@ -1,4 +1,5 @@
 {% extends "caretaker/base_caretaker.html" %}
+{% from 'partials/ticks.html' import ticks %}
 {% block title %}{{ conv.subject }} — {{ conv.unit_number }}{% endblock %}
 {% block extra_css %}
 <style>
@@ -22,7 +23,7 @@
 <section class="chat-transcript" aria-label="Conversation messages">
 {% for m in msgs %}
 <div class="bubble {{ 'tenant' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'staff') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('caretaker.repair_photo', property_id=property.id, photo_id=p.id) }}" target="_blank"><img src="{{ url_for('caretaker.repair_photo', property_id=property.id, photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
-  <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}Management{% endif %} · {{ (m.created_at or '')[:16] }}</div>
+  <div class="meta">{% if m.sender_type == 'tenant' %}{{ conv.tenant_name|title }}{% elif m.sender_type == 'caretaker' %}Caretaker · {{ m.sender_name }}{% elif m.sender_type == 'system' %}Update{% else %}Management{% endif %} · {{ (m.created_at or '')[:16] }}{% if m.sender_type in ('admin', 'caretaker') %} {{ ticks(m) }}{% endif %}</div>
 </div>
 {% endfor %}
 </section>

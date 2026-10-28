@@ -154,3 +154,11 @@ body details.write-bubble > summary:hover { background: var(--mint); color: var(
 .write-option:hover { border-color: var(--accent); background: var(--mint-2); color: var(--forest); }
 .write-option .domi-icon { color: var(--accent); }
 .write-options .write-note { margin: 6px 0 0; font-size: 12px; }
+
+/* A card whose header opens the full page behind it (tenant overview "Bills & payments"). */
+body a.card-header-link { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  color: var(--ink); text-decoration: none; }
+body a.card-header-link h6 { margin: 0; }
+body a.card-header-link:hover { background: var(--mint-2); color: var(--ink); }
+.card-header-go { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--accent); text-align: right; }
+.card-header-go span { font-size: 22px; line-height: 1; }

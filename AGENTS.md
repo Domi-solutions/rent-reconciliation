@@ -29,6 +29,12 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Message ticks + clickable card header (Claude, 2026-10-28)
+
+- Every chat (tenant↔management, caretaker repairs, management↔caretaker, owner read-only views) shows grey ✓✓ when sent and blue ✓✓ once the other side has opened it. Uses the existing read timestamps; no new tables. Tests: `tests/test_message_ticks.py`.
+- Tenant overview: the "Bills & payments" card header is the link to the statement; the button at the bottom of the card is gone.
+- Pending decision (asked LINCKS): SMS to staff when a tenant writes — who can be notified for money topics (caretakers never see money conversations), whose phone numbers, and a limit so one conversation doesn't send an SMS per message.
+
 ### Tenant Messages page, calmer (Claude, 2026-10-28)
 
 - Order: notices from management (latest 3, older ones folded), then "Your conversations" (whole rows tappable), then one outgoing-chat-style bubble **Write to management** that opens the three topics. The permanence note is one small line inside it. Styles in `static/tenant.css`.

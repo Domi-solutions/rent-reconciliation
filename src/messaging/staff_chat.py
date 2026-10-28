@@ -54,8 +54,13 @@ def thread(conn, caretaker_id):
         for p in conn.execute(f"SELECT * FROM staff_message_photos WHERE message_id IN ({marks})",
                               [m['id'] for m in msgs]):
             photos.setdefault(p['message_id'], []).append(dict(p))
+    reads = {r['side']: r['read_at'] for r in conn.execute(
+        "SELECT side, read_at FROM staff_chat_reads WHERE caretaker_id = ?", (caretaker_id,))}
     for m in msgs:
         m['photos'] = photos.get(m['id'], [])
+        # Ticks: seen once the other side has opened the chat after it was sent
+        other_read = reads.get('caretaker' if m['sender_type'] == 'admin' else 'admin')
+        m['seen'] = bool(other_read and other_read > m['created_at'])
     return msgs
 
 

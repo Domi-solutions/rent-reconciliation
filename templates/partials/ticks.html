@@ -1,0 +1,5 @@
+{# Message ticks, as on WhatsApp: grey ✓✓ = sent, blue ✓✓ = the other side has opened the
+   conversation since. `seen` comes from threads.thread() / staff_chat.thread(). #}
+{% macro ticks(m) -%}
+{% if m.seen is not none %}<span class="ticks{% if m.seen %} seen{% endif %}" title="{{ 'Seen' if m.seen else 'Sent' }}"><svg viewBox="0 0 24 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8.5 5.5 12.5 13 4"/><path d="M8.5 11.5 9.5 12.5 17 4"/></svg><span class="visually-hidden">{{ 'Seen' if m.seen else 'Sent' }}</span></span>{% endif %}
+{%- endmacro %}
