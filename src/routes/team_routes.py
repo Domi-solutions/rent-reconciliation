@@ -13,6 +13,7 @@ from werkzeug.security import generate_password_hash
 from src.database.db import get_connection
 from src.platform.guardian import platform_log
 from src.utils import staff
+from src.utils.phone import normalize_to_e164
 
 team_bp = Blueprint('team', __name__, url_prefix='/team')
 
@@ -120,6 +121,31 @@ def set_password(account_id):
                          (generate_password_hash(password), row['id']))
             _record(conn, 'admin_password_reset', row['id'], f"Temporary password set for {row['name'] or row['email']}")
             flash(f"Temporary password set for {row['name'] or row['email']}.", 'success')
+    return redirect(url_for('team.team'))
+
+
+@team_bp.route('/<account_id>/phone', methods=['POST'])
+def set_phone(account_id):
+    """Where this account's alert texts go (a tenant wrote — src/messaging/staff_alerts.py).
+    A lead sets anyone's; everyone may set their own. Empty clears it."""
+    raw = (request.form.get('phone') or '').strip()
+    phone = normalize_to_e164(raw) if raw else None
+    with get_connection() as conn:
+        if account_id == session.get('admin_user_id'):
+            row = conn.execute("SELECT * FROM admin_users WHERE id = ? AND org_id = ?",
+                               (account_id, session.get('org_id'))).fetchone()
+            if not row:
+                abort(404)
+        else:
+            row = _target(conn, account_id)
+        if raw and not phone:
+            flash('That is not a Kenyan phone number — use 07XX XXX XXX.', 'error')
+        elif phone != row['phone']:
+            conn.execute("UPDATE admin_users SET phone = ? WHERE id = ?", (phone, row['id']))
+            _record(conn, 'admin_phone_changed', row['id'],
+                    f"{row['name'] or row['email']}: alert phone {'set' if phone else 'removed'}")
+            flash(f"{row['name'] or row['email']} — alert texts {'go to ' + phone if phone else 'switched off'}.",
+                  'success')
     return redirect(url_for('team.team'))
 
 

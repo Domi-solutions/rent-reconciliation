@@ -7,13 +7,15 @@
     Everyone who signs in to manage the organisation has their own account. Tenants see replies signed
     "Management"; the activity log records which person acted. Accounts are switched off, never deleted —
     a former admin's name stays on what they did.
+    <br>Phone for alerts: when a tenant writes, this number gets a text with the house, the title and a link to reply.
+    Leave it empty for no texts.
   </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-4" style="max-width: 900px;">
   <div class="card-body p-0">
     <table class="table mb-0" style="font-size: 14px;">
-      <thead><tr><th style="padding-left:20px">Name</th><th>Email</th><th>Role</th><th>Last sign-in</th><th>Actions recorded</th>{% if can_manage %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th style="padding-left:20px">Name</th><th>Email</th><th>Phone for alerts</th><th>Role</th><th>Last sign-in</th><th>Actions recorded</th>{% if can_manage %}<th></th>{% endif %}</tr></thead>
       <tbody>
       {% for r in rows %}
       <tr style="{% if not r.is_active %}opacity:.55{% endif %}">
@@ -22,6 +24,13 @@
           {% if not r.is_active %}<div style="font-size:12px">switched off {{ (r.deactivated_at or '')[:10] }} by {{ r.deactivated_by }}</div>{% endif %}
         </td>
         <td>{{ r.email }}</td>
+        <td>
+          {% if can_manage or r.id == me %}
+          <form method="POST" action="{{ url_for('team.set_phone', account_id=r.id) }}" class="d-flex gap-1" style="min-width:200px">
+            <input type="tel" name="phone" class="form-control form-control-sm" value="{{ r.phone or '' }}" placeholder="07XX XXX XXX" aria-label="Phone for alerts for {{ r.name or r.email }}">
+            <button class="btn btn-sm btn-outline-secondary">Save</button></form>
+          {% else %}{{ r.phone or '—' }}{% endif %}
+        </td>
         <td>{{ 'Lead admin' if r.role == 'lead' else 'Admin' }}</td>
         <td>{{ (r.last_login_at or '—')[:16] }}</td>
         <td>{{ r.actions }}</td>

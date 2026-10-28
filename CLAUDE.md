@@ -311,7 +311,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_instructions`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_staff_alerts`.
 
 ---
 
@@ -409,6 +409,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 ## Messaging (Admin)
 
 - Scope: current property only
+- **Staff texted when a tenant writes** (`src/messaging/staff_alerts.py`): repairs — the tenant picks caretaker / management / both; money and other — management only (caretakers can't open those). Management phones = `admin_users.phone` (set on `/team`), caretakers = `caretakers.phone`. One text per unanswered stretch (`conversations.staff_alerted_at`, cleared when staff reply). Text = property, house, title, link (sign-in still required). Sent after commit; subject to the normal SMS switches (live SMS off ⇒ simulated).
 - Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed "Management" to the tenant (the replying person is stored in `conversation_messages.sender_account_id` and shown to admins only), logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template. Recipients = active tenants only. Channel `both` (form value; legacy `sms`) = portal + full text by SMS, prefixed with the property name; `portal` = portal only (+ "new message" SMS with link only once outreach is approved). `{portal_link}` substitutes to empty until then.
 - Move-in welcome SMS (`add_tenant`) is a sign-in invitation: held until `TENANT_OUTREACH_ENABLED`. Lease intake sends none.

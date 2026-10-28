@@ -135,6 +135,7 @@ from src.database.db import (
     migrate_add_leases,
     migrate_add_staff_chat,
     migrate_add_expenses,
+    migrate_add_staff_alerts,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -198,6 +199,7 @@ migrate_add_payment_instructions()
 migrate_add_leases()
 migrate_add_staff_chat()
 migrate_add_expenses()
+migrate_add_staff_alerts()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo

@@ -11,7 +11,7 @@ from src.utils.statement import get_tenant_statement
 from src.utils.tenant_documents import (account_coverage, build_invoice, build_receipt, invoice_periods,
                                          period_label, unpaid_bills)
 from src.utils.water_breakdown import water_breakdowns
-from src.messaging import threads
+from src.messaging import staff_alerts, threads
 from src.reconciliation import claim_owner
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
@@ -582,7 +582,7 @@ def message_new(token):
         ref_text = threads.ref_summary(conn, tenant['id'], ref_type, ref_id) if ref_id else None
         if not ref_text:
             ref_type = ref_id = None
-        error = None
+        error = conv_id = None
         if request.method == 'POST':
             subject = (request.form.get('subject') or '').strip() or ref_text or ''
             body = (request.form.get('body') or '').strip()
@@ -592,14 +592,19 @@ def message_new(token):
                 conv_id, saved, rejected = threads.start_conversation(
                     conn, tenant, unit, prop, topic, subject[:120], body,
                     photos=request.files.getlist('photos'), ref_type=ref_type, ref_id=ref_id,
-                    category=request.form.get('category') or 'general')
-                return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id,
-                                        rejected=rejected or None))
+                    category=request.form.get('category') or 'general',
+                    notify=staff_alerts.clean_choice(topic, request.form.get('notify')))
+                alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
+    if conv_id:
+        staff_alerts.send(alerts)          # after commit
+        return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id, rejected=rejected or None))
     return render_template('tenant/message_new.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='messages', topic=topic if topic in threads.TOPICS else 'money',
                            topics=threads.TOPICS, categories=threads.REPAIR_CATEGORIES,
                            ref=f'{ref_type}:{ref_id}' if ref_id else '', ref_text=ref_text,
-                           error=error, max_photos=threads.MAX_PHOTOS)
+                           error=error, max_photos=threads.MAX_PHOTOS,
+                           notify_choices=staff_alerts.choices(topic), notify_labels=staff_alerts.NOTIFY,
+                           notify=request.values.get('notify') or staff_alerts.clean_choice(topic, None))
 
 
 @tenant_bp.route('/<token>/messages/<conv_id>', methods=['GET', 'POST'])
@@ -613,14 +618,19 @@ def conversation(token, conv_id):
         conv, msgs = threads.thread(conn, conv_id)
         if not conv or conv['tenant_id'] != tenant['id']:
             return redirect(url_for('tenant.messages', token=token))
+        sent = False
         if request.method == 'POST':
             body = (request.form.get('body') or '').strip()
             if body:
                 _, _, rejected = threads.add_message(conn, conv_id, 'tenant', tenant['name'], body,
                                                      request.files.getlist('photos'))
-                return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id,
-                                        rejected=rejected or None))
-        threads.mark_read(conn, conv_id, 'tenant')
+                alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                sent = True
+        if not sent:
+            threads.mark_read(conn, conv_id, 'tenant')
+    if sent:
+        staff_alerts.send(alerts)          # after commit
+        return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id, rejected=rejected or None))
     return render_template('tenant/conversation.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='messages', conv=conv, msgs=msgs, topics=threads.TOPICS,
                            rejected=request.args.get('rejected'), max_photos=threads.MAX_PHOTOS)

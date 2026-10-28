@@ -382,7 +382,7 @@ tables:
   conversations:
     status: live
     migration: migrate_add_conversations
-    notes: "Tenant ↔ management threads. Written only via src/messaging/threads.py. Caretaker sees topic=repair only."
+    notes: "Tenant ↔ management threads. Written only via src/messaging/threads.py. Caretaker sees topic=repair only. notify (admin|caretaker|both; money/other always admin) + staff_alerted_at (last staff text; cleared on staff reply) added by migrate_add_staff_alerts — see src/messaging/staff_alerts.py."
     columns:
       id: {type: TEXT, pk: true}
       property_id: {type: TEXT, fk: properties.id, required: true}
@@ -418,7 +418,7 @@ tables:
   admin_users:
     status: live
     migration: migrate_add_admin_users
-    notes: "One account per administrator under an organisation. Never deleted — is_active=0 switches off and keeps the name on the record. Migration turned each organisation's contact_email + admin_password_hash into a lead account with name ''; the first sign-in asks for the name. Once an org has any account, the organisation password opens nothing. All logic in src/utils/staff.py."
+    notes: "One account per administrator under an organisation. Never deleted — is_active=0 switches off and keeps the name on the record. Migration turned each organisation's contact_email + admin_password_hash into a lead account with name ''; the first sign-in asks for the name. Once an org has any account, the organisation password opens nothing. All logic in src/utils/staff.py. phone (migrate_add_staff_alerts): where this account's 'a tenant wrote' texts go; set on /team."
     columns:
       id: {type: TEXT, pk: true, notes: "ADM-…"}
       org_id: {type: TEXT, fk: organizations.id, required: true}

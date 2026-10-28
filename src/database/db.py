@@ -2064,3 +2064,25 @@ def migrate_add_expenses():
             )
         """)
         print("Migration complete: expenses, expense_receipts ready.")
+
+
+def migrate_add_staff_alerts():
+    """Text staff when a tenant writes (src/messaging/staff_alerts.py). Idempotent.
+
+    admin_users.phone — where a management account's alert texts go.
+    conversations.notify — who the tenant asked to be texted: admin | caretaker | both
+      (repairs only; money and other conversations always text management).
+    conversations.staff_alerted_at — when staff were last texted; cleared when staff
+      reply, so one unanswered stretch sends one text, not one per message.
+    """
+    with get_connection() as conn:
+        def columns(table):
+            return {r['name'] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if 'phone' not in columns('admin_users'):
+            conn.execute("ALTER TABLE admin_users ADD COLUMN phone TEXT")
+        conv = columns('conversations')
+        if 'notify' not in conv:
+            conn.execute("ALTER TABLE conversations ADD COLUMN notify TEXT")
+        if 'staff_alerted_at' not in conv:
+            conn.execute("ALTER TABLE conversations ADD COLUMN staff_alerted_at TIMESTAMP")
+        print("Migration complete: staff alert fields ready.")

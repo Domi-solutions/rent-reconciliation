@@ -36,6 +36,17 @@
       <input type="file" name="photos" class="form-control" accept="image/*" multiple>
       <div class="muted" style="margin-top:4px">{% if topic == 'repair' %}A photo of the problem helps it get fixed faster.{% else %}For a payment, a screenshot of the M-Pesa message helps.{% endif %}</div>
     </div>
+    {% if notify_choices|length > 1 %}
+    <fieldset class="mb-4 notify-choice">
+      <legend class="form-label fw-semibold">Who should get a text about this?</legend>
+      {% for c in notify_choices %}
+      <label class="check-big"><input type="radio" name="notify" value="{{ c }}" {% if c == notify %}checked{% endif %}> {{ notify_labels[c] }}</label>
+      {% endfor %}
+    </fieldset>
+    {% else %}
+    <input type="hidden" name="notify" value="{{ notify_choices[0] }}">
+    <p class="muted mb-3">Management gets a text that you wrote.</p>
+    {% endif %}
     <button type="submit" class="btn btn-dark w-100" style="padding:12px;border-radius:var(--r-card);font-weight:600">Send</button>
   </form>
 </div>

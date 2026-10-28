@@ -51,6 +51,7 @@ blueprints:
       - "GET /mpesa — M-Pesa payments + where tenants pay (blueprint mpesa_admin_bp, src/routes/mpesa_admin_routes.py); POST /mpesa/<txn_id>/assign names the tenant for an unmatched paybill payment"
       - "POST /mpesa/instructions — set properties.pay_paybill / pay_account / pay_account_name; a change raises a critical platform alert, writes the shadow log and SMSes owners"
       - "GET/POST /messages/invite — SMS tenants their sign-in link (preview per tenant, part count, who has signed up)"
+      - "POST /team/<id>/phone — alert phone for an account (lead: anyone's; everyone: their own); audit_log + platform_shadow_log"
       - "POST /team/add | /team/<id>/deactivate | /team/<id>/reactivate | /team/<id>/password | /team/<id>/role — lead admin (or master key / platform) only; never your own switch-off; an org keeps one active lead; each writes audit_log + platform_shadow_log"
       - "GET /tools — monthly workflow (tools_index); period-aware (auto-detects earliest incomplete YYYY-MM period; accepts ?period= override; prev/next nav); each step scoped to selected period; step 5 checks landlord_reports not audit_log"
       - "POST /payments/ignore/<txn_id> — mark bank_transaction ignored=1; excluded from workflow unassigned count; row preserved; accepts optional reason form field"
