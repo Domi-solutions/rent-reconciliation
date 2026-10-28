@@ -24,13 +24,32 @@
     if (!buttons.length) return;
     var label = header.querySelector('.nav-toggle-label');
     if (active && label) label.textContent = active.textContent.trim().split('\n')[0].trim();
+    // Phone side menu: a title with a close button inside the panel, and a dimmed backdrop.
+    var home = header.querySelector('.home-link');
+    var head = document.createElement('div');
+    head.className = 'drawer-head';
+    head.innerHTML = '<b></b><button type="button" class="drawer-close" aria-label="Close menu">×</button>';
+    head.querySelector('b').textContent = home ? home.textContent.trim() : 'Menu';
+    nav.insertBefore(head, nav.firstChild);
+    var backdrop = document.createElement('div');
+    backdrop.className = 'nav-backdrop';
+    document.body.appendChild(backdrop);
+    var phone = window.matchMedia('(max-width: 767px)');
+    head.style.display = phone.matches ? '' : 'none';
+    phone.addEventListener('change', function (m) { head.style.display = m.matches ? '' : 'none'; if (!m.matches) set(false); });
+
     function set(open) {
       header.classList.toggle('nav-open', open);
+      backdrop.classList.toggle('show', open);
+      document.body.style.overflow = open ? 'hidden' : '';
       buttons.forEach(function (b) { b.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+      if (open) { var a = nav.querySelector('.active') || nav.querySelector('a'); if (a) a.focus(); }
     }
     buttons.forEach(function (b) {
       b.addEventListener('click', function () { set(!header.classList.contains('nav-open')); });
     });
+    backdrop.addEventListener('click', function () { set(false); });
+    head.querySelector('.drawer-close').addEventListener('click', function () { set(false); buttons[0].focus(); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && header.classList.contains('nav-open')) { set(false); buttons[0].focus(); }
     });

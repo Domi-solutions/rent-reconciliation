@@ -196,17 +196,35 @@ body :is(.viewer-header, .ct-header) .nav-phone-only { display: none; }
     border: 0; background: none; color: var(--sage); font: 600 14px var(--font); text-align: right;
   }
   body :is(.viewer-header, .ct-header).nav-open .nav-toggle { background: var(--sage); border-color: var(--sage); color: var(--forest); }
-  body :is(.viewer-header, .ct-header) nav { display: none !important; }
-  body :is(.viewer-header, .ct-header).nav-open nav {
-    display: flex !important; flex-direction: column; gap: 6px; overflow: visible; margin: 0; padding: 6px 0 14px;
-    -webkit-mask-image: none; mask-image: none;
+  /* The menu slides in from the left over part of the page (like X); the page dims behind it. */
+  body :is(.viewer-header, .ct-header) nav {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 1100; width: min(82vw, 310px);
+    display: flex !important; flex-direction: column; flex-wrap: nowrap !important; gap: 4px;
+    margin: 0 !important; padding: 0 14px 20px !important; overflow-y: auto; overflow-x: hidden;
+    background: var(--frame); box-shadow: 6px 0 24px rgba(0,0,0,.28);
+    transform: translateX(-105%); visibility: hidden; transition: transform .22s ease, visibility 0s linear .22s;
+    -webkit-mask-image: none !important; mask-image: none !important;
   }
-  body :is(.viewer-header, .ct-header).nav-open nav a { width: 100%; min-height: 46px; margin-left: 0 !important; font-size: 15px; }
+  body :is(.viewer-header, .ct-header).nav-open nav { transform: none; visibility: visible; transition: transform .22s ease; }
+  /* The header holds the panel; while open it sits above the dimmed page and the demo banner. */
+  body :is(.viewer-header, .ct-header).nav-open { z-index: 1200; }
+  body :is(.viewer-header, .ct-header) nav a { width: 100%; min-height: 46px; margin-left: 0 !important; font-size: 15px; flex-shrink: 0; }
+  body .drawer-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-shrink: 0;
+    padding: 16px 2px 12px; margin-bottom: 6px; border-bottom: 1px solid rgba(140,199,161,.25);
+  }
+  body .drawer-head b { color: #fff; font-size: 17px; font-weight: 650; }
+  body .drawer-close { width: 40px; height: 40px; border: 1px solid rgba(140,199,161,.5); border-radius: var(--r-btn);
+    background: none; color: #fff; font-size: 22px; line-height: 1; }
+  body .nav-backdrop { position: fixed; inset: 0; z-index: 1050; background: rgba(0,0,0,.45); opacity: 0;
+    pointer-events: none; transition: opacity .22s ease; }
+  body .nav-backdrop.show { opacity: 1; pointer-events: auto; }
+  @media (prefers-reduced-motion: reduce) { body :is(.viewer-header, .ct-header) nav, body .nav-backdrop { transition: none; } }
   body :is(.viewer-header, .ct-header) { position: sticky; top: 0; }
   body :is(.viewer-header, .ct-header) .ct-meta:not(a) { display: none; }
   /* Log out moves into the menu on phones, so the header stays one line. */
   body :is(.viewer-header, .ct-header) .header-logout { display: none; }
-  body :is(.viewer-header, .ct-header).nav-open .nav-phone-only { display: inline-flex; }
+  body :is(.viewer-header, .ct-header) .nav-phone-only { display: inline-flex; }
 }
 /* A list row that opens something looks like it: whole row is the link, with a chevron. */
 body a.data-row-link { display: block; color: var(--ink); text-decoration: none; position: relative; padding-right: 40px; }

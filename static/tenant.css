@@ -263,3 +263,26 @@ body .welcome-done { display: flex; align-items: center; justify-content: center
   background: var(--orange-soft); color: var(--ink); text-decoration: none; }
 .mo-banner:hover { color: var(--ink); border-color: var(--orange); }
 .mo-banner-go { font-size: 13px; font-weight: 600; color: var(--orange); }
+
+/* Overview message preview: like a phone's message list. Unread = bold + green dot. */
+.ov-messages { border: 1px solid var(--border-strong); border-radius: var(--r-card); background: var(--surface); overflow: hidden; margin-bottom: 14px; }
+.ov-messages-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+.ov-messages-head h2 { font-size: 15px; font-weight: 650; margin: 0; }
+.ov-messages-head span { font-size: 13px; font-weight: 600; color: var(--accent); }
+.ov-messages-head:hover { background: var(--mint-2); color: var(--ink); }
+.ov-msg { display: block; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+.ov-messages-head + .ov-msg { border-top: 0; }
+.ov-msg:hover { background: var(--mint-2); color: var(--ink); }
+.ov-msg-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.ov-msg-subject { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-msg-date { font-size: 12px; color: var(--ink-2); flex-shrink: 0; }
+.ov-msg-preview { display: block; font-size: 14px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-msg-who { font-weight: 600; }
+.ov-msg.is-unread .ov-msg-subject, .ov-msg.is-unread .ov-msg-preview { font-weight: 700; color: var(--ink); }
+.ov-msg.is-unread .ov-msg-date { color: var(--accent); font-weight: 700; }
+.ov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+.ov-msg-empty { color: var(--ink-2); font-size: 14px; }
+
+.card-header-go .go-short { display: none; }
+@media (max-width: 480px) { .card-header-go .go-long { display: none; } .card-header-go .go-short { display: inline; } }

@@ -22,7 +22,7 @@
 <div class="surface-card mb-4">
   <a class="surface-card-header card-header-link" href="{{ url_for('tenant.statement', token=token) }}">
     <h6>Bills &amp; payments</h6>
-    <span class="card-header-go">Statement, invoices &amp; receipts <span aria-hidden="true">›</span></span>
+    <span class="card-header-go"><span class="go-long">Statement, invoices &amp; receipts</span><span class="go-short">Statement</span> <span aria-hidden="true">›</span></span>
   </a>
   <div class="data-row">
     <div class="data-row-meta mb-1">
@@ -50,8 +50,30 @@
   </div>
 </div>
 
+{# Like a phone's message list: the latest conversations with their newest message, read or not. #}
+<section class="ov-messages" aria-labelledby="ov-messages-heading">
+  <a class="ov-messages-head" href="{{ url_for('tenant.messages', token=token) }}">
+    <h2 id="ov-messages-heading">Messages &amp; repairs</h2><span>All messages ›</span>
+  </a>
+  {% for c in latest %}
+  <a class="ov-msg{% if c.unread %} is-unread{% endif %}" href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}">
+    <span class="ov-msg-top">
+      <span class="ov-msg-subject">{{ c.subject }}</span>
+      <span class="ov-msg-date">{{ (c.last_message_at or '')[:10] }}</span>
+    </span>
+    <span class="ov-msg-preview">
+      {% if c.unread %}<span class="ov-dot" aria-hidden="true"></span>{% endif %}
+      <span class="ov-msg-who">{% if c.last_from == 'tenant' %}You{% elif c.last_from == 'caretaker' %}Caretaker{% elif c.last_from == 'system' %}Update{% else %}Management{% endif %}:</span>
+      {{ c.last_body|truncate(90) }}
+      {% if c.unread %}<span class="visually-hidden">(new)</span>{% endif %}
+    </span>
+  </a>
+  {% else %}
+  <a class="ov-msg ov-msg-empty" href="{{ url_for('tenant.messages', token=token) }}">No messages yet. Tap to write to management or report a repair.</a>
+  {% endfor %}
+</section>
+
 <nav class="overview-links" aria-label="More">
-  <a href="{{ url_for('tenant.messages', token=token) }}">Messages &amp; repairs <span aria-hidden="true">›</span></a>
   <a href="{{ url_for('tenant.move_out_page', token=token) }}">Moving out &amp; your deposit <span aria-hidden="true">›</span></a>
   <a href="{{ url_for('tenant.welcome', token=token) }}">How to use Domi <span aria-hidden="true">›</span></a>
 </nav>

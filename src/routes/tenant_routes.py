@@ -319,6 +319,7 @@ def portal(token):
         if not tenant['welcomed_at'] and tenant['status'] == 'active':
             return redirect(url_for('tenant.welcome', token=token))     # first visit: how it all works
         notice = move_out.current(conn, tenant['id'])
+        latest = threads.latest_for_tenant(conn, tenant['id'])
         balance_row = conn.execute("""
             SELECT total_charged, total_paid, balance
             FROM tenant_balances WHERE tenant_id = ?
@@ -370,6 +371,7 @@ def portal(token):
         coverage=coverage,
         owed=owed,
         notice=notice,
+        latest=latest,
     )
 
 

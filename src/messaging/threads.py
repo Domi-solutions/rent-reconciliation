@@ -203,6 +203,20 @@ def list_for_tenant(conn, tenant_id):
     """, (tenant_id,)).fetchall()]
 
 
+def latest_for_tenant(conn, tenant_id, limit=3):
+    """The tenant's most recent conversations, newest first, each with its newest message
+    (who wrote it and the text) — the overview's message preview, read or not."""
+    rows = list_for_tenant(conn, tenant_id)[:limit]
+    for c in rows:
+        last = conn.execute("""
+            SELECT sender_type, body FROM conversation_messages WHERE conversation_id = ?
+            ORDER BY created_at DESC, rowid DESC LIMIT 1
+        """, (c['id'],)).fetchone()
+        c['last_from'] = last['sender_type'] if last else None
+        c['last_body'] = last['body'] if last else ''
+    return rows
+
+
 def awaiting_count(conn, property_id, caretaker=False):
     q = "SELECT COUNT(*) FROM conversations WHERE property_id = ? AND status = 'awaiting_reply'"
     if caretaker:
