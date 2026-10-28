@@ -101,10 +101,12 @@ _T = {
         'en': ('Messages', 'Your questions and repair requests, in writing, with the replies.', [
             'Money questions are seen by management only. Repairs are also seen by the caretaker.',
             'You get an SMS when there is a reply. Messages cannot be edited or deleted — a record for both sides.',
+            'Repairs show here too, marked Open or Fixed. Fixed but it broke again? Reply in the same conversation.',
         ]),
         'sw': ('Ujumbe', 'Maswali yako na maombi ya matengenezo, kwa maandishi, pamoja na majibu.', [
             'Maswali ya pesa yanaonekana na usimamizi tu. Matengenezo yanaonekana pia na caretaker.',
             'Utapata SMS jibu likija. Ujumbe hauwezi kubadilishwa wala kufutwa — ni kumbukumbu kwa pande zote.',
+            'Matengenezo yanaonekana hapa pia, yakiwa Open au Fixed. Yamerekebishwa lakini yameharibika tena? Jibu kwenye mazungumzo hayo hayo.',
         ]),
     },
     'tenant.message_new': {
@@ -115,16 +117,6 @@ _T = {
         'sw': ('Ujumbe mpya', 'Chagua unahusu nini, kisha andika kwa maneno yako.', [
             'Kwa matengenezo, ongeza picha hadi 3 — inasaidia kuleta vifaa sahihi.',
             'Picha huhifadhiwa bila mahali simu yako ilipokuwa.',
-        ]),
-    },
-    'tenant.maintenance': {
-        'en': ('Repairs', 'Repairs you have reported and whether they are fixed.', [
-            'Tap a repair to see the conversation about it.',
-            'Fixed but it broke again? Reply in the same conversation — it is reopened.',
-        ]),
-        'sw': ('Matengenezo', 'Matengenezo uliyoripoti na kama yamerekebishwa.', [
-            'Bonyeza tengenezo kuona mazungumzo yake.',
-            'Ilirekebishwa lakini imeharibika tena? Jibu kwenye mazungumzo hayo — yanafunguliwa upya.',
         ]),
     },
     'tenant.invoice': {

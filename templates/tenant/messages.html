@@ -25,13 +25,29 @@
     {% for c in conversations %}
     <a class="conv-row" href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}">
       <span class="conv-subject">{{ c.subject }}{% if c.unread %} <span class="tenant-unread">New reply</span>{% endif %}</span>
-      <span class="conv-meta">{{ topics[c.topic] }} · {{ (c.last_message_at or '')[:10] }} ·
-        {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}</span>
+      <span class="conv-meta">{{ topics[c.topic] }} ·
+        {% if c.topic == 'repair' and c.issue_status == 'resolved' %}<span class="repair-fixed">Fixed</span> {{ (c.issue_resolved_at or c.last_message_at or '')[:10] }}
+        {% else %}{% if c.topic == 'repair' and c.issue_status %}<span class="repair-open">Open</span> · {% endif %}{{ (c.last_message_at or '')[:10] }} ·
+        {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}{% endif %}</span>
     </a>
     {% endfor %}
   </div>
   {% else %}
   <p class="conv-empty">No conversations yet.</p>
+  {% endif %}
+  {% if earlier_repairs %}
+  <details class="older-notices">
+    <summary>Earlier repair requests ({{ earlier_repairs|length }})</summary>
+    <div class="conv-list">
+      {% for i in earlier_repairs %}
+      <div class="conv-row conv-row-static">
+        <span class="conv-subject">{{ i.title }}</span>
+        <span class="conv-meta">{{ (i.category or 'general')|replace('_', ' ')|title }} · reported {{ (i.created_at or '')[:10] }} ·
+          {% if i.status == 'resolved' %}<span class="repair-fixed">Fixed</span> {{ (i.resolved_at or '')[:10] }}{% else %}<span class="repair-open">Open</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
   {% endif %}
 </section>
 

@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Repairs folded into Messages (Claude, 2026-10-28)
+
+- Tenant Repairs tab removed (it repeated the repair conversations). Messages shows each repair as Open / Fixed; pre-conversation repair requests under "Earlier repair requests"; old Repairs links redirect to Messages. The older repair form now texts staff like a new repair. Caretaker Issues tab and admin side unchanged.
+
 ### Message ticks + clickable card header (Claude, 2026-10-28)
 
 - Every chat (tenant↔management, caretaker repairs, management↔caretaker, owner read-only views) shows grey ✓✓ when sent and blue ✓✓ once the other side has opened it. Uses the existing read timestamps; no new tables. Tests: `tests/test_message_ticks.py`.

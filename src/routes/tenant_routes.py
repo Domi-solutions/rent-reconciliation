@@ -560,6 +560,12 @@ def messages(token):
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
         conversations = threads.list_for_tenant(conn, tenant['id'])
+        # Repair requests from before every repair had a conversation
+        earlier_repairs = conn.execute("""
+            SELECT m.title, m.category, m.status, m.created_at, m.resolved_at FROM maintenance_issues m
+            WHERE m.raised_by_tenant_id = ? AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.issue_id = m.id)
+            ORDER BY m.created_at DESC
+        """, (tenant['id'],)).fetchall()
         notices = conn.execute("""
             SELECT id, subject, body, message_type, read_at, created_at
             FROM messages WHERE tenant_id = ?
@@ -571,6 +577,7 @@ def messages(token):
         )
     return render_template('tenant/messages.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='messages', conversations=conversations, notices=notices,
+                           earlier_repairs=earlier_repairs,
                            topics=threads.TOPICS)
 
 
@@ -660,34 +667,9 @@ def conversation_photo(token, conv_id, photo_id):
 
 @tenant_bp.route('/<token>/maintenance')
 def maintenance(token):
-    """List tenant-raised maintenance issues with inline submission form."""
-    with get_connection() as conn:
-        ctx = _get_tenant_by_token(conn, token)
-        if not ctx:
-            return render_template('tenant/invalid_token.html')
-        tenant, unit, prop = ctx
-
-        issues = conn.execute(
-            """
-            SELECT m.id, m.category, m.title, m.description, m.status, m.created_at, m.resolved_at,
-                   c.id AS conversation_id
-            FROM maintenance_issues m
-            LEFT JOIN conversations c ON c.issue_id = m.id
-            WHERE m.raised_by_tenant_id = ?
-            ORDER BY m.created_at DESC
-            """,
-            (tenant['id'],),
-        ).fetchall()
-
-    return render_template(
-        'tenant/maintenance.html',
-        token=token,
-        tenant=tenant,
-        unit=unit,
-        property=prop,
-        issues=issues,
-        active_tab='maintenance',
-    )
+    """Repairs live in Messages (each repair is a conversation, with its open/fixed status).
+    Kept so old links still land somewhere useful."""
+    return redirect(url_for('tenant.messages', token=token))
 
 
 @tenant_bp.route('/<token>/pay', methods=['GET'])
@@ -1161,7 +1143,10 @@ def new_maintenance(token):
         conv_id, _, _ = threads.start_conversation(
             conn, tenant, unit, prop, 'repair', title[:120],
             (request.form.get('description') or '').strip() or title,
-            category=(request.form.get('category') or 'general').strip() or 'general')
+            category=(request.form.get('category') or 'general').strip() or 'general',
+            notify=staff_alerts.clean_choice('repair', None))
+        alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
+    staff_alerts.send(alerts)          # after commit
     return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id))
 
 

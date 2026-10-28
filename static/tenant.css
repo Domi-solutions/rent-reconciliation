@@ -168,3 +168,8 @@ body a.card-header-link:hover { background: var(--mint-2); color: var(--ink); }
 .notify-choice legend { float: none; width: auto; font-size: 15px; margin-bottom: 4px; }
 .notify-choice .check-big { display: flex; }
 .notify-choice input[type=radio] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+
+.repair-fixed { color: var(--green-dark); font-weight: 650; }
+.repair-open { color: var(--orange); font-weight: 650; }
+.conv-row-static::after { content: none; }
+.conv-row-static { padding-right: 16px; }

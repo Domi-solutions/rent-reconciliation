@@ -37,7 +37,6 @@
         <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}" style="font-weight:600">Pay</a>
         <a class="viewer-nav-tab {% if active_tab == 'statement' %}active{% endif %}" href="{{ url_for('tenant.statement', token=token) }}">Statement</a>
         <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">Messages</a>
-        <a class="viewer-nav-tab {% if active_tab == 'maintenance' %}active{% endif %}" href="{{ url_for('tenant.maintenance', token=token) }}">Repairs</a>
         <a class="viewer-nav-tab {% if active_tab == 'charges' %}active{% endif %}" href="{{ url_for('tenant.charges', token=token) }}">Bills</a>
         <a class="viewer-nav-tab {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('tenant.payments', token=token) }}">Payments</a>
         <a class="viewer-nav-tab" style="margin-left:auto" href="{{ url_for('tenant.logout') }}">Sign out</a>

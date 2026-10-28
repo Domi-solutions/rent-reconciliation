@@ -193,10 +193,11 @@ def list_for_staff(conn, property_id, caretaker=False, status=None):
 
 def list_for_tenant(conn, tenant_id):
     return [dict(r) for r in conn.execute("""
-        SELECT c.*,
+        SELECT c.*, mi.status AS issue_status, mi.resolved_at AS issue_resolved_at,
                (c.last_from IN ('admin', 'caretaker', 'system')
                 AND (c.tenant_read_at IS NULL OR c.tenant_read_at < c.last_message_at)) AS unread
-        FROM conversations c WHERE c.tenant_id = ?
+        FROM conversations c LEFT JOIN maintenance_issues mi ON mi.id = c.issue_id
+        WHERE c.tenant_id = ?
         ORDER BY c.last_message_at DESC
     """, (tenant_id,)).fetchall()]
 
