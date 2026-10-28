@@ -42,6 +42,36 @@ def invoice_periods(rows):
                   reverse=True)
 
 
+def unpaid_bills(rows, balance, today=None):
+    """What "Still owed" is made of: every bill with money still due on it, oldest
+    first, cut from the same statement rows. `unapplied` is any confirmed payment
+    not yet set against a bill (the list then adds up to more than the balance)."""
+    today = today or datetime.now().strftime('%Y-%m-%d')
+    order = {'rent': 0, 'service': 1, 'water': 2}
+    open_rows = [r for r in rows if r['row_type'] == 'charge' and (r['remaining'] or 0) > 0.005]
+    open_rows.sort(key=lambda r: (0 if r['is_arrears'] else 1, r['period'] or '',
+                                  order.get(r['charge_type'], 9)))
+    bills = []
+    for r in open_rows:
+        due = (r['row_date'] or '')[:10]
+        try:
+            due_label = datetime.strptime(due, '%Y-%m-%d').strftime('%-d %b %Y')
+        except ValueError:
+            due_label = None
+        bills.append({
+            'label': (period_label(r['period']) if r['is_arrears']
+                      else f"{CHARGE_LABELS.get(r['charge_type'], (r['charge_type'] or '').title())} — {period_label(r['period'])}"),
+            'amount': r['debit'],
+            'paid': r['allocated'],
+            'remaining': r['remaining'],
+            'due': due_label,
+            'late': bool(due) and due < today and not r['is_arrears'],
+            'is_arrears': r['is_arrears'],
+        })
+    total = round(sum(b['remaining'] for b in bills), 2)
+    return {'bills': bills, 'total': total, 'unapplied': round(max(total - balance, 0), 2)}
+
+
 def account_coverage(conn, tenant_id):
     """Dates describe the records included, without claiming missing months are complete."""
     raw = conn.execute('SELECT DISTINCT period FROM rent_charges WHERE tenant_id = ?',

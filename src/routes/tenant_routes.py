@@ -8,7 +8,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
 from src.utils.statement import get_tenant_statement
-from src.utils.tenant_documents import account_coverage, build_invoice, build_receipt, invoice_periods, period_label
+from src.utils.tenant_documents import (account_coverage, build_invoice, build_receipt, invoice_periods,
+                                         period_label, unpaid_bills)
 from src.utils.water_breakdown import water_breakdowns
 from src.messaging import threads
 from src.messaging.delivery import send_sms_async
@@ -313,6 +314,8 @@ def portal(token):
         total_paid = float(balance_row['total_paid']) if balance_row else 0
         verified_balance = float(balance_row['balance']) if balance_row else 0
         coverage = account_coverage(conn, tenant['id'])
+        _, ledger, _ = get_tenant_statement(conn, tenant['id'], prop['id'])
+        owed = unpaid_bills(ledger, verified_balance)
 
         # Sum pending claims not yet verified — subtract from balance for tenant view only
         pending_claims_total = conn.execute("""
@@ -352,6 +355,7 @@ def portal(token):
         recent_messages=recent_messages,
         caretaker=caretaker,
         coverage=coverage,
+        owed=owed,
     )
 
 
@@ -501,6 +505,7 @@ def statement(token):
     balance = rows[-1]['running_balance'] if rows else 0.0
     return render_template('tenant/statement.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='statement', rows=list(reversed(rows)), balance=balance,
+                           owed=unpaid_bills(rows, balance),
                            periods=invoice_periods(rows), period_label=period_label,
                            coverage=coverage,
                            pending=[c for c in open_claims if c['status'] == 'pending'])
@@ -680,6 +685,8 @@ def pay(token):
             "SELECT balance FROM tenant_balances WHERE tenant_id = ?", (tenant['id'],)
         ).fetchone()
         balance = float(balance_row['balance']) if balance_row else 0.0
+        _, ledger, _ = get_tenant_statement(conn, tenant['id'], prop['id'])
+        owed = unpaid_bills(ledger, balance)
 
         claims_raw = conn.execute("""
             SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
@@ -730,6 +737,7 @@ def pay(token):
         property=prop,
         active_tab='pay',
         balance=balance,
+        owed=owed,
         claims=claims,
         caretaker=caretaker,
         success=success,

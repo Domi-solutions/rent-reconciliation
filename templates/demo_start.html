@@ -46,6 +46,7 @@
     <div class="t">2 · Tenant, returning <span class="arrow">→</span></div>
     <div class="d">{{ logins.tenant.name }}, unit {{ logins.tenant.unit }}. Statement, invoices, receipts, messages, repairs, paying.</div>
     <div class="cred">Phone <b>{{ logins.tenant.phone }}</b> · PIN <b>{{ logins.tenant.pin }}</b> · payment PIN <b>{{ logins.tenant.pin }}</b></div>
+    <div class="cred">Or a tenant two months behind — {{ logins.tenant_owing.name }}, unit {{ logins.tenant_owing.unit }}: phone <b>{{ logins.tenant_owing.phone }}</b> · PIN <b>{{ logins.tenant_owing.pin }}</b>. Tap "Still owed" to see which bills.</div>
   </a>
   <a class="role" href="{{ url_for('admin_login') }}">
     <div class="t">3 · Management (the law firm) <span class="arrow">→</span></div>

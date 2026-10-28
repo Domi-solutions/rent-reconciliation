@@ -1,0 +1,37 @@
+{# "Still owed" that opens into the bills it is made of (src/utils/tenant_documents.unpaid_bills).
+   question: replaces the "Still owed: KES X" heading when the page already shows the total. #}
+{% macro owed_breakdown(owed, balance, question=None, big=False) -%}
+{% if owed.bills %}
+<details class="owed-breakdown{% if big %} owed-breakdown-big{% endif %}">
+  <summary>
+    {% if question %}<span class="owed-question">{{ question }}</span>
+    {% else %}<span class="owed-total">Still owed: <span class="owed-figure">KES {{ balance|money_amount }}</span></span>{% endif %}
+    <span class="owed-hint">{% if not question %}Which bills?{% endif %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+  </summary>
+  <div class="owed-body">
+    <p class="owed-intro">These bills are not fully paid yet, oldest first. A payment pays the oldest one first.</p>
+    <ul class="owed-list">
+      {% for b in owed.bills %}
+      <li>
+        <div class="owed-line"><span class="owed-name">{{ b.label }}</span><span class="owed-amount">KES {{ b.remaining|money_amount }}</span></div>
+        <div class="owed-meta">
+          {% if b.is_arrears %}Unpaid from before your current records
+          {% elif b.late %}<span class="owed-late">Late</span> — was due {{ b.due }}
+          {% elif b.due %}Due {{ b.due }}{% endif %}
+          {% if b.paid > 0 %} · KES {{ b.paid|money_amount }} of {{ b.amount|money_amount }} already paid{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if owed.unapplied > 0 %}
+    <div class="owed-sum"><span>These bills</span><span>KES {{ owed.total|money_amount }}</span></div>
+    <div class="owed-sum"><span>Confirmed payments not yet set against a bill</span><span>−KES {{ owed.unapplied|money_amount }}</span></div>
+    {% endif %}
+    <div class="owed-sum owed-sum-total"><span>Still owed</span><span>KES {{ balance|money_amount }}</span></div>
+  </div>
+</details>
+{% else %}
+<div class="owed-total-plain">Still owed: KES {{ balance|money_amount }}</div>
+{% endif %}
+{%- endmacro %}

@@ -92,3 +92,34 @@ body .statement-entry > summary.statement-row:hover { background: var(--mint-2);
   .statement-detail { background: none; padding: 10px 6px; }
   .statement-ledger > li { break-inside: avoid; }
 }
+
+/* "Still owed" opens into the bills it is made of (partials/owed_breakdown.html). */
+.owed-breakdown { margin: 4px 0 2px; border: 1px solid rgba(200,66,59,.28); border-radius: var(--r-card); background: var(--red-soft); overflow: hidden; }
+body details.owed-breakdown > summary { width: 100%; max-width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 14px; margin: 0; border: 0; border-radius: 0; background: transparent; color: var(--red); list-style: none; cursor: pointer; }
+body details.owed-breakdown > summary:hover { background: rgba(200,66,59,.06); color: var(--red); }
+.owed-breakdown > summary::-webkit-details-marker { display: none; }
+.owed-breakdown > summary::marker { content: ''; }
+.owed-total { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.owed-breakdown-big .owed-total { font-size: 26px; letter-spacing: -.01em; }
+.owed-figure { white-space: nowrap; }
+.owed-question { font-size: 14px; font-weight: 600; }
+.owed-hint { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--red); }
+.owed-hint svg { width: 22px; height: 22px; padding: 3px; border: 1px solid rgba(200,66,59,.35); border-radius: 6px; background: var(--surface); transition: transform .15s; }
+.owed-breakdown[open] .owed-hint svg { transform: rotate(180deg); }
+.owed-body { background: var(--surface); border-top: 1px solid rgba(200,66,59,.2); padding: 12px 14px 14px; color: var(--ink); }
+.owed-intro { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.owed-list { list-style: none; margin: 0; padding: 0; }
+.owed-list li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.owed-line { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.owed-name { font-size: 14px; font-weight: 600; }
+.owed-amount { font-size: 15px; font-weight: 650; color: var(--red); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.owed-meta { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.owed-late { color: var(--red); font-weight: 650; }
+.owed-sum { display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.owed-sum-total { font-size: 15px; font-weight: 650; color: var(--red); }
+.owed-total-plain { font-size: 18px; font-weight: 650; color: var(--red); }
+@media print {
+  .owed-breakdown { border: 0; background: none; }
+  .owed-hint { display: none; }
+}

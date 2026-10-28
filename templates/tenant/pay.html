@@ -1,4 +1,5 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'tenant/partials/owed_breakdown.html' import owed_breakdown %}
 {% block title %}Payments — {{ unit.unit_number }}{% endblock %}
 
 {% block content %}
@@ -15,6 +16,7 @@
       {% else %}<span class="credit" style="font-size: 0.95rem; font-weight: 600;">Nothing owed</span>
       <strong class="credit" style="font-size: 1.1rem;">KES 0</strong>{% endif %}
     </div>
+    {% if balance > 0 and owed.bills %}<div class="mt-2">{{ owed_breakdown(owed, balance, question='Which bills is this for?') }}</div>{% endif %}
     <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every bill and payment</a></div>
   </div>
 </div>

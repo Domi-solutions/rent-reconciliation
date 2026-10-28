@@ -1,5 +1,6 @@
 {% extends "tenant/base_tenant.html" %}
 {% from 'tenant/partials/notice_card.html' import notice_card %}
+{% from 'tenant/partials/owed_breakdown.html' import owed_breakdown %}
 {% block title %}Overview — {{ property.name }}{% endblock %}
 {% set active_tab = 'portal' %}
 {% block content %}
@@ -24,15 +25,17 @@
     <div class="data-row-meta mb-1">
       Payments confirmed: KES {{ (total_paid)|money_amount }}
     </div>
-    <div class="data-row-amount {% if balance > 0 %}amount-danger{% else %}amount-success{% endif %}">
-      {% if balance > 0 %}
-        Still owed: KES {{ (balance)|money_amount }}
-      {% elif balance < 0 %}
+    {% if balance > 0 %}
+    {{ owed_breakdown(owed, balance) }}
+    {% else %}
+    <div class="data-row-amount amount-success">
+      {% if balance < 0 %}
         Extra paid: KES {{ (-balance)|money_amount }}
       {% else %}
         Nothing owed — all bills paid
       {% endif %}
     </div>
+    {% endif %}
     <div class="data-row-meta mt-2">{% if coverage.last_payment_date %}Latest confirmed payment: {{ coverage.last_payment_date }}.{% else %}No confirmed payments yet.{% endif %}</div>
     {% if pending_total > 0 %}
     <div class="data-row-meta mt-1">KES {{ (pending_total)|money_amount }} reported as paid, awaiting confirmation. Not included in the amount above.</div>

@@ -92,7 +92,7 @@ src/utils/phone.py             # normalize_to_e164(), normalize_to_daraja() — 
 src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_income(), get_months_behind()
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
 src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
-src/utils/tenant_documents.py  # build_invoice(), build_receipt() — cut from get_tenant_statement so statement/invoice/receipt never disagree
+src/utils/tenant_documents.py  # build_invoice(), build_receipt(), unpaid_bills() (what "Still owed" is made of) — cut from get_tenant_statement so statement/invoice/receipt never disagree
 src/utils/staff.py             # admin accounts: actor() (who acted), find_login/sign_in/sign_out, current_account
 src/routes/team_routes.py      # /team — lead admin adds/switches off administrators
 src/leases/intake.py           # lease intake: record_lease() (re-lease freezes old record, clean account), set_brought_forward(), unit_board(), documents

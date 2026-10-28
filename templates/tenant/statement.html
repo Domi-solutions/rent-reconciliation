@@ -1,5 +1,6 @@
 {% extends "tenant/base_tenant.html" %}
 {% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
+{% from 'tenant/partials/owed_breakdown.html' import owed_breakdown %}
 {% block title %}Statement — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
 <section class="doc statement-document">
@@ -9,7 +10,7 @@
   </header>
   <div class="statement-print-identity">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
   <div class="muted">Your account now</div>
-  {% if balance > 0 %}<div class="big owed">Still owed: KES {{ balance|money_amount }}</div>
+  {% if balance > 0 %}{{ owed_breakdown(owed, balance, big=True) }}
   {% elif balance < 0 %}<div class="big credit">Extra paid: KES {{ (-balance)|money_amount }}</div>
   {% else %}<div class="big credit">Nothing owed</div>{% endif %}
   {% if pending %}

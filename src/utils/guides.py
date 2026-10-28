@@ -68,11 +68,11 @@ _T = {
     'tenant.charges': {
         'en': ('Bills', 'Each month\'s rent, service charge and water, and how much of each is paid.', [
             'A payment pays the oldest unpaid bill first.',
-            'Water is billed from the meter reading, after the month it was used.',
+            'Water you use in one month is applied to the next month\'s bill.',
         ]),
         'sw': ('Bili', 'Kodi, ada ya huduma na maji ya kila mwezi, na kiasi kilicholipwa kwa kila moja.', [
             'Malipo hulipa bili ya zamani zaidi ambayo bado haijalipwa kwanza.',
-            'Maji hutozwa kutokana na usomaji wa mita, baada ya mwezi uliotumika.',
+            'Maji unayotumia mwezi mmoja yanaongezwa kwenye bili ya mwezi unaofuata.',
         ]),
     },
     'tenant.payments': {

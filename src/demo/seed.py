@@ -23,6 +23,8 @@ LOGINS = {
     'caretaker': {'name': 'Juma', 'password': '1234'},
     'tenant_new': {'phone': '0700000103', 'name': 'Amina Wanjiku', 'unit': 'A3'},
     'tenant': {'phone': '0700000101', 'name': 'Brian Otieno', 'unit': 'A1', 'pin': '1234'},
+    # Two months behind: shows "Still owed" and the bills it is made of.
+    'tenant_owing': {'phone': '0700000108', 'name': 'David Kiprop', 'unit': 'B2', 'pin': '1234'},
 }
 
 # unit, rent, size, tenant, phone, pattern
@@ -304,11 +306,11 @@ def seed(conn, today=None):
                            'description': '3 bulbs for the stairway', 'paid_to': 'Athi Hardware',
                            'paid_myself': '1'}, actor_ct, by='caretaker', caretaker_id=ct_id)
 
-    # The returning tenant can sign in straight away (phone + PIN, and a payment PIN)
+    # The returning tenants can sign in straight away (phone + PIN, and a payment PIN)
     from src.utils.tenant_auth import person_for_phone, set_pin, tenancies_for_phone
-    rt = LOGINS['tenant']
-    person = person_for_phone(conn, rt['phone'], tenancies_for_phone(conn, rt['phone']))
-    set_pin(conn, person, rt['pin'])
-    conn.execute("UPDATE tenants SET portal_pin_hash = ? WHERE id = ?",
-                 (generate_password_hash(rt['pin']), tenants[rt['unit']]['id']))
+    for rt in (LOGINS['tenant'], LOGINS['tenant_owing']):
+        person = person_for_phone(conn, rt['phone'], tenancies_for_phone(conn, rt['phone']))
+        set_pin(conn, person, rt['pin'])
+        conn.execute("UPDATE tenants SET portal_pin_hash = ? WHERE id = ?",
+                     (generate_password_hash(rt['pin']), tenants[rt['unit']]['id']))
     return pid

@@ -29,6 +29,12 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### "Still owed" opens into its bills (Claude, 2026-10-28)
+
+- Tapping **Still owed** (tenant overview, statement, Pay) lists the exact unpaid bills, oldest first: which bill, KES left on it, due date, **Late** once past due, and how much is already paid. Built by `tenant_documents.unpaid_bills(rows, balance)` from the statement rows; rendered by `templates/tenant/partials/owed_breakdown.html`; styles in `static/tenant.css`. If a confirmed payment is not yet set against a bill, the list shows it as a separate line so the total still matches. Tests: `tests/test_unpaid_bills.py`.
+- Demo: second returning tenant who owes — David Kiprop, B2, `0700000108` / PIN `1234` (`LOGINS['tenant_owing']`, on the /demo page). Added to the local `/tmp/domi-ui-review.db` too (backup `/tmp/domi-ui-review.before-owing-login.db`).
+- Water line now: "Water you used in September 2026, applied to your October 2026 bill"; Bills help says the same.
+
 ### Plain money words, finished (Claude, 2026-10-28)
 
 - Branch `ui-review-fixes`, local only, nothing deployed. Same words everywhere a tenant sees money: **Still owed** (red), **Extra paid** (green), **Nothing owed** at zero; "bills" not "charges"; "confirmed" not "verified/matched to the bank record".
