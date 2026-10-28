@@ -4,39 +4,45 @@
 
 {% block title %}Messages — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
-{% if notices %}<a class="tenant-notice tenant-notice-jump" href="#notices"><span class="tenant-notice-label">{{ icon('file') }} {{ notices|length }} notice{{ 's' if notices|length != 1 }} from management</span><span class="tenant-notice-action">Read notices ↓</span></a>{% endif %}
-<div class="doc">
-  <h2>Write to management</h2>
-  <div class="muted" style="margin-bottom:12px">Every message is kept with its date. Nothing can be edited or deleted — by you or by management.</div>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='money') }}">{{ icon('wallet') }} {{ topics.money }}</a>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">{{ icon('wrench') }} {{ topics.repair }}</a>
-  <a class="chip" href="{{ url_for('tenant.message_new', token=token, topic='other') }}">{{ icon('mail') }} {{ topics.other }}</a>
-</div>
-
-<div class="doc">
-  <h2>Your conversations</h2>
-  {% if conversations %}
-  <table>
-    {% for c in conversations %}
-    <tr>
-      <td>
-        <a href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}"><b>{{ c.subject }}</b></a>
-        {% if c.unread %}<span class="chip" style="padding:1px 8px;margin:0 0 0 6px;background: var(--forest);color:#fff;border-color:var(--ink)">New reply</span>{% endif %}
-        <div class="muted">{{ topics[c.topic] }} · {{ (c.last_message_at or '')[:10] }} ·
-          {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}</div>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="muted">No conversations yet.</div>
-  {% endif %}
-</div>
-
+{# Read first (notices), then your own threads, then one bubble to write — kept quiet on purpose. #}
 {% if notices %}
 <section class="tenant-notices" id="notices" aria-labelledby="notices-heading">
   <div class="tenant-section-heading"><h2 id="notices-heading">Notices from management</h2></div>
-  {% for m in notices %}{{ notice_card(m, token) }}{% endfor %}
+  {% for m in notices[:3] %}{{ notice_card(m, token) }}{% endfor %}
+  {% if notices|length > 3 %}
+  <details class="older-notices">
+    <summary>Older notices ({{ notices|length - 3 }})</summary>
+    {% for m in notices[3:] %}{{ notice_card(m, token) }}{% endfor %}
+  </details>
+  {% endif %}
 </section>
 {% endif %}
+
+<section class="tenant-conversations" aria-labelledby="conversations-heading">
+  <div class="tenant-section-heading"><h2 id="conversations-heading">Your conversations</h2></div>
+  {% if conversations %}
+  <div class="conv-list">
+    {% for c in conversations %}
+    <a class="conv-row" href="{{ url_for('tenant.conversation', token=token, conv_id=c.id) }}">
+      <span class="conv-subject">{{ c.subject }}{% if c.unread %} <span class="tenant-unread">New reply</span>{% endif %}</span>
+      <span class="conv-meta">{{ topics[c.topic] }} · {{ (c.last_message_at or '')[:10] }} ·
+        {% if c.status == 'awaiting_reply' %}waiting for a reply{% elif c.status == 'replied' %}replied{% else %}closed{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="conv-empty">No conversations yet.</p>
+  {% endif %}
+</section>
+
+<details class="write-bubble">
+  <summary>{{ icon('message') }} <span>Write to management</span></summary>
+  <div class="write-options">
+    <p>What is it about?</p>
+    <a class="write-option" href="{{ url_for('tenant.message_new', token=token, topic='money') }}">{{ icon('wallet') }} {{ topics.money }}</a>
+    <a class="write-option" href="{{ url_for('tenant.message_new', token=token, topic='repair') }}">{{ icon('wrench') }} {{ topics.repair }}</a>
+    <a class="write-option" href="{{ url_for('tenant.message_new', token=token, topic='other') }}">{{ icon('mail') }} {{ topics.other }}</a>
+    <p class="write-note">Messages are kept with their date and can't be edited or deleted.</p>
+  </div>
+</details>
 {% endblock %}

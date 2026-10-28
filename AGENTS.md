@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Tenant Messages page, calmer (Claude, 2026-10-28)
+
+- Order: notices from management (latest 3, older ones folded), then "Your conversations" (whole rows tappable), then one outgoing-chat-style bubble **Write to management** that opens the three topics. The permanence note is one small line inside it. Styles in `static/tenant.css`.
+
 ### Pasted M-Pesa codes can't be used to take a neighbour's payment (Claude, 2026-10-28)
 
 - Gap found by LINCKS's question about the Pay page: a tenant pasting someone else's M-Pesa code (seen on their phone) was credited with it if the bank line was still unassigned, and a code already on another account showed "Confirmed ✓". Now `claim_owner.sender_is_tenant()` must pass (name / phone / past sender) or the claim is held for management with a reason the tenant and staff both see. See CLAUDE.md Database rules. 3 tests; they fail without the fix.

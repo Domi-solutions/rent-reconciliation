@@ -124,3 +124,33 @@ body .owed-pay { display: flex; align-items: center; justify-content: center; wi
   .owed-breakdown { border: 0; background: none; }
   .owed-hint { display: none; }
 }
+
+/* Messages page: notices, then conversations, then one bubble to write. */
+.tenant-conversations { margin-bottom: 22px; }
+.conv-list { border: 1px solid var(--border-strong); border-radius: var(--r-card); background: var(--surface); overflow: hidden; }
+.conv-row { display: block; position: relative; padding: 13px 40px 13px 16px; border-top: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+.conv-row:first-child { border-top: 0; }
+.conv-row::after { content: '›'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 22px; color: var(--accent); }
+.conv-row:hover { background: var(--mint-2); color: var(--ink); }
+.conv-subject { display: block; font-size: 15px; font-weight: 600; }
+.conv-meta { display: block; font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.conv-empty { color: var(--ink-2); font-size: 14px; margin: 0; }
+body details.older-notices > summary { margin: 4px 0 10px; font-size: 13px; }
+/* "Write to management": an outgoing chat bubble that opens into the three topics. */
+.write-bubble { max-width: 420px; margin: 0 0 8px auto; }
+body details.write-bubble > summary {
+  display: flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%; margin-left: auto;
+  padding: 12px 18px; border: 1px solid var(--chat-outgoing-border); border-radius: 18px 18px 4px 18px;
+  background: var(--chat-outgoing); color: var(--forest); font-size: 15px; font-weight: 650; list-style: none;
+}
+body details.write-bubble > summary:hover { background: var(--mint); color: var(--forest); border-color: var(--accent); }
+.write-bubble > summary::-webkit-details-marker { display: none; }
+.write-bubble > summary::marker { content: ''; }
+.write-bubble[open] > summary { border-radius: 18px 18px 4px 18px; }
+.write-options { margin-top: 10px; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--r-card); background: var(--surface); }
+.write-options p { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+.write-option { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 10px 14px; margin-bottom: 8px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-btn); color: var(--ink); font-weight: 600; text-decoration: none; }
+.write-option:hover { border-color: var(--accent); background: var(--mint-2); color: var(--forest); }
+.write-option .domi-icon { color: var(--accent); }
+.write-options .write-note { margin: 6px 0 0; font-size: 12px; }
