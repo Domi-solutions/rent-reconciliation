@@ -2,7 +2,7 @@
 {% macro water_breakdown(detail) -%}
 <div class="water-breakdown">
   {% if detail and detail.available %}
-  <div class="water-period">Meter readings: {{ detail.reading_period|period_label }} · billed {{ detail.charge_period|period_label }}</div>
+  <div class="water-period">Water you used in {{ detail.reading_period|period_label }}, applied to your {{ detail.charge_period|period_label }} bill</div>
   <dl class="water-readings">
     <div><dt>Previous reading</dt><dd>{{ number(detail.previous_reading) }}</dd></div>
     <div><dt>New reading</dt><dd>{{ number(detail.current_reading) }}</dd></div>
@@ -13,9 +13,9 @@
     <strong>{{ number(detail.units_consumed) }} units × KES {{ number(detail.rate) }} per unit = KES {{ detail.amount|money_amount }}</strong>
   </div>
   {% elif detail and detail.reason == 'inconsistent' %}
-  <p class="water-missing">The recorded meter details do not match this charge. Ask management to check the breakdown.</p>
+  <p class="water-missing">The recorded meter details do not match this bill. Ask management to check the breakdown.</p>
   {% else %}
-  <p class="water-missing">Meter readings and the rate have not been recorded for this charge. Ask management for the breakdown.</p>
+  <p class="water-missing">Meter readings and the rate have not been recorded for this bill. Ask management for the breakdown.</p>
   {% endif %}
 </div>
 {%- endmacro %}

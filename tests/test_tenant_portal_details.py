@@ -74,12 +74,12 @@ class TenantPortalDetails(unittest.TestCase):
             details = water_breakdowns(conn, self.tenant['id'], self.tenant['property_id'])
             self.assertFalse(details[self.charge['id']]['available'])
         html = self.client.get(self.path + '/invoice/' + self.charge['period']).get_data(as_text=True)
-        self.assertIn('do not match this charge', html)
+        self.assertIn('do not match this bill', html)
         self.assertNotIn('Previous reading', html)
         with self.connection() as conn:
             conn.execute('DELETE FROM water_readings WHERE unit_id=?', (self.tenant['unit_id'],))
         html = self.client.get(self.path + '/statement').get_data(as_text=True)
-        self.assertIn('have not been recorded for this charge', html)
+        self.assertIn('have not been recorded for this bill', html)
         self.assertNotIn('Previous reading', html)
 
     def test_ambiguous_and_other_property_evidence_is_not_shown(self):
