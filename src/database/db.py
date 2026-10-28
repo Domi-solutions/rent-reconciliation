@@ -2086,3 +2086,25 @@ def migrate_add_staff_alerts():
         if 'staff_alerted_at' not in conv:
             conn.execute("ALTER TABLE conversations ADD COLUMN staff_alerted_at TIMESTAMP")
         print("Migration complete: staff alert fields ready.")
+
+
+def migrate_add_alert_routing():
+    """Who is texted about a tenant's repair is management's setting, not the tenant's. Idempotent.
+
+    properties.repair_alerts_to — caretaker (default) | admin | both.
+    properties.repair_escalate_hours — text management if a repair has had no reply
+      for this many hours (default 24; 0 = off).
+    conversations.escalated_at — when management was texted about an unanswered repair;
+      cleared when staff reply.
+    """
+    with get_connection() as conn:
+        def columns(table):
+            return {r['name'] for r in conn.execute(f"PRAGMA table_info({table})")}
+        props = columns('properties')
+        if 'repair_alerts_to' not in props:
+            conn.execute("ALTER TABLE properties ADD COLUMN repair_alerts_to TEXT DEFAULT 'caretaker'")
+        if 'repair_escalate_hours' not in props:
+            conn.execute("ALTER TABLE properties ADD COLUMN repair_escalate_hours INTEGER DEFAULT 24")
+        if 'escalated_at' not in columns('conversations'):
+            conn.execute("ALTER TABLE conversations ADD COLUMN escalated_at TIMESTAMP")
+        print("Migration complete: alert routing ready.")

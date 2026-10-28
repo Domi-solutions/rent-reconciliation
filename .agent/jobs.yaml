@@ -91,6 +91,13 @@ jobs:
     description: "Safety net — callbacks are normally booked at once on a background thread from the webhook. Also retries STK results Safaricom had not settled yet (up to 10 tries)."
     note: "Statuses: pending → completed | failed | duplicate | unmatched (paybill account named nobody; an admin names the tenant at /mpesa)."
 
+  repair_escalation_job:
+    status: live
+    function: src/agent/coordinator.py::repair_escalation_job (logic in src/messaging/staff_alerts.py::escalations)
+    trigger: "interval, every 30 minutes"
+    owns: "Texts management once about a repair that was texted to the caretaker only and has had no staff reply for properties.repair_escalate_hours (default 24; 0 = off). Stamps conversations.escalated_at; a staff reply clears it."
+    description: "Safety net so a repair is not left with an absent caretaker. Staff-facing only; normal SMS switches apply."
+
   disbursement_job:
     status: live
     function: src/payments/disbursements.py::scheduled_disbursement_job

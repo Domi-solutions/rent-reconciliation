@@ -171,6 +171,16 @@ def backup_job():
     run_backup()
 
 
+def repair_escalation_job():
+    """Every 30 min: a repair texted to the caretaker that has had no reply for the
+    property's escalate hours (default 24) texts management once. Logic in
+    src/messaging/staff_alerts.py; texts go after the transaction commits."""
+    from src.messaging import staff_alerts
+    with get_connection() as conn:
+        texts = staff_alerts.escalations(conn, os.environ.get("APP_BASE_URL"))
+    staff_alerts.send(texts)
+
+
 def process_payment_queue():
     """Safety net, every 60 s: book any M-Pesa payment the instant path missed
     (or that Safaricom had not settled yet), and send the confirmation SMS.

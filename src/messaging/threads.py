@@ -97,8 +97,10 @@ def add_message(conn, conversation_id, sender_type, sender_name, body, photos=()
         WHERE id = ?
     """, (sender_type, sender_type, status, sender_type, conversation_id))
     if sender_type in ('admin', 'caretaker'):
-        # Staff replied: the next tenant message texts staff again (staff_alerts.due).
-        conn.execute("UPDATE conversations SET staff_alerted_at = NULL WHERE id = ?", (conversation_id,))
+        # Staff replied: the next tenant message texts staff again, and the 24-hour
+        # safety net starts over (staff_alerts.due / escalations).
+        conn.execute("UPDATE conversations SET staff_alerted_at = NULL, escalated_at = NULL WHERE id = ?",
+                     (conversation_id,))
     if sender_type == 'tenant':
         # "It started again" on a repair marked fixed puts it back on the open list.
         conn.execute("""
@@ -109,7 +111,7 @@ def add_message(conn, conversation_id, sender_type, sender_name, body, photos=()
 
 
 def start_conversation(conn, tenant, unit, prop, topic, subject, body, photos=(),
-                       ref_type=None, ref_id=None, category='general', notify=None):
+                       ref_type=None, ref_id=None, category='general'):
     """Open a conversation with the tenant's first message. Repairs also open a
     maintenance issue linked to it. Returns (conversation_id, photos_saved, photos_rejected)."""
     if topic not in TOPICS:
@@ -124,10 +126,9 @@ def start_conversation(conn, tenant, unit, prop, topic, subject, body, photos=()
             VALUES (?, ?, ?, 'tenant', ?, ?, ?, ?)
         """, (issue_id, prop['id'], unit['id'], tenant['id'], category, subject, body))
     conn.execute("""
-        INSERT INTO conversations (id, property_id, tenant_id, unit_id, topic, subject, ref_type, ref_id, issue_id,
-                                   notify)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (conv_id, prop['id'], tenant['id'], unit['id'], topic, subject, ref_type, ref_id, issue_id, notify))
+        INSERT INTO conversations (id, property_id, tenant_id, unit_id, topic, subject, ref_type, ref_id, issue_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (conv_id, prop['id'], tenant['id'], unit['id'], topic, subject, ref_type, ref_id, issue_id))
     _, saved, rejected = add_message(conn, conv_id, 'tenant', tenant['name'], body, photos)
     return conv_id, saved, rejected
 

@@ -311,7 +311,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_staff_alerts`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_alert_routing`.
 
 ---
 
@@ -410,7 +410,7 @@ FIFO: oldest charges first regardless of type. Overpayments show as "Overpayment
 ## Messaging (Admin)
 
 - Scope: current property only
-- **Staff texted when a tenant writes** (`src/messaging/staff_alerts.py`): repairs — the tenant picks caretaker / management / both; money and other — management only (caretakers can't open those). Management phones = `admin_users.phone` (set on `/team`), caretakers = `caretakers.phone`. One text per unanswered stretch (`conversations.staff_alerted_at`, cleared when staff reply). Text = property, house, title, link (sign-in still required). Sent after commit; subject to the normal SMS switches (live SMS off ⇒ simulated).
+- **Staff texted when a tenant writes** (`src/messaging/staff_alerts.py`) — management's setting, never the tenant's: repairs → `properties.repair_alerts_to` (caretaker default | admin | both); money and "something else" → management only (private; caretakers can't open them). Set on the Tenant inbox page ("Texts when a tenant writes", `POST /messages/inbox/alerts`, audit_log + platform_log). Management phones = `admin_users.phone` (`/team`), caretakers = `caretakers.phone`. One text per unanswered stretch (`conversations.staff_alerted_at`, cleared when staff reply). **Safety net:** a caretaker-only repair with no staff reply after `properties.repair_escalate_hours` (default 24; 0 = off) texts management once (`repair_escalation_job`, every 30 min; `conversations.escalated_at`). Texts = property, house, title, link (sign-in still required); sent after commit; normal SMS switches apply.
 - Tenant inbox: `/messages/inbox` (sidebar "Tenant inbox", badge = conversations awaiting a reply; `inbox_awaiting_count` from the app context processor). Replies are signed "Management" to the tenant (the replying person is stored in `conversation_messages.sender_account_id` and shown to admins only), logged to `audit_log` (`conversation_reply`) and SMS the tenant that a reply is waiting — the SMS never carries the content.
 - Broadcast: one `messages` row per recipient, shared `batch_id`; `template_body` stores unsubstituted template. Recipients = active tenants only. Channel `both` (form value; legacy `sms`) = portal + full text by SMS, prefixed with the property name; `portal` = portal only (+ "new message" SMS with link only once outreach is approved). `{portal_link}` substitutes to empty until then.
 - Move-in welcome SMS (`add_tenant`) is a sign-in invitation: held until `TENANT_OUTREACH_ENABLED`. Lease intake sends none.

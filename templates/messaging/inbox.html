@@ -15,6 +15,11 @@
   .p-red { background: #FFF0EF; color: var(--red); } .p-amber { background: #FFF4E5; color: #92400e; }
   .p-grey { background: var(--bg); color: var(--ink-2); } .p-green { background: #EDFAF1; color: var(--green-dark); }
   .tabs a { margin-right: 14px; font-size: 14px; }
+  .alert-settings { margin-top: 18px; }
+  .alert-settings .row-set { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; padding-top: 10px; }
+  .alert-settings label { font-size: 13px; font-weight: 600; color: var(--ink-2); display: block; margin-bottom: 4px; }
+  .alert-settings .note { font-size: 13px; color: var(--ink-2); margin: 8px 0 0; }
+  .alert-settings .warn { color: var(--orange); font-weight: 600; }
 </style>
 {% endblock %}
 {% block content %}
@@ -45,5 +50,32 @@
     <div class="ib-row" style="color:var(--ink-3)">Nothing waiting. Tenant messages will appear here.</div>
     {% endfor %}
   </div>
+
+  <details class="alert-settings">
+    <summary>Texts when a tenant writes</summary>
+    <form method="POST" action="{{ url_for('messaging.inbox_alert_settings') }}">
+      <p class="note">Money and "something else" messages text <b>management</b> — they can be private and the caretaker cannot open them. Forward anything that is the caretaker's in the caretaker chat.</p>
+      <div class="row-set">
+        <div>
+          <label for="repair_alerts_to">Repairs text</label>
+          <select id="repair_alerts_to" name="repair_alerts_to" class="form-select form-select-sm">
+            {% for k, label in alerts.who.items() %}<option value="{{ k }}" {% if k == alerts.route %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="repair_escalate_hours">If a repair has no reply, text management after</label>
+          <select id="repair_escalate_hours" name="repair_escalate_hours" class="form-select form-select-sm">
+            {% for h in alerts.hour_choices %}<option value="{{ h }}" {% if h == alerts.hours %}selected{% endif %}>{{ h ~ ' hours' if h else 'Never' }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn btn-sm btn-primary">Save</button>
+      </div>
+      <p class="note">
+        One text per conversation until someone replies. Phones on record:
+        management {{ alerts.admin_phones }}{% if not alerts.admin_phones %} <span class="warn">— add one on the <a href="{{ url_for('team.team') }}">Team page</a></span>{% endif %},
+        caretaker {{ alerts.caretaker_phones }}{% if not alerts.caretaker_phones %} <span class="warn">— add one on the Caretakers page</span>{% endif %}.
+      </p>
+    </form>
+  </details>
 </div>
 {% endblock %}

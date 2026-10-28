@@ -382,7 +382,7 @@ tables:
   conversations:
     status: live
     migration: migrate_add_conversations
-    notes: "Tenant ↔ management threads. Written only via src/messaging/threads.py. Caretaker sees topic=repair only. notify (admin|caretaker|both; money/other always admin) + staff_alerted_at (last staff text; cleared on staff reply) added by migrate_add_staff_alerts — see src/messaging/staff_alerts.py."
+    notes: "Tenant ↔ management threads. Written only via src/messaging/threads.py. Caretaker sees topic=repair only. notify (admin|caretaker|both; money/other always admin) + staff_alerted_at (last staff text; cleared on staff reply) added by migrate_add_staff_alerts — see src/messaging/staff_alerts.py. escalated_at (migrate_add_alert_routing): when management was texted about an unanswered repair; cleared on staff reply. properties.repair_alerts_to (caretaker|admin|both) + repair_escalate_hours (default 24, 0 off) added by the same migration."
     columns:
       id: {type: TEXT, pk: true}
       property_id: {type: TEXT, fk: properties.id, required: true}

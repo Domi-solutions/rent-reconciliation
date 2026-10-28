@@ -54,6 +54,7 @@ from src.agent.coordinator import (
     anomaly_check_job,
     monthly_checkins_job,
     process_payment_queue,
+    repair_escalation_job,
     maintainer_digest_job,
     backup_job,
 )
@@ -136,6 +137,7 @@ from src.database.db import (
     migrate_add_staff_chat,
     migrate_add_expenses,
     migrate_add_staff_alerts,
+    migrate_add_alert_routing,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -200,6 +202,7 @@ migrate_add_leases()
 migrate_add_staff_chat()
 migrate_add_expenses()
 migrate_add_staff_alerts()
+migrate_add_alert_routing()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -335,6 +338,7 @@ scheduler.add_job(func=weekly_digest_job, trigger='cron', day_of_week='mon', hou
 scheduler.add_job(func=anomaly_check_job, trigger='cron', hour=6, minute=0, id='anomaly_check_job', replace_existing=True)
 scheduler.add_job(func=monthly_checkins_job, trigger='cron', day=1, hour=9, minute=0, id='monthly_checkins_job', replace_existing=True)
 scheduler.add_job(func=process_payment_queue, trigger='interval', seconds=60, id='process_payment_queue', replace_existing=True)
+scheduler.add_job(func=repair_escalation_job, trigger='interval', minutes=30, id='repair_escalation_job', replace_existing=True)
 scheduler.add_job(func=scheduled_disbursement_job, trigger='cron', day=10, hour=9, minute=0, id='disbursement_job', replace_existing=True)
 # Maintainer health digest — Monday 08:00 EAT (05:00 UTC)
 scheduler.add_job(func=maintainer_digest_job, trigger='cron', day_of_week='mon', hour=5, minute=0, id='maintainer_digest_job', replace_existing=True)

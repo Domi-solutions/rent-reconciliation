@@ -604,8 +604,7 @@ def message_new(token):
                 conv_id, saved, rejected = threads.start_conversation(
                     conn, tenant, unit, prop, topic, subject[:120], body,
                     photos=request.files.getlist('photos'), ref_type=ref_type, ref_id=ref_id,
-                    category=request.form.get('category') or 'general',
-                    notify=staff_alerts.clean_choice(topic, request.form.get('notify')))
+                    category=request.form.get('category') or 'general')
                 alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
     if conv_id:
         staff_alerts.send(alerts)          # after commit
@@ -615,8 +614,7 @@ def message_new(token):
                            topics=threads.TOPICS, categories=threads.REPAIR_CATEGORIES,
                            ref=f'{ref_type}:{ref_id}' if ref_id else '', ref_text=ref_text,
                            error=error, max_photos=threads.MAX_PHOTOS,
-                           notify_choices=staff_alerts.choices(topic), notify_labels=staff_alerts.NOTIFY,
-                           notify=request.values.get('notify') or staff_alerts.clean_choice(topic, None))
+                           alert_line=staff_alerts.tenant_line(prop, topic if topic in threads.TOPICS else 'money'))
 
 
 @tenant_bp.route('/<token>/messages/<conv_id>', methods=['GET', 'POST'])
@@ -1143,8 +1141,7 @@ def new_maintenance(token):
         conv_id, _, _ = threads.start_conversation(
             conn, tenant, unit, prop, 'repair', title[:120],
             (request.form.get('description') or '').strip() or title,
-            category=(request.form.get('category') or 'general').strip() or 'general',
-            notify=staff_alerts.clean_choice('repair', None))
+            category=(request.form.get('category') or 'general').strip() or 'general')
         alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
     staff_alerts.send(alerts)          # after commit
     return redirect(url_for('tenant.conversation', token=token, conv_id=conv_id))

@@ -584,10 +584,51 @@ def inbox():
         if not prop:
             return redirect(url_for('property_list'))
         rows = threads.list_for_staff(conn, prop['id'])
+        from src.messaging import staff_alerts
+        alerts = {
+            'route': staff_alerts.who(prop, 'repair'),
+            'hours': prop['repair_escalate_hours'] if prop['repair_escalate_hours'] is not None else 24,
+            'admin_phones': conn.execute(
+                "SELECT COUNT(*) FROM admin_users WHERE org_id = ? AND is_active = 1 AND phone IS NOT NULL",
+                (prop['organization_id'],)).fetchone()[0],
+            'caretaker_phones': conn.execute(
+                "SELECT COUNT(*) FROM caretakers WHERE property_id = ? AND phone IS NOT NULL", (prop['id'],)).fetchone()[0],
+            'who': staff_alerts.WHO, 'hour_choices': staff_alerts.ESCALATE_HOURS,
+        }
     if show == 'open':
         rows = [r for r in rows if r['status'] != 'closed']
     return render_template('messaging/inbox.html', property=prop, rows=rows, show=show,
-                           topics=threads.TOPICS, active_nav='inbox')
+                           topics=threads.TOPICS, active_nav='inbox', alerts=alerts)
+
+
+@messaging_bp.route('/inbox/alerts', methods=['POST'])
+def inbox_alert_settings():
+    """Who is texted when a tenant reports a repair, and when management is texted
+    about a repair nobody has answered (src/messaging/staff_alerts.py)."""
+    from src.messaging import staff_alerts
+    from src.platform.guardian import platform_log
+    from src.utils import staff
+    route = request.form.get('repair_alerts_to')
+    try:
+        hours = int(request.form.get('repair_escalate_hours', 24))
+    except ValueError:
+        hours = 24
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        if route not in staff_alerts.WHO or hours not in staff_alerts.ESCALATE_HOURS:
+            flash('Choose from the options shown.', 'error')
+            return redirect(url_for('messaging.inbox'))
+        conn.execute("UPDATE properties SET repair_alerts_to = ?, repair_escalate_hours = ? WHERE id = ?",
+                     (route, hours, prop['id']))
+        details = f"Repair texts: {staff_alerts.WHO[route]} | unanswered after: {hours or 'off'} h"
+        conn.execute("INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                     ('alert_routing_changed', 'property', prop['id'], details, staff.actor()))
+        platform_log(conn, 'alert_routing_changed', 'property', prop['id'], details,
+                     org_id=prop['organization_id'], property_id=prop['id'], actor=staff.actor())
+    flash('Saved. ' + details + '.', 'success')
+    return redirect(url_for('messaging.inbox'))
 
 
 @messaging_bp.route('/inbox/<conv_id>', methods=['GET', 'POST'])

@@ -37,7 +37,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 - Every chat (tenant↔management, caretaker repairs, management↔caretaker, owner read-only views) shows grey ✓✓ when sent and blue ✓✓ once the other side has opened it. Uses the existing read timestamps; no new tables. Tests: `tests/test_message_ticks.py`.
 - Tenant overview: the "Bills & payments" card header is the link to the statement; the button at the bottom of the card is gone.
-- Staff texted when a tenant writes (LINCKS decided 2026-10-28): repairs → tenant picks caretaker / management / both; money + other → management only; phones per management account on /team; one text until staff reply. `src/messaging/staff_alerts.py`, `migrate_add_staff_alerts`, tests `tests/test_staff_alerts.py`. Live SMS still off, so nothing reaches a phone yet.
+- Staff texted when a tenant writes (LINCKS, 2026-10-28, revised same day): **no tenant choice** — repairs → management's setting on the Tenant inbox page (default the caretaker); money + "something else" → management only (private; e.g. a complaint about the caretaker); phones per management account on /team; one text until staff reply; **24-hour safety net** texts management about an unanswered caretaker-only repair (`repair_escalation_job`). `src/messaging/staff_alerts.py`, `migrate_add_staff_alerts` + `migrate_add_alert_routing`, tests `tests/test_staff_alerts.py`. Live SMS still off, so nothing reaches a phone yet.
 
 ### Tenant Messages page, calmer (Claude, 2026-10-28)
 
