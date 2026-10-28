@@ -284,3 +284,8 @@ body .welcome-done { display: flex; align-items: center; justify-content: center
 .ov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 .ov-msg-empty { color: var(--ink-2); font-size: 14px; }
 .ov-msg-preview .ticks { margin: 0 4px 0 0; vertical-align: -2px; }
+
+/* Settings */
+.contact-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+body details.settings-more > summary { margin-top: 8px; }
+.demo-note { background: #FFF6D9; border: 1px dashed #E0B640; border-radius: var(--r-input); padding: 8px 10px; font-size: 14px; }

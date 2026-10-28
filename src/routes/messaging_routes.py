@@ -657,8 +657,30 @@ def inbox_thread(conv_id):
             return redirect(url_for('messaging.inbox_thread', conv_id=conv_id))
         threads.mark_read(conn, conv_id, 'staff')
         ref_text = threads.ref_summary(conn, conv['tenant_id'], conv['ref_type'], conv['ref_id']) if conv['ref_id'] else None
+        from src.utils import tenant_contacts
+        phone_change = tenant_contacts.pending_for_conversation(conn, conv_id)
     return render_template('messaging/inbox_thread.html', property=prop, conv=conv, msgs=msgs,
-                           topics=threads.TOPICS, ref_text=ref_text, active_nav='inbox')
+                           topics=threads.TOPICS, ref_text=ref_text, active_nav='inbox', phone_change=phone_change)
+
+
+@messaging_bp.route('/inbox/<conv_id>/phone-change', methods=['POST'])
+def inbox_phone_change(conv_id):
+    """Approve or decline a tenant's request to change their phone number (src/utils/tenant_contacts.py)."""
+    from src.utils import tenant_contacts
+    from src.messaging.delivery import send_sms_async
+    texts = []
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        conv, _ = threads.thread(conn, conv_id)
+        req = tenant_contacts.pending_for_conversation(conn, conv_id) if conv else None
+        if prop and conv and req and conv['property_id'] == prop['id']:
+            approve = request.form.get('decision') == 'approve'
+            texts = tenant_contacts.decide(conn, req['id'], approve, staff.actor(), org_id=prop['organization_id'])
+            flash('Number changed. The tenant and the old number get a text.' if approve
+                  else 'Declined. The number stays as it was.', 'success')
+    for phone, text in texts:                     # after commit
+        send_sms_async([phone], text)
+    return redirect(url_for('messaging.inbox_thread', conv_id=conv_id))
 
 
 @messaging_bp.route('/inbox/<conv_id>/close', methods=['POST'])

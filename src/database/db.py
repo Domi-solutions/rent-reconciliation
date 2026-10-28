@@ -2168,3 +2168,48 @@ def migrate_add_move_out_notices():
         if 'welcomed_at' not in {r['name'] for r in conn.execute("PRAGMA table_info(tenants)")}:
             conn.execute("ALTER TABLE tenants ADD COLUMN welcomed_at TIMESTAMP")
         print("Migration complete: move-out notices ready.")
+
+
+def migrate_add_tenant_contacts():
+    """Tenant Settings: extra contacts, phone-number changes, sign out everywhere (src/utils/tenant_contacts.py). Idempotent.
+
+    tenant_contacts — kind payer (a number that pays for this tenant) | emergency (next of kin /
+      second contact person) | second_phone. Removing sets removed_at; rows are never deleted.
+    phone_change_requests — the tenant asks, proves the new number with an SMS code, management
+      approves or declines. Approved rows are the tenancy's phone history (old_phone kept).
+    persons.session_version — "Sign out everywhere" raises it; sessions signed in under an
+      older version are signed out.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tenant_contacts (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenants(id),
+                kind TEXT NOT NULL,                 -- payer | emergency | second_phone
+                name TEXT,
+                relationship TEXT,
+                phone TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                removed_at TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tenant_contacts ON tenant_contacts(tenant_id, kind)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS phone_change_requests (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenants(id),
+                person_id TEXT,
+                property_id TEXT,
+                old_phone TEXT,
+                new_phone TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'awaiting_code',  -- awaiting_code | pending | approved | declined | cancelled
+                code_hash TEXT, code_expires_at TIMESTAMP, code_attempts INTEGER DEFAULT 0,
+                conversation_id TEXT,
+                requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                verified_at TIMESTAMP, decided_at TIMESTAMP, decided_by TEXT, decision_note TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_phone_change_tenant ON phone_change_requests(tenant_id, status)")
+        if 'session_version' not in {r['name'] for r in conn.execute("PRAGMA table_info(persons)")}:
+            conn.execute("ALTER TABLE persons ADD COLUMN session_version INTEGER DEFAULT 0")
+        print("Migration complete: tenant contacts ready.")

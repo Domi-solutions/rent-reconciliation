@@ -91,6 +91,7 @@ src/database/db.py             # get_connection(), generate_id(), allocate_payme
 src/utils/phone.py             # normalize_to_e164(), normalize_to_daraja() — ONLY phone normalization
 src/utils/metrics.py           # get_property_occupancy(), get_expected_monthly_income(), get_months_behind()
 src/utils/statement.py         # get_tenant_statement(), quick_verify_ref()
+src/utils/tenant_contacts.py   # tenant Settings: contacts (payer | emergency | second_phone), phone change (code to new number → management approves in the inbox → old number texted; history in phone_change_requests), sign out everywhere (persons.session_version)
 src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/check_otp, set_pin/check_pin, mask_phone
 src/utils/tenant_documents.py  # build_invoice(), build_receipt(), unpaid_bills() (what "Still owed" is made of) — cut from get_tenant_statement so statement/invoice/receipt never disagree
 src/utils/staff.py             # admin accounts: actor() (who acted), find_login/sign_in/sign_out, current_account
@@ -313,7 +314,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_move_out_notices`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_tenant_contacts`.
 
 ---
 
@@ -374,6 +375,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - Every tenant/caretaker/admin page shows a guide box from `src/utils/guides.py` (keyed by endpoint; `?lang=sw` switches tenant/caretaker text to Kiswahili for the session). New page → add its guide there.
 - Pay page: payment instructions first; the STK "Pay" button only when `daraja.configured()`.
 - **Welcome** (`/tenant/<token>/welcome`): shown once on the first visit to the overview (`tenants.welcomed_at`), then from "How to use Domi". Seven plain steps with icons, English/Kiswahili — words in `guides.WELCOME`.
+- **Settings** (`/tenant/<token>/settings`, `migrate_add_tenant_contacts`): details read-only; change PIN (current PIN required); language; numbers I pay from (claim_owner treats a payment from them as the tenant's); emergency contact; second phone; **phone change** — never the tenant's alone: SMS code to the new number, then management Approve/Decline on the inbox conversation; approval moves this person's tenancies to the new number, texts old and new; a number on another tenancy is refused; **sign out everywhere** raises `persons.session_version` (checked in `require_tenant_sign_in`). Management sees contacts + earlier numbers on the admin tenant statement. Tests: `tests/test_tenant_settings.py`.
 - **Moving out** (`/tenant/<token>/move-out`, `migrate_add_move_out_notices`): deposit on record vs still owed, give notice (date, optional reason, refund M-Pesa number; one month expected, shorter is recorded not refused), withdraw. Each notice opens an `other` conversation (management texted) and a `move_out_notices` row; admin `/leases/moving-out` marks it seen and links to the existing move-out (`/units/<id>/move-out`), which shows the notice, pre-fills the date and closes it. A departed tenant's page shows the departure record. Tests: `tests/test_move_out_and_welcome.py`.
 
 ### Monthly Reports (/reports/*)

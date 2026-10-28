@@ -53,6 +53,8 @@ blueprints:
       - "GET/POST /messages/invite — SMS tenants their sign-in link (preview per tenant, part count, who has signed up)"
       - "POST /messages/inbox/alerts — who repair texts go to + hours before an unanswered repair texts management (properties.repair_alerts_to / repair_escalate_hours); audit_log + platform_log"
       - "GET /tenant/<token>/welcome — first-visit guide (sets tenants.welcomed_at); GET|POST /tenant/<token>/move-out — give notice; POST /tenant/<token>/move-out/withdraw"
+      - "GET|POST /tenant/<token>/settings — details, PIN, language, contacts, phone change request/confirm/cancel, sign out everywhere"
+      - "POST /messages/inbox/<conv_id>/phone-change — management approves/declines a tenant's phone change"
       - "GET|POST /leases/moving-out — admin list of move-out notices; POST marks one seen"
       - "POST /team/<id>/phone — alert phone for an account (lead: anyone's; everyone: their own); audit_log + platform_shadow_log"
       - "POST /team/add | /team/<id>/deactivate | /team/<id>/reactivate | /team/<id>/password | /team/<id>/role — lead admin (or master key / platform) only; never your own switch-off; an org keeps one active lead; each writes audit_log + platform_shadow_log"

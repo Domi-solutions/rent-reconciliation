@@ -380,6 +380,14 @@ tables:
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   # payments / payment_transactions / payment_claims .target_charge_id (migrate_add_payment_target): the bill the tenant chose to pay; allocate_payment settles it first.
+  tenant_contacts:
+    status: live
+    migration: migrate_add_tenant_contacts
+    notes: "Tenant-added contacts: kind payer | emergency | second_phone (limits 3/2/1). removed_at = removed; never deleted. Payer numbers count as the tenant's in claim_owner.sender_is_tenant."
+  phone_change_requests:
+    status: live
+    migration: migrate_add_tenant_contacts
+    notes: "awaiting_code → pending (code confirmed; conversation opened) → approved | declined; or cancelled. Approved rows are the phone history (old_phone kept). Same migration adds persons.session_version (sign out everywhere)."
   move_out_notices:
     status: live
     migration: migrate_add_move_out_notices

@@ -140,6 +140,7 @@ from src.database.db import (
     migrate_add_alert_routing,
     migrate_add_payment_target,
     migrate_add_move_out_notices,
+    migrate_add_tenant_contacts,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -207,6 +208,7 @@ migrate_add_staff_alerts()
 migrate_add_alert_routing()
 migrate_add_payment_target()
 migrate_add_move_out_notices()
+migrate_add_tenant_contacts()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -1715,11 +1717,19 @@ def tenant_statement(tenant_id):
         tenant, ledger, open_claims = get_tenant_statement(conn, tenant_id, prop['id'])
         if not tenant:
             abort(404)
+        from src.utils import tenant_contacts
+        contacts = tenant_contacts.contacts(conn, tenant_id)
+        phone_history = conn.execute("""SELECT old_phone, new_phone, decided_at FROM phone_change_requests
+                                         WHERE tenant_id = ? AND status = 'approved' ORDER BY decided_at""",
+                                      (tenant_id,)).fetchall()
     return render_template('tenant_statement.html',
                            property=prop,
                            tenant=tenant,
                            ledger=ledger,
-                           open_claims=open_claims)
+                           open_claims=open_claims,
+                           contacts=contacts,
+                           contact_kinds=tenant_contacts.KINDS,
+                           phone_history=phone_history)
 
 
 @app.route('/tenants/<tenant_id>/quick-verify', methods=['POST'])

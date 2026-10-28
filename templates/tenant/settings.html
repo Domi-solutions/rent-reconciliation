@@ -18,6 +18,66 @@
   <p class="muted mt-2">Something wrong here? <a href="{{ url_for('tenant.message_new', token=token, topic='other') }}">Tell management</a> — only management can change these.</p>
 </section>
 
+<section class="doc" id="phone">
+  <h2>Your phone number</h2>
+  <p>You sign in with <b>{{ tenant.phone or 'no number' }}</b>, and texts from {{ property.name|title }} go to it.</p>
+  {% if phone_request and phone_request.status == 'awaiting_code' %}
+    <p class="muted">Type the 6-digit code sent to <b>{{ phone_request.new_phone }}</b>.</p>
+    {% if demo_code %}<p class="demo-note">Demo: the code is <b>{{ demo_code }}</b>.</p>{% endif %}
+    <form method="POST" class="settings-form" autocomplete="off">
+      <input type="hidden" name="action" value="phone_confirm">
+      <input type="text" name="code" class="form-control mb-2" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" required>
+      <button class="btn btn-primary w-100" style="min-height:46px">Confirm my new number</button>
+    </form>
+    <form method="POST" class="mt-2"><input type="hidden" name="action" value="phone_cancel"><button class="btn btn-link p-0">Cancel</button></form>
+  {% elif phone_request and phone_request.status == 'pending' %}
+    <p class="mo-seen">Waiting for management to approve the change to <b>{{ phone_request.new_phone }}</b>.</p>
+    <p class="muted">Until then, keep signing in with your current number.</p>
+    <form method="POST"><input type="hidden" name="action" value="phone_cancel"><button class="btn btn-link p-0">Cancel the change</button></form>
+  {% else %}
+    <details class="settings-more">
+      <summary>Ask to change my number</summary>
+      <p class="muted mt-2">A code goes to the new number to check it is yours. Then management approves the change, and your old number gets a text.</p>
+      <form method="POST" class="settings-form" autocomplete="off">
+        <input type="hidden" name="action" value="phone_request">
+        <input type="tel" name="new_phone" class="form-control mb-2" inputmode="tel" placeholder="New number, e.g. 0712 345 678" required>
+        <button class="btn btn-outline-secondary w-100" style="min-height:46px">Send me a code</button>
+      </form>
+    </details>
+  {% endif %}
+</section>
+
+{% for kind, label in kinds.items() %}
+<section class="doc">
+  <h2>{{ label }}</h2>
+  <p class="muted">
+    {% if kind == 'payer' %}Someone else pays for you sometimes — a husband, wife or employer? Add their M-Pesa number so their payments are recognised as yours.
+    {% elif kind == 'emergency' %}Someone management can call if they cannot reach you — family or a close friend.
+    {% else %}Another number management can call if your main number is off.{% endif %}
+  </p>
+  {% for c in contacts[kind] %}
+  <div class="contact-row">
+    <div><b>{{ c.name or c.phone }}</b>{% if c.relationship %} <span class="muted">· {{ c.relationship }}</span>{% endif %}
+      {% if c.name %}<div class="muted">{{ c.phone }}</div>{% endif %}</div>
+    <form method="POST"><input type="hidden" name="action" value="remove_contact"><input type="hidden" name="contact_id" value="{{ c.id }}">
+      <button class="btn btn-sm btn-outline-secondary">Remove</button></form>
+  </div>
+  {% endfor %}
+  {% if contacts[kind]|length < limits[kind] %}
+  <details class="settings-more"{% if error and request.form.get('kind') == kind %} open{% endif %}>
+    <summary>Add {{ 'a number' if kind != 'emergency' else 'a contact' }}</summary>
+    <form method="POST" class="settings-form mt-2" autocomplete="off">
+      <input type="hidden" name="action" value="add_contact"><input type="hidden" name="kind" value="{{ kind }}">
+      {% if kind != 'second_phone' %}<input type="text" name="name" class="form-control mb-2" maxlength="80" placeholder="Name{% if kind == 'payer' %} (optional){% endif %}" {% if kind == 'emergency' %}required{% endif %}>{% endif %}
+      {% if kind == 'emergency' %}<input type="text" name="relationship" class="form-control mb-2" maxlength="40" placeholder="Who are they to you? e.g. Sister">{% endif %}
+      <input type="tel" name="phone" class="form-control mb-2" inputmode="tel" placeholder="Phone, e.g. 0712 345 678" required>
+      <button class="btn btn-outline-secondary w-100" style="min-height:44px">Save</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+
 <section class="doc">
   <h2>Change your PIN</h2>
   <form method="POST" class="settings-form" autocomplete="off">
@@ -41,5 +101,14 @@
     <button name="lang" value="sw" class="btn {{ 'btn-primary' if lang == 'sw' else 'btn-outline-secondary' }}">Kiswahili</button>
   </form>
   <p class="muted mt-2">Help text on each page uses this language.</p>
+</section>
+
+<section class="doc">
+  <h2>Sign out everywhere</h2>
+  <p class="muted">Lost your phone, or signed in on someone else's? This signs you out on every phone. Then sign in again with your PIN.</p>
+  <form method="POST" onsubmit="return confirm('Sign out on every phone, including this one?');">
+    <input type="hidden" name="action" value="signout_all">
+    <button class="btn btn-outline-danger w-100" style="min-height:46px">Sign out everywhere</button>
+  </form>
 </section>
 {% endblock %}

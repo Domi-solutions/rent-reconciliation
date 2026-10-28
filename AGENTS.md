@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Tenant Settings (Claude, 2026-10-28)
+
+- Menu: Moving out and Settings are their own items. Settings: details, PIN, language, numbers I pay from, emergency contact, second phone, phone change (LINCKS chose: SMS code to the new number + management approves; old number texted; history kept), sign out everywhere. 5 tests.
+
 ### Welcome page + moving out (Claude, 2026-10-28)
 
 - Tenant **welcome** page on first visit (seven plain steps, icons, English/Kiswahili; again from "How to use Domi").

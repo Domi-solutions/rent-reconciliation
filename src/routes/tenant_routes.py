@@ -15,6 +15,7 @@ from src.utils.water_breakdown import water_breakdowns
 from src.messaging import staff_alerts, threads
 from src.reconciliation import claim_owner
 from src.leases import move_out
+from src.utils import tenant_contacts
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
 from src.utils.tenant_auth import (
@@ -68,6 +69,8 @@ def _sign_in(person_id, name):
     session.permanent = True                      # stay signed in on their own phone
     session['tenant_person_id'] = person_id
     session['tenant_person_name'] = name
+    with get_connection() as conn:                # "Sign out everywhere" raises this (tenant_contacts)
+        session['tenant_session_version'] = tenant_contacts.session_version(conn, person_id)
 
 
 @tenant_bp.before_request
@@ -79,12 +82,16 @@ def require_tenant_sign_in():
         return None if session.get('tenant_person_id') else redirect(url_for('tenant.login'))
     with get_connection() as conn:
         row = conn.execute("""
-            SELECT t.person_id, p.pin_hash FROM tenants t
+            SELECT t.person_id, p.pin_hash, COALESCE(p.session_version, 0) AS session_version FROM tenants t
             LEFT JOIN persons p ON p.id = t.person_id
             WHERE t.access_token = ? AND t.unit_id IS NOT NULL
         """, (token.strip(),)).fetchone()
     if not row:
         return None                               # the route renders invalid_token
+    if (row['person_id'] and session.get('tenant_person_id') == row['person_id']
+            and session.get('tenant_session_version', 0) != row['session_version']):
+        for key in ('tenant_person_id', 'tenant_person_name', 'tenant_session_version'):
+            session.pop(key, None)                # signed out everywhere since this phone signed in
     if row['person_id'] and session.get('tenant_person_id') == row['person_id']:
         session[f'pay_auth_{token}'] = True       # signed in counts as PIN-verified for paying
         return None
@@ -436,7 +443,8 @@ def settings(token):
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
         person_id = session.get('tenant_person_id')
-        done = error = None
+        done = error = send_code = None
+        alerts, signed_out = [], False
         if request.method == 'POST' and request.form.get('action') == 'pin':
             current, new, again = (request.form.get(k, '').strip() for k in ('current_pin', 'new_pin', 'new_pin_again'))
             result, minutes = check_pin(conn, person_id, current)
@@ -459,14 +467,62 @@ def settings(token):
                 conn.execute("UPDATE tenants SET language_preference = ? WHERE id = ?", (lang, tenant['id']))
                 session['lang'] = lang
                 done = 'Saved.' if lang == 'en' else 'Imehifadhiwa.'
+        elif request.method == 'POST' and request.form.get('action') == 'add_contact':
+            try:
+                tenant_contacts.add_contact(conn, tenant, request.form.get('kind'), request.form.get('phone'),
+                                            request.form.get('name'), request.form.get('relationship'))
+                done = 'Saved.'
+            except ValueError as e:
+                error = str(e)
+        elif request.method == 'POST' and request.form.get('action') == 'remove_contact':
+            tenant_contacts.remove_contact(conn, tenant, request.form.get('contact_id'))
+            done = 'Removed.'
+        elif request.method == 'POST' and request.form.get('action') == 'phone_request':
+            try:
+                _, code = tenant_contacts.request_change(conn, tenant, person_id, prop, request.form.get('new_phone'))
+                send_code = (_normalize_phone(request.form.get('new_phone')), code)
+                done = 'A 6-digit code is on its way to your new number. Type it below.'
+            except ValueError as e:
+                error = str(e)
+        elif request.method == 'POST' and request.form.get('action') == 'phone_confirm':
+            try:
+                conv_id = tenant_contacts.confirm_code(conn, tenant, unit, prop, request.form.get('code'))
+                alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                done = 'Sent to management. Your number changes when they approve it; you get an SMS.'
+            except ValueError as e:
+                error = str(e)
+        elif request.method == 'POST' and request.form.get('action') == 'phone_cancel':
+            tenant_contacts.cancel(conn, tenant)
+            done = 'Cancelled. Your number stays as it is.'
+        elif request.method == 'POST' and request.form.get('action') == 'signout_all':
+            tenant_contacts.sign_out_everywhere(conn, person_id)
+            signed_out = True
         details = conn.execute("""
             SELECT t.move_in_date, t.deposit_paid, t.language_preference, u.monthly_rent, u.service_charge,
                    (SELECT l.start_date FROM leases l WHERE l.tenant_id = t.id ORDER BY l.created_at DESC LIMIT 1) AS lease_start
             FROM tenants t JOIN units u ON u.id = t.unit_id WHERE t.id = ?
         """, (tenant['id'],)).fetchone()
+        contacts = tenant_contacts.contacts(conn, tenant['id'])
+        phone_request = tenant_contacts.open_request(conn, tenant['id'])
+    # Texts go after the save (an SMS sent inside the transaction can fail without a trace).
+    if signed_out:
+        for key in ('tenant_person_id', 'tenant_person_name', 'tenant_session_version'):
+            session.pop(key, None)
+        return redirect(url_for('tenant.login'))
+    staff_alerts.send(alerts)
+    from src.utils.runtime import is_demo
+    if send_code:
+        if is_demo():
+            session['demo_phone_code'] = send_code[1]          # demo: shown on screen as well
+        from src.messaging.delivery import send_sms
+        send_sms([send_code[0]], f"Your code to change your phone number on {(prop['name'] or '').title()} "
+                                 f"is {send_code[1]}. It expires in 10 minutes. Do not share it.")
     return render_template('tenant/settings.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='settings', details=details, done=done, error=error,
-                           lang=session.get('lang') or details['language_preference'] or 'en')
+                           lang=session.get('lang') or details['language_preference'] or 'en',
+                           contacts=contacts, kinds=tenant_contacts.KINDS, limits=tenant_contacts.LIMITS,
+                           phone_request=phone_request,
+                           demo_code=session.get('demo_phone_code') if is_demo() and phone_request else None)
 
 
 @tenant_bp.route('/<token>/move-out/withdraw', methods=['POST'])

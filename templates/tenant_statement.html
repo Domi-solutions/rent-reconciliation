@@ -70,6 +70,21 @@
   </div>
 </div>
 
+{# ── Contacts the tenant added in Settings, and earlier phone numbers ── #}
+{% if contacts and (contacts.payer or contacts.emergency or contacts.second_phone or phone_history) %}
+<div class="surface-card mb-4" style="padding:14px 20px;font-size:14px;">
+  <div style="font-weight:650;margin-bottom:6px">Contacts</div>
+  {% for kind, label in contact_kinds.items() if contacts[kind] %}
+  <div><span style="color:var(--ink-2)">{{ label }}:</span>
+    {% for c in contacts[kind] %}{{ c.name ~ ' ' if c.name }}{% if c.relationship %}({{ c.relationship }}) {% endif %}<b>{{ c.phone }}</b>{{ '; ' if not loop.last }}{% endfor %}</div>
+  {% endfor %}
+  {% if phone_history %}
+  <div><span style="color:var(--ink-2)">Earlier phone numbers:</span>
+    {% for h in phone_history %}{{ h.old_phone or '—' }} (until {{ (h.decided_at or '')[:10] }}){{ '; ' if not loop.last }}{% endfor %}</div>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ── Quick Verify ────────────────────────────────────────────── #}
 <div class="surface-card mb-4 no-print" style="padding:16px 20px;">
   <div style="font-size:13px; font-weight:700; color:var(--ink); margin-bottom:10px;">Verify a payment</div>

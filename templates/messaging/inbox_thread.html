@@ -24,6 +24,16 @@
     {% if ref_text %}<div style="font-size:13px;margin-top:6px">About: <b>{{ ref_text }}</b>
       · <a href="{{ url_for('reports.tenant_evidence', tenant_id=conv.tenant_id) }}">statement of account</a></div>{% endif %}
   </div>
+  {% if phone_change %}
+  <div style="border:1px solid var(--orange-border);border-left:4px solid var(--orange);background:var(--orange-soft);border-radius:var(--r-card);padding:12px 14px;margin:12px 0;font-size:14px;">
+    <b>Change of phone number</b>: from {{ phone_change.old_phone or 'none' }} to <b>{{ phone_change.new_phone }}</b>.
+    The tenant proved the new number with an SMS code. On approval the old number gets a text, and both numbers stay on record.
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <form method="POST" action="{{ url_for('messaging.inbox_phone_change', conv_id=conv.id) }}"><input type="hidden" name="decision" value="approve"><button class="btn btn-sm btn-primary">Approve the new number</button></form>
+      <form method="POST" action="{{ url_for('messaging.inbox_phone_change', conv_id=conv.id) }}"><input type="hidden" name="decision" value="decline"><button class="btn btn-sm btn-outline-secondary">Decline</button></form>
+    </div>
+  </div>
+  {% endif %}
   <section class="chat-transcript" aria-label="Conversation messages">
 {% for m in msgs %}
   <div class="bubble {{ 'tenant' if m.sender_type == 'tenant' else ('sys' if m.sender_type == 'system' else 'staff') }}"><div class="body">{{ m.body }}</div>{% for p in m.photos %}<div class="photos"><a href="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" target="_blank"><img src="{{ url_for('messaging.inbox_photo', photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}

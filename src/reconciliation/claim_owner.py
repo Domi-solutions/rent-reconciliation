@@ -52,7 +52,12 @@ def sender_is_tenant(conn, bank_txn, tenant):
         digits = re.sub(r'\D', '', f"{bank_txn['raw_text'] or ''} {sender}")
         if phone[-9:] in digits:
             return True
-    # 3. The same sender has paid for this tenant before (a spouse, an employer)
+    # 3. A number the tenant listed under "Numbers I pay from" (Settings)
+    from src.utils.tenant_contacts import payer_phones
+    digits = re.sub(r'\D', '', f"{bank_txn['raw_text'] or ''} {sender}")
+    if any(p[-9:] in digits for p in payer_phones(conn, tenant['id'])):
+        return True
+    # 4. The same sender has paid for this tenant before (a spouse, an employer)
     if sender and conn.execute("""
         SELECT 1 FROM payments p JOIN bank_transactions bt ON bt.id = p.bank_txn_id
         WHERE p.tenant_id = ? AND UPPER(TRIM(bt.sender_name)) = UPPER(?) LIMIT 1
