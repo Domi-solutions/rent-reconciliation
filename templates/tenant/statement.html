@@ -36,10 +36,10 @@
   <ol class="statement-ledger" aria-label="Bills and payments, newest first">
     {% for r in rows %}
     <li>
-      <details class="statement-entry">
+      <details class="statement-entry{% if r.row_type == 'payment' %} is-payment{% endif %}">
         <summary class="statement-row">
           <span class="statement-date">{{ (r.row_date or '')[:10] or 'Date not recorded' }}</span>
-          <span class="statement-name">{% if r.row_type == 'payment' %}Payment{% elif r.is_arrears or r.charge_type == 'brought_forward' %}Earlier unpaid bills{% else %}{{ r.charge_type|charge_label }}{% endif %}</span>
+          <span class="statement-name">{% if r.row_type == 'payment' %}Payment received{% elif r.is_arrears or r.charge_type == 'brought_forward' %}Earlier unpaid bills{% else %}{{ r.charge_type|charge_label }}{% endif %}</span>
           <span class="statement-change{% if r.row_type == 'payment' %} credit{% endif %}">{% if r.row_type == 'payment' %}<span class="visually-hidden">Payment, subtract </span>−{{ r.credit|money_amount }}{% else %}<span class="visually-hidden">Bill, add </span>+{{ r.debit|money_amount }}{% endif %}</span>
           <span class="statement-after {% if r.running_balance > 0 %}owed{% else %}credit{% endif %}"><span class="statement-after-label">{% if r.running_balance > 0 %}Still owed{% elif r.running_balance < 0 %}Extra paid{% else %}Nothing owed{% endif %} </span><span>{{ (r.running_balance|abs)|money_amount }}</span></span>
           <span class="statement-toggle no-print" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg></span>

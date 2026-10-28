@@ -182,3 +182,15 @@ body a.card-header-link:hover { background: var(--mint-2); color: var(--ink); }
 .chosen-bill-name { font-size: 17px; font-weight: 650; margin: 2px 0 4px; }
 .chosen-bill-meta { font-size: 13px; color: var(--ink-2); }
 .chosen-bill-reset { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 600; }
+
+/* Statement: a payment row reads green end to end — name, amount and tint — so money in
+   stands apart from bills at a glance. The balance column keeps its own red/green meaning. */
+body .statement-entry.is-payment > summary.statement-row { background: var(--green-soft); box-shadow: inset 4px 0 0 var(--green); }
+body .statement-entry.is-payment > summary.statement-row:hover,
+.statement-entry.is-payment[open] > summary.statement-row { background: rgba(46,139,98,.16); }
+.statement-entry.is-payment .statement-name,
+.statement-entry.is-payment .statement-change { color: var(--green-dark); }
+.statement-entry.is-payment .statement-date { color: var(--green-dark); }
+@media print {
+  body .statement-entry.is-payment > summary.statement-row { background: none; box-shadow: inset 3px 0 0 var(--green); }
+}

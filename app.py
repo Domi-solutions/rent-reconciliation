@@ -372,6 +372,10 @@ scheduler.add_listener(_job_heartbeat_listener, EVENT_JOB_EXECUTED | EVENT_JOB_E
 _running_via_flask_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 _is_werkzeug_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 _should_start_scheduler = (not _running_via_flask_cli) or _is_werkzeug_child
+# SCHEDULER_ENABLED=false keeps scheduled jobs off — for a local preview run with the
+# auto-reloader, whose reloaded child would otherwise start them against the demo database.
+if os.environ.get("SCHEDULER_ENABLED", "true").lower() == "false":
+    _should_start_scheduler = False
 
 if _should_start_scheduler and not scheduler.running:
     scheduler.start()
