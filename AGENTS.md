@@ -29,6 +29,13 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Phone menu, Bills page buttons, green payments (Claude, 2026-10-28)
+
+- Tenant, owner and caretaker headers: on phones the tab row is a ☰ menu button labelled with the open page (`partials/nav_toggle.html` + `partials/nav_scroll.html`; styles in interface.css). Wider screens keep the tab row.
+- Bills page: Pay this bill / Ask about this under each unpaid bill; on phones each bill stacks. Removed a first-version rule in style.css that hid every `.viewer-table` on phones (tenant Bills + Payments, owner Cash book were blank on phones).
+- Statement payment rows are green end to end ("Payment received").
+- Local preview: `ui-review` now runs `flask run --debug --no-debugger` with `SCHEDULER_ENABLED=false` — code reloads by itself; don't restart it (a restart sends the open tab to /demo).
+
 ### "Pay this bill" (Claude, 2026-10-28)
 
 - Each unpaid bill (Still owed list on overview/statement/Pay, and each statement bill row) has **Pay this bill** beside **Ask about this**. The Pay page then shows "Paying for <bill>", fills in its amount, and ties the M-Pesa prompt or a pasted code to it; that bill is settled first, anything extra oldest first. **Make a payment** stays generic (oldest first). Paybill payments made from the M-Pesa menu can't carry a bill (the account number is the house); a pasted code can. 6 tests.

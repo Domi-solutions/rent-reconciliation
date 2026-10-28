@@ -181,9 +181,25 @@ body :is(.viewer-header, .ct-header) nav.more-left.more-right {
   -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
           mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
+/* Phones: the tab row folds into a menu button (partials/nav_toggle.html) labelled with the
+   open page; the header is one short line again, so it stays pinned. */
+body .nav-toggle { display: none; }
 @media (max-width: 767px) {
-  /* A pinned two-part header costs a fifth of a phone screen; it scrolls away instead. */
-  body :is(.viewer-header, .ct-header) { position: static; }
+  body .nav-toggle {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 6px 12px; flex-shrink: 0;
+    border: 1px solid rgba(140,199,161,.5); border-radius: var(--r-btn); background: rgba(255,255,255,.06);
+    color: #fff; font: 600 14px var(--font);
+  }
+  body .nav-toggle svg { width: 20px; height: 20px; }
+  body :is(.viewer-header, .ct-header).nav-open .nav-toggle { background: var(--sage); border-color: var(--sage); color: var(--forest); }
+  body :is(.viewer-header, .ct-header) nav { display: none !important; }
+  body :is(.viewer-header, .ct-header).nav-open nav {
+    display: flex !important; flex-direction: column; gap: 6px; overflow: visible; margin: 0; padding: 6px 0 14px;
+    -webkit-mask-image: none; mask-image: none;
+  }
+  body :is(.viewer-header, .ct-header).nav-open nav a { width: 100%; min-height: 46px; margin-left: 0 !important; font-size: 15px; }
+  body :is(.viewer-header, .ct-header) { position: sticky; top: 0; }
+  body :is(.viewer-header, .ct-header) .ct-meta:not(a) { display: none; }
 }
 /* A list row that opens something looks like it: whole row is the link, with a chevron. */
 body a.data-row-link { display: block; color: var(--ink); text-decoration: none; position: relative; padding-right: 40px; }

@@ -28,11 +28,14 @@
 {% include 'partials/demo_banner.html' %}
   <header class="viewer-header">
     <div style="max-width: 860px; margin: 0 auto; padding: 0 20px;">
-      <div style="padding: 12px 0 4px;">
-        <div class="viewer-prop-name">{{ property.name|title }}</div>
-        <div class="viewer-prop-label">Unit {{ unit.unit_number }} — {{ tenant.name|title }}</div>
+      <div class="d-flex justify-content-between align-items-center gap-3" style="padding: 12px 0 4px;">
+        <div>
+          <div class="viewer-prop-name">{{ property.name|title }}</div>
+          <div class="viewer-prop-label">Unit {{ unit.unit_number }} — {{ tenant.name|title }}</div>
+        </div>
+        {% include 'partials/nav_toggle.html' %}
       </div>
-      <nav style="display: flex; gap: 4px; padding-bottom: 8px;">
+      <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px;">
         <a class="viewer-nav-tab {% if active_tab == 'portal' %}active{% endif %}" href="{{ url_for('tenant.portal', token=token) }}">Overview</a>
         <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}" style="font-weight:600">Pay</a>
         <a class="viewer-nav-tab {% if active_tab == 'statement' %}active{% endif %}" href="{{ url_for('tenant.statement', token=token) }}">Statement</a>

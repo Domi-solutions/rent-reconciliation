@@ -39,11 +39,12 @@
         <span class="ct-meta">{{ session['caretaker_name'] }}</span>
         {% endif %}
         <a href="{{ url_for('caretaker.logout') }}" class="ct-meta">Log out</a>
+        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
       </div>
     </div>
 
     {% if property is defined and property %}
-    <nav style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
+    <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
       <a class="ct-nav-tab {% if active_tab == 'overview' %}active{% endif %}"
          href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
       <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"

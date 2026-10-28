@@ -23,13 +23,16 @@
         <div class="viewer-prop-label">Owner View</div>
         {% endif %}
       </div>
-      {% if session.get('owner_id') %}
-      <a href="{{ url_for('viewer.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
-      {% endif %}
+      <div class="d-flex align-items-center gap-3">
+        {% if session.get('owner_id') %}
+        <a href="{{ url_for('viewer.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
+        {% endif %}
+        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
+      </div>
     </div>
 
     {% if property is defined and property %}
-    <nav style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
+    <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'overview' %}active{% endif %}"
          href="{{ url_for('viewer.property_dashboard', property_id=property.id) }}">Overview</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'arrears' %}active{% endif %}"

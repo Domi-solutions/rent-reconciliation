@@ -1,5 +1,6 @@
-{# Portal tab bars (tenant, owner, caretaker) are one scrolling row. Bring the open
-   page's tab into view and mark the edges that hide more tabs (faded in interface.css). #}
+{# Portal tab bars (tenant, owner, caretaker). Wider screens: one scrolling row — bring the
+   open page's tab into view and mark the edges that hide more tabs (faded in interface.css).
+   Phones: the row is a menu behind partials/nav_toggle.html, labelled with the open page. #}
 <script>
 (function () {
   document.querySelectorAll('.viewer-header nav, .ct-header nav').forEach(function (nav) {
@@ -17,6 +18,20 @@
     edges();
     nav.addEventListener('scroll', edges, { passive: true });
     window.addEventListener('resize', edges);
+
+    var header = nav.closest('header'), toggle = header && header.querySelector('.nav-toggle');
+    if (!toggle) return;
+    var label = toggle.querySelector('.nav-toggle-label');
+    if (active && label) label.textContent = active.textContent.trim().split('\n')[0].trim();
+    toggle.addEventListener('click', function () {
+      var open = header.classList.toggle('nav-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && header.classList.contains('nav-open')) {
+        header.classList.remove('nav-open'); toggle.setAttribute('aria-expanded', 'false'); toggle.focus();
+      }
+    });
   });
 })();
 </script>
