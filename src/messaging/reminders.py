@@ -23,6 +23,8 @@ def generate_due_reminders(conn, property_id):
     if not outreach_enabled():
         return
     today = date.today().isoformat()
+    prop_row = conn.execute("SELECT name FROM properties WHERE id = ?", (property_id,)).fetchone()
+    property_name = prop_row['name'] if prop_row else property_id   # every SMS says which property it is about
 
     settings = conn.execute("""
         SELECT rs.id, rs.template_key, rs.days_before_due
@@ -65,7 +67,7 @@ def generate_due_reminders(conn, property_id):
                 t.id AS tenant_id,
                 t.name AS tenant_name,
                 t.phone,
-                t.access_token,
+                t.access_token, t.short_code,
                 t.unit_id,
                 u.unit_number,
                 u.monthly_rent,
@@ -115,16 +117,14 @@ def generate_due_reminders(conn, property_id):
                 try:
                     from src.messaging.delivery import send_sms
                     app_base = os.environ.get('APP_BASE_URL', '').rstrip('/')
-                    sms_text = body
-                    if app_base and t['access_token']:
-                        sms_text += f"\n\nView account: {app_base}/tenant/{t['access_token']}"
+                    from src.messaging.outreach import portal_footer
+                    sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
+                    sms_text = portal_footer(sms_text, app_base, t['short_code'])
                     send_sms([{'phone': t['phone']}], sms_text)
                 except Exception:
                     pass
 
     # --- Process reminder_schedules (flexible system) ---
-    prop_row = conn.execute("SELECT name FROM properties WHERE id = ?", (property_id,)).fetchone()
-    property_name = prop_row['name'] if prop_row else property_id
 
     schedules = conn.execute("""
         SELECT id, label, template_key, days_before_due, send_to
@@ -163,7 +163,7 @@ def generate_due_reminders(conn, property_id):
         balance_filter = "AND ub.balance > 0" if send_to == 'arrears' else ""
 
         recipients = conn.execute(f"""
-            SELECT t.id AS tenant_id, t.name AS tenant_name, t.phone, t.access_token,
+            SELECT t.id AS tenant_id, t.name AS tenant_name, t.phone, t.access_token, t.short_code,
                    t.unit_id, u.unit_number, u.monthly_rent, u.service_charge,
                    ub.balance, ub.total_paid,
                    rc.period, rc.amount AS charge_amount
@@ -208,9 +208,9 @@ def generate_due_reminders(conn, property_id):
                 try:
                     from src.messaging.delivery import send_sms
                     app_base = os.environ.get('APP_BASE_URL', '').rstrip('/')
-                    sms_text = body
-                    if app_base and t['access_token']:
-                        sms_text += f"\n\nView account: {app_base}/tenant/{t['access_token']}"
+                    from src.messaging.outreach import portal_footer
+                    sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
+                    sms_text = portal_footer(sms_text, app_base, t['short_code'])
                     send_sms([{'phone': t['phone']}], sms_text)
                 except Exception:
                     pass

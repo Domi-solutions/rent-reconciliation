@@ -46,15 +46,17 @@ def _link_sms():
 
 
 def _tenant_sms(prop, tenant, subject, body):
-    """The SMS for one message to a tenant: a note and their sign-in link (the message stays
-    in the portal), or — before sign-in links are switched on — the message itself."""
+    """The SMS for one message to one tenant: a note and their sign-in link — the message is
+    read (and answered) in the portal. Before sign-in links are switched on, the title and
+    message themselves. Broadcasts and rent reminders are texted in full instead."""
     name = prop['name'].title()
     code = tenant['short_code'] if 'short_code' in tenant.keys() else None
     if _link_sms() and code:
         base = (os.environ.get('APP_BASE_URL') or request.host_url).rstrip('/')
-        about = '' if subject == 'Message from management' else f' "{subject[:40]}"'
-        return f"{name}: you have a new message{about} from management. Sign in to read it: {base}/t/{code}"
-    return body if body.lower().startswith(prop['name'].lower()) else f"{name}: {body}"
+        title = '' if subject == 'Message from management' else f': "{subject[:60]}"'
+        return f"{name}: new message from management{title}. Read and reply in Domi: {base}/t/{code}"
+    text = body if subject == 'Message from management' else f"{subject}\n{body}"
+    return text if text.lower().startswith(prop['name'].lower()) else f"{name}: {text}"
 
 
 def _next_due_date(rent_due_day):
@@ -346,15 +348,13 @@ def broadcast():
                 return redirect(url_for('messaging.broadcast'))
             subject = request.form.get('subject', '').strip()
             body = request.form.get('body', '').strip()
-            channel = request.form.get('channel', 'portal').strip()
             if not subject:
                 flash('Subject is required.', 'error')
                 return redirect(url_for('messaging.broadcast'))
 
-            # Every broadcast is kept in each tenant's portal. "both" (old value "sms") also
-            # texts the full message, so tenants who never sign in don't miss it.
-            channel = 'both' if channel in ('both', 'sms') else 'portal'
-            delivery_channel = 'sms' if channel == 'both' else 'portal'
+            # A broadcast notice is kept in each tenant's portal and texted in full (title and
+            # message), ending with their portal link once sign-in links are approved.
+            channel, delivery_channel = 'both', 'sms'
             batch_id = generate_id('BATCH')
             selected_tenants = []
             for tenant_id in recipient_ids:
@@ -370,16 +370,6 @@ def broadcast():
                     INSERT INTO messages (id, property_id, tenant_id, batch_id, subject, body, template_body, message_type, delivery_channel, delivery_status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
                 """, (msg_id, pid, tenant_id, batch_id, subj, b, body, delivery_channel))
-
-                from src.messaging.outreach import enabled as _outreach_enabled
-                if delivery_channel == 'portal' and t['phone'] and t['short_code'] and _outreach_enabled():
-                    try:
-                        from src.messaging.delivery import send_sms
-                        _base = (os.environ.get('APP_BASE_URL', request.host_url)).rstrip('/')
-                        _ping = f"Hi {t['name']}, you have a new message. View: {_base}/t/{t['short_code']}"
-                        send_sms([{'phone': t['phone']}], _ping)
-                    except Exception:
-                        pass
 
             conn.execute(
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -421,6 +411,8 @@ def broadcast():
                     sms_text = _substitute(f"{subject}\n{body}", v)
                     if not sms_text.lower().startswith(prop['name'].lower()):
                         sms_text = _prefix + sms_text       # every SMS says which property it is about
+                    from src.messaging.outreach import portal_footer
+                    sms_text = portal_footer(sms_text, os.environ.get('APP_BASE_URL') or request.host_url, t['short_code'])
                     s, f, e = send_sms([{'phone': t['phone']}], sms_text)
                     sent += s
                     failed += f

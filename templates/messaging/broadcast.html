@@ -43,15 +43,7 @@
         <textarea class="message-input form-control" name="body" rows="5" id="body"></textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label">Send to</label>
-        <div class="form-check">
-          <input class="form-check-input" type="radio" name="channel" value="both" id="ch_both" checked>
-          <label class="form-check-label" for="ch_both"><strong>Portal + SMS</strong> — the full message by SMS too, so tenants who don't sign in still get it</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="radio" name="channel" value="portal" id="ch_portal">
-          <label class="form-check-label" for="ch_portal"><strong>Portal only</strong>{% if outreach_enabled %} — with a short SMS saying there is a new message{% else %} — no SMS (sign-in links wait for onboarding approval){% endif %}</label>
-        </div>
+        <div class="form-text">Each tenant gets it in their portal and by SMS in full: the title, then the message{% if outreach_enabled %}, then a link to their portal{% endif %}.</div>
         <div class="form-text" id="sms_count"></div>
         {% if not sms_on %}<div class="form-text text-warning">SMS sending is switched off on this system right now: messages are posted to portals, and SMS will not go out.</div>{% endif %}
       </div>

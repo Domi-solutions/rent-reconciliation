@@ -69,14 +69,37 @@ class MessageCompose(unittest.TestCase):
 
     def test_with_links_on_the_sms_is_a_sign_in_link_not_the_message(self):
         with patch.dict(os.environ, {'TENANT_OUTREACH_ENABLED': 'true'}):
-            page = self.admin.post(self.url, data={'body': 'Private matter about your deposit.'},
+            page = self.admin.post(self.url, data={'subject': 'Your deposit', 'body': 'Private matter about your deposit.'},
                                    follow_redirects=True).get_data(as_text=True)
         (_, text), _ = self.sms.call_args
         self.assertIn(f"/t/{self.tenant['short_code']}", text)
         self.assertIn('new message from management', text)
-        self.assertNotIn('deposit', text)
+        self.assertIn('"Your deposit"', text)                       # the title, never the message
+        self.assertNotIn('Private matter', text)
         self.assertIn('with a link to read it', page)
         self.assertIn('Private matter about your deposit.', self.saved()['body'])
+
+    def test_title_is_kept_and_texted_before_links_are_on(self):
+        self.admin.post(self.url, data={'subject': 'Water off on Saturday', 'body': 'From 9am to 1pm.'})
+        self.assertEqual(self.saved()['subject'], 'Water off on Saturday')
+        (_, text), _ = self.sms.call_args
+        self.assertEqual(text, f"{self.tenant['property_name'].title()}: Water off on Saturday\nFrom 9am to 1pm.")
+
+    def test_broadcast_is_texted_in_full_with_the_portal_link(self):
+        with patch.dict(os.environ, {'TENANT_OUTREACH_ENABLED': 'true'}):
+            self.admin.post('/messages/broadcast', data={'tenant_ids': [self.tenant['id']],
+                                                         'subject': 'Water off on Saturday',
+                                                         'body': 'From 9am to 1pm.'})
+        (_, text), _ = self.sms.call_args
+        self.assertIn('Water off on Saturday\nFrom 9am to 1pm.', text)
+        self.assertTrue(text.endswith(f"/t/{self.tenant['short_code']}"))
+        self.assertEqual(self.saved()['delivery_channel'], 'sms')
+
+    def test_broadcast_before_links_are_on_has_no_link(self):
+        self.admin.post('/messages/broadcast', data={'tenant_ids': [self.tenant['id']],
+                                                     'subject': 'Notice', 'body': 'Hello.'})
+        (_, text), _ = self.sms.call_args
+        self.assertNotIn('/t/', text)
 
     def test_no_phone_posts_in_portal_only(self):
         with self.connection() as conn:

@@ -140,7 +140,9 @@
         {% endfor %}
       </div>
       {% endif %}
-      <input type="hidden" name="subject" id="compose-subject">
+      <label class="visually-hidden" for="compose-subject">Title</label>
+      <input type="text" class="form-control mb-2" name="subject" id="compose-subject" maxlength="120"
+             placeholder="Title (e.g. Water off on Saturday)">
       <label class="visually-hidden" for="compose-body">Message to {{ tenant.name }}</label>
       <textarea class="message-input form-control" name="body" id="compose-body" rows="3" required
                 placeholder="Write to {{ tenant.name.split()[0]|title }}…"></textarea>
@@ -151,9 +153,9 @@
       <div class="compose-note">
         {% if not tenant.phone %}It goes to {{ tenant.name.split()[0]|title }}'s portal. No phone number on record, so no SMS can tell them.
         {% elif link_sms %}It goes to their portal, and {{ tenant.phone }} gets an SMS with a link to sign in and read it:
-        <span class="compose-preview">{{ sms_preview }}</span>
+        <span class="compose-preview" id="compose-preview">{{ sms_preview }}</span>
         {% else %}It goes to their portal, and {{ tenant.phone }} gets it by SMS, starting "{{ sms_prefix }}".
-        Sign-in links are not switched on yet, so the SMS carries the message itself.{% endif %}
+        Until sign-in links are switched on, the SMS carries the title and message; after that it carries only a link to read it in Domi.{% endif %}
       </div>
     </form>
   </div>
@@ -171,17 +173,26 @@ const linkSms = {{ 'true' if link_sms else 'false' }};   // the SMS is a link no
 document.querySelectorAll('.compose-chip').forEach(chip => chip.addEventListener('click', () => {
   body.value = chip.dataset.body || chip.dataset.subject || '';
   subject.value = chip.dataset.subject || '';
-  body.focus(); updateCount(); grow();
+  body.focus(); updateCount(); grow(); updatePreview();
 }));
 function updateCount() {
   if (!count) return;
-  const text = prefix + body.value.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-');
+  const text = prefix + (subject.value ? subject.value + '\n' : '') + body.value.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-');
   const gsm = /^[\x20-\x7E\n\r£¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ¡ÄÖÑÜ§¿äöñüà]*$/.test(text);
   const parts = gsm ? (text.length <= 160 ? 1 : Math.ceil(text.length / 153)) : (text.length <= 70 ? 1 : Math.ceil(text.length / 67));
   count.textContent = body.value && !linkSms ? `${text.length} characters · ${parts} SMS${parts > 1 ? ' parts' : ''}` : '';
 }
 function grow() { body.style.height = 'auto'; body.style.height = Math.min(body.scrollHeight + 2, 320) + 'px'; }
 body.addEventListener('input', () => { updateCount(); grow(); });
+// The link SMS carries the title: keep its preview in step with what is typed.
+const preview = document.getElementById('compose-preview');
+const previewBase = preview ? preview.textContent : '';
+function updatePreview() {
+  if (!preview) return;
+  const t = subject.value.trim().slice(0, 60);
+  preview.textContent = t ? previewBase.replace('new message from management.', `new message from management: "${t}".`) : previewBase;
+}
+subject.addEventListener('input', () => { updateCount(); updatePreview(); });
 body.addEventListener('keydown', e => {           // Ctrl/Cmd + Enter sends
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();

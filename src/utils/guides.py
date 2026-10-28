@@ -410,9 +410,16 @@ _T = {
             "For one tenant's question, use the Tenant inbox instead.",
         ]),
     },
+    'messaging.thread': {
+        'en': ('Message one tenant', 'Write a title and a message; it goes to this tenant only.', [
+            'Tap a quick message to start from a reminder filled in with this tenant\'s figures.',
+            'It is kept in their portal. Their phone gets an SMS with the title and a link to read and reply in Domi.',
+            'For a notice to many tenants, use Broadcast: that SMS carries the whole message.',
+        ]),
+    },
     'messaging.broadcast': {
         'en': ('Write to tenants', 'Send a notice to all tenants, or some of them.', [
-            "It appears in each tenant's portal; choose whether it also goes by SMS (SMS costs money per message).",
+            "It appears in each tenant's portal and goes to them by SMS in full (SMS costs money per message).",
             'Keep it short and say what the tenant should do, e.g. "Water off Saturday 9am–1pm".',
         ]),
     },
