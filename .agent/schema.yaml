@@ -53,6 +53,7 @@ tables:
       pay_paybill: {type: TEXT, note: "where tenants are told to pay (migrate_add_payment_instructions); changing it alerts the platform + SMSes owners"}
       pay_account: {type: TEXT, note: "account number; {unit} is replaced with the tenant's unit"}
       pay_account_name: {type: TEXT, note: "name M-Pesa shows before the PIN"}
+      sms_sender_id: {type: TEXT, note: "the property's own registered SMS sender name, e.g. MOWIN (migrate_add_property_sender); NULL = default sender. Platform-only (/platform/sms-senders). Own name → texts drop the leading property name; shared by several properties → keep it"}
       address: {type: TEXT}
       owner_name: {type: TEXT}
       owner_phone: {type: TEXT}

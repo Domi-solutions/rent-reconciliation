@@ -188,7 +188,7 @@ def allocate_payment(conn, payment_id, unit_id, amount):
             GROUP BY charge_id
         ) alloc ON alloc.charge_id = rc.id
         WHERE rc.unit_id = ? AND rc.tenant_id IS ?
-        ORDER BY rc.created_at ASC
+        ORDER BY rc.created_at ASC, rc.rowid ASC          -- same-second charges: the order they were made
     """, (unit_id, tenant_id)).fetchall()
     if target:
         # Only ever one of this tenant's own charges on this unit — anything else is ignored.
@@ -2264,3 +2264,12 @@ def migrate_add_admin_welcome():
         if 'welcomed_at' not in {r['name'] for r in conn.execute("PRAGMA table_info(admin_users)")}:
             conn.execute("ALTER TABLE admin_users ADD COLUMN welcomed_at TIMESTAMP")
         print("Migration complete: admin welcome ready.")
+
+
+def migrate_add_property_sender():
+    """properties.sms_sender_id: the property's own registered SMS sender name (e.g. MOWIN).
+    NULL = the default sender. Set only by the platform (/platform/sms-senders). Idempotent."""
+    with get_connection() as conn:
+        if 'sms_sender_id' not in {r['name'] for r in conn.execute("PRAGMA table_info(properties)")}:
+            conn.execute("ALTER TABLE properties ADD COLUMN sms_sender_id TEXT")
+        print("Migration complete: property SMS sender ready.")

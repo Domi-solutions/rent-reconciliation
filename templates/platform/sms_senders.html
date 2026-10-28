@@ -1,0 +1,52 @@
+{% extends "platform/base_platform.html" %}
+{% block title %}SMS senders — Domi Platform{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h5 class="mb-0 fw-bold">SMS senders</h5>
+  <div style="font-size:13px;color:var(--ink-2);max-width:720px">
+    The name a tenant's phone shows a text as coming from. A property with its own registered name (e.g. MOWIN)
+    sends under it, and its texts no longer start with the building name — the sender already says it.
+    A name shared by several properties keeps the building name. Everything else is sent as
+    <strong>{{ default_sender }}</strong>, starting with the building name.
+  </div>
+</div>
+
+<div class="alert alert-warning" style="font-size:13px;max-width:720px">
+  Register the name with the SMS provider first. A name that is not approved makes every SMS for that property fail —
+  receipts and sign-in codes included. Save it with a test phone number to check.
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle" style="font-size:13px;">
+    <thead class="table-light">
+      <tr><th>Organisation</th><th>Property</th><th>Sent as</th><th style="min-width:360px">Change</th></tr>
+    </thead>
+    <tbody>
+      {% for p in props %}
+      {% set shared = p.sms_sender_id and counts.get(p.sms_sender_id.strip().upper(), 0) > 1 %}
+      <tr>
+        <td>{{ p.org_name or '—' }}</td>
+        <td>{{ p.name }}</td>
+        <td>
+          {% if p.sms_sender_id %}<strong>{{ p.sms_sender_id }}</strong>
+            <div style="font-size:12px;color:var(--ink-2)">{% if shared %}Shared — texts keep the building name{% else %}Own name — building name left off{% endif %}</div>
+          {% else %}{{ default_sender }} <div style="font-size:12px;color:var(--ink-2)">Default — texts start with the building name</div>{% endif %}
+        </td>
+        <td>
+          <form method="post" class="d-flex flex-wrap gap-2">
+            <input type="hidden" name="property_id" value="{{ p.id }}">
+            <input type="text" name="sms_sender_id" value="{{ p.sms_sender_id or '' }}" maxlength="11"
+                   class="form-control form-control-sm" style="width:130px" placeholder="Default" aria-label="Sender name for {{ p.name }}">
+            <input type="tel" name="test_phone" class="form-control form-control-sm" style="width:150px"
+                   placeholder="Test phone (optional)" aria-label="Phone to send a test SMS to">
+            <button type="submit" class="btn btn-sm btn-primary">Save</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div style="font-size:12px;color:var(--ink-2)">Leave the name empty to use the default. Every change is recorded in the audit log.</div>
+{% endblock %}

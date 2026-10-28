@@ -51,7 +51,7 @@ class SmsDeliveryOffline(unittest.TestCase):
              patch.object(delivery, '_log_sms') as outbox:
             result = delivery.send_sms(['0712345678'], 'Hello')
         self.assertEqual(result, (0, 1, ['+254712345678: rejected']))
-        outbox.assert_called_once_with('+254712345678', 'Hello', 'failed', 'rejected')
+        outbox.assert_called_once_with('+254712345678', 'Hello', 'failed', 'rejected', 'MOWIN-APTS', None)
 
 
 if __name__ == '__main__':

@@ -162,6 +162,60 @@ def outbox():
     )
 
 
+@platform_bp.route("/sms-senders", methods=["GET", "POST"])
+def sms_senders():
+    """Each property's own registered SMS sender name (e.g. MOWIN), or the default.
+
+    Platform-only: a sender name decides who the tenant's phone says a text is from, so an
+    agency cannot set it. Register the name with the SMS provider first — an unapproved name
+    makes that property's SMS fail. A test SMS checks it."""
+    import re
+    from src.messaging import delivery
+    if request.method == "POST":
+        pid = request.form.get("property_id", "")
+        sender = (request.form.get("sms_sender_id") or "").strip()
+        test_phone = (request.form.get("test_phone") or "").strip()
+        if sender and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 \-]{1,10}", sender):
+            flash("A sender name is 2-11 letters or numbers (a space or hyphen allowed), e.g. MOWIN.", "danger")
+            return redirect(url_for("platform.sms_senders"))
+        with get_connection() as conn:
+            prop = conn.execute("SELECT id, name, sms_sender_id FROM properties WHERE id = ?", (pid,)).fetchone()
+            if not prop:
+                flash("Property not found.", "danger")
+                return redirect(url_for("platform.sms_senders"))
+            if (prop["sms_sender_id"] or "") != sender:
+                conn.execute("UPDATE properties SET sms_sender_id = ? WHERE id = ?", (sender or None, pid))
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ("sms_sender_changed", "property", pid,
+                     f"{prop['name']}: {prop['sms_sender_id'] or 'default'} -> {sender or 'default'}", "platform"))
+                flash(f"{prop['name']}: SMS now sent as {sender or delivery.sender_label(delivery._sender_id())}.", "success")
+        if test_phone:                                   # after the save, so the test uses the new name
+            sent, _, errors = delivery.send_sms(
+                [test_phone], f"{prop['name'].title()}: test message from Domi. If you can read this, the sender name works.",
+                property_id=pid)
+            if sent:
+                flash(f"Test SMS sent to {test_phone}. Check that the phone shows it from the right name.", "success")
+            else:
+                flash(f"Test SMS did not go out: {errors[0] if errors else 'unknown error'}", "danger")
+        return redirect(url_for("platform.sms_senders"))
+
+    with get_connection() as conn:
+        props = conn.execute("""
+            SELECT p.id, p.name, p.sms_sender_id, o.name AS org_name
+            FROM properties p LEFT JOIN organizations o ON o.id = p.organization_id
+            WHERE COALESCE(p.status, 'active') != 'deleted'
+            ORDER BY o.name, p.name""").fetchall()
+    counts = {}
+    for p in props:
+        if p["sms_sender_id"]:
+            key = p["sms_sender_id"].strip().upper()
+            counts[key] = counts.get(key, 0) + 1
+    return render_template("platform/sms_senders.html", props=props, counts=counts,
+                           default_sender=delivery.sender_label(delivery._sender_id()),
+                           active_tab="sms_senders")
+
+
 @platform_bp.route("/errors")
 def errors():
     error_type = request.args.get("type", "")

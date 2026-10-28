@@ -64,7 +64,7 @@ document.getElementById('template_select').addEventListener('change', function()
   }
 });
 // SMS cost guide: 160 characters is one SMS; longer messages are billed per 153.
-var prefix = {{ (property.name|title ~ ': ')|tojson }};
+var prefix = {{ sms_prefix|tojson }};
 function countSms() {
   var n = (prefix + subjectEl.value + '\n' + bodyEl.value).length;
   var parts = n <= 160 ? 1 : Math.ceil(n / 153);

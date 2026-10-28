@@ -6,7 +6,9 @@ platform can inspect all outbound SMS in /platform/outbox.
 
 Env vars:
   SMS_PROVIDER     — 'africastalking' (default) | 'textsms'
-  SMS_SENDER_ID    — approved sender name, e.g. 'MOWIN-APTS' (unset = provider default)
+  SMS_SENDER_ID    — default approved sender name, e.g. 'DOMI' once registered (unset = provider
+                     default, e.g. TextSMS's own). A property with its own registered name
+                     (properties.sms_sender_id, set at /platform/sms-senders) sends under that.
   AT_SMS_ENABLED   — 'false' logs as simulated and sends nothing (any provider)
   Africa's Talking: AT_API_KEY, AT_USERNAME ('sandbox' for testing); AT_SENDER_ID still honoured
   TextSMS:          TEXTSMS_API_KEY, TEXTSMS_PARTNER_ID
@@ -62,20 +64,59 @@ def _sender_id():
     return (os.environ.get('SMS_SENDER_ID') or os.environ.get('AT_SENDER_ID') or '').strip() or None
 
 
-def _log_sms(phone, body, status, error=None):
+def sender_label(sender):
+    return sender or ('TextSMS' if provider() == 'textsms' else "the provider's default")
+
+
+def sender_for(message, property_id=None):
+    """→ (sender, message, property_id) for one SMS.
+
+    A property with its own registered sender name sends under it. Tenant SMS lead with the
+    property name ("Kijani Court: …"), which identifies the property when the caller did not
+    pass property_id. When the sender name is that property's alone, the leading name is
+    dropped — the phone already shows who it is from. A sender shared by several properties
+    (one agency brand) keeps it, so tenants know which building. Anything else goes under
+    the default sender, unchanged."""
+    try:
+        from src.database.db import get_connection
+        with get_connection() as conn:
+            rows = conn.execute("""SELECT id, name, TRIM(sms_sender_id) AS sender FROM properties
+                                    WHERE TRIM(COALESCE(sms_sender_id, '')) != ''""").fetchall()
+    except Exception:                   # no column yet (very old DB) or no DB: default sender
+        return _sender_id(), message, property_id
+    prop = None
+    if property_id:
+        prop = next((r for r in rows if r['id'] == property_id), None)
+    else:
+        lead = message.split(':', 1)[0].strip().lower() if ':' in message[:80] else ''
+        matches = [r for r in rows if (r['name'] or '').strip().lower() == lead]
+        if matches and len({m['sender'].upper() for m in matches}) == 1:
+            prop = matches[0]
+    if not prop:
+        return _sender_id(), message, property_id
+    shared = sum(1 for r in rows if r['sender'].upper() == prop['sender'].upper()) > 1
+    lead = (prop['name'] or '').strip() + ':'
+    if not shared and len(lead) > 1 and message.lower().startswith(lead.lower()):
+        rest = message[len(lead):].lstrip()
+        message = rest[:1].upper() + rest[1:]
+    return prop['sender'], message, prop['id']
+
+
+def _log_sms(phone, body, status, error=None, sender=None, property_id=None):
     try:
         from src.messaging.outbox import log_outbox
         log_outbox(channel='sms', to_phone=phone, body=body, status=status, error=error,
-                   message_type='sms')
+                   subject=f'From {sender_label(sender)}', property_id=property_id, message_type='sms')
     except Exception:
         pass  # Never let outbox logging break SMS delivery
 
 
-def _send_africastalking(numbers, message):
+def _send_africastalking(numbers, message, sender=None):
     """→ list of (number, ok, error)."""
     import africastalking
     africastalking.initialize(os.environ.get('AT_USERNAME', 'sandbox').strip(), os.environ['AT_API_KEY'].strip())
-    kwargs = {'sender_id': _sender_id()} if _sender_id() else {}
+    sender = sender or _sender_id()
+    kwargs = {'sender_id': sender} if sender else {}
     response = africastalking.SMS.send(message, numbers, **kwargs)
     out = []
     for r in response.get('SMSMessageData', {}).get('Recipients', []):
@@ -84,12 +125,13 @@ def _send_africastalking(numbers, message):
     return out
 
 
-def _send_textsms(numbers, message):
+def _send_textsms(numbers, message, sender=None):
     """TextSMS (textsms.co.ke) JSON API, one request per number."""
+    sender = sender or _sender_id()
     out = []
     for num in numbers:
         payload = {'apikey': os.environ['TEXTSMS_API_KEY'], 'partnerID': os.environ['TEXTSMS_PARTNER_ID'],
-                   'message': message, 'shortcode': _sender_id() or 'TextSMS', 'mobile': num.lstrip('+')}
+                   'message': message, 'shortcode': sender or 'TextSMS', 'mobile': num.lstrip('+')}
         try:
             req = urllib.request.Request('https://sms.textsms.co.ke/api/services/sendsms/',
                                          data=json.dumps(payload).encode(),
@@ -112,21 +154,25 @@ def _send_textsms(numbers, message):
     return out
 
 
-def send_sms(recipients, message):
+def send_sms(recipients, message, property_id=None):
     """
     Send an SMS to one or more recipients through the configured provider.
 
     recipients — list of dicts with a 'phone' key, or list of phone strings
     message    — plain text body (multi-part SMS handled by the provider)
 
+    property_id — optional; otherwise the property is read from the message's leading name
+                  (see sender_for) to pick its own sender name.
+
     Returns (sent_count, failed_count, errors_list)
     """
-    message = plain_sms(message)
+    sender, message, property_id = sender_for(plain_sms(message), property_id)
+    log = lambda phone, status, error=None: _log_sms(phone, message, status, error, sender, property_id)
     if not configured() or os.environ.get('AT_SMS_ENABLED', 'true').lower() == 'false':
         why = 'SMS disabled (AT_SMS_ENABLED=false)' if configured() else f'{provider()} not configured'
         for r in recipients:
             raw = r.get('phone') if isinstance(r, dict) else r
-            _log_sms(str(raw or ''), message, 'simulated', why)
+            log(str(raw or ''), 'simulated', why)
         return 0, len(recipients), [why]
 
     numbers, skipped = [], []
@@ -140,7 +186,7 @@ def send_sms(recipients, message):
 
     if not numbers:
         for s in skipped:
-            _log_sms(s, message, 'failed', 'Invalid phone number')
+            log(s, 'failed', 'Invalid phone number')
         return 0, len(recipients), ['No valid phone numbers to send to'] + skipped
 
     from src.utils.runtime import is_demo
@@ -153,23 +199,24 @@ def send_sms(recipients, message):
                 numbers, held = allowed(conn, numbers)
         except Exception as e:                       # never fail silently: log it like any send
             for num in numbers:
-                _log_sms(num, message, 'failed', f'demo SMS check failed: {e}')
+                log(num, 'failed', f'demo SMS check failed: {e}')
             return 0, len(recipients), [str(e)]
         for num, why in held:
-            _log_sms(num, message, 'simulated', why)
+            log(num, 'simulated', why)
         if not numbers:
             return 0, len(recipients), [why for _, why in held]
 
     try:
-        results = _send_textsms(numbers, message) if provider() == 'textsms' else _send_africastalking(numbers, message)
+        results = (_send_textsms(numbers, message, sender) if provider() == 'textsms'
+                   else _send_africastalking(numbers, message, sender))
     except Exception as e:
         for num in numbers:
-            _log_sms(num, message, 'failed', str(e))
+            log(num, 'failed', str(e))
         return 0, len(numbers) + len(skipped), [str(e)]
 
     errors = []
     for num, ok, err in results:
-        _log_sms(num, message, 'sent' if ok else 'failed', err)
+        log(num, 'sent' if ok else 'failed', err)
         if not ok:
             errors.append(f"{num}: {err or '?'}")
     success = sum(1 for _, ok, _ in results if ok)
@@ -178,12 +225,12 @@ def send_sms(recipients, message):
     return success, len(numbers) - success + len(skipped), errors
 
 
-def send_sms_async(recipients, message):
+def send_sms_async(recipients, message, property_id=None):
     """Fire-and-forget SMS — returns immediately, sends in a daemon thread.
 
     Use this for confirmation messages in request handlers where the send
     result does not affect the HTTP response. The send is still logged to
     platform_outbox regardless of outcome.
     """
-    t = threading.Thread(target=send_sms, args=(recipients, message), daemon=True)
+    t = threading.Thread(target=send_sms, args=(recipients, message, property_id), daemon=True)
     t.start()

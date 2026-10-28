@@ -7,6 +7,9 @@ ahead is never told "Outstanding: KES -23,000" or asked to settle a balance.
 Callers put the raw balance in the variables as `balance_value` (a number; positive =
 owed). {balance} is then the amount owed, never negative; {extra_paid} the amount paid
 ahead; {account} the whole money line.
+
+Greetings use the first name: "Hi {tenant_name}" reads "Hi Peter", not "Hi PETER KAMAU".
+{first_name} is available too.
 """
 
 import re
@@ -17,6 +20,7 @@ _OWED_LINE = re.compile(r'^[ \t]*(?:Total )?Outstanding:[ \t]*KES[ \t]*\{balance
 _SETTLE_LINE = re.compile(r'^[ \t]*(?:Kindly|Please)[^\n]*\b(?:settle|settled)\b[^\n]*$', re.M | re.I)
 
 NOTHING_TO_PAY = 'Nothing to pay now.'
+_GREETING = re.compile(r'\b(Hi|Hello|Dear|Habari|Hujambo|Jambo)(\s+)\{tenant_name\}', re.I)
 
 
 def _kes(n):
@@ -45,6 +49,9 @@ def fill(text, variables):
         text = _OWED_LINE.sub('{account}', text)
         if balance <= 0.5:
             text = _SETTLE_LINE.sub(NOTHING_TO_PAY, text)
+    if values.get('tenant_name'):
+        values['first_name'] = str(values['tenant_name']).split()[0].title()
+        text = _GREETING.sub(r'\1\2{first_name}', text)
     for k, v in values.items():
         text = text.replace('{' + k + '}', str(v))
     return text

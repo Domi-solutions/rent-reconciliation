@@ -154,7 +154,7 @@
         {% if not tenant.phone %}It goes to {{ tenant.name.split()[0]|title }}'s portal. No phone number on record, so no SMS can tell them.
         {% elif link_sms %}It goes to their portal, and {{ tenant.phone }} gets an SMS with a link to sign in and read it:
         <span class="compose-preview" id="compose-preview">{{ sms_preview }}</span>
-        {% else %}It goes to their portal, and {{ tenant.phone }} gets it by SMS, starting "{{ sms_prefix }}".
+        {% else %}It goes to their portal, and {{ tenant.phone }} gets it by SMS{% if sms_prefix %}, starting "{{ sms_prefix }}"{% endif %}.
         Until sign-in links are switched on, the SMS carries the title and message; after that it carries only a link to read it in Domi.{% endif %}
       </div>
     </form>

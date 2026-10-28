@@ -37,7 +37,7 @@ class DemoSms(unittest.TestCase):
         from src.demo import phones
         from src.messaging import delivery
         sent = []
-        fake = lambda nums, msg: (sent.extend(nums) or [(n, True, None) for n in nums])
+        fake = lambda nums, msg, sender=None: (sent.extend(nums) or [(n, True, None) for n in nums])
         with patch.object(delivery, '_send_textsms', side_effect=fake):
             delivery.send_sms(['0700000103'], 'code')                 # made-up demo number
             self.assertEqual(sent, [])

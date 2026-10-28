@@ -240,6 +240,7 @@ blueprints:
       - "GET /platform/parsers — parser test tools (PDF/SMS/Excel tabs); no DB writes; calls parsers directly"
       - "POST /platform/parsers — submit file or SMS text for parse preview; returns result inline"
       - "GET /platform/outbox — all outbound messages logged to platform_outbox; filter by channel + status; up to 300 entries"
+      - "GET|POST /platform/sms-senders — set each property's own SMS sender name (or default); optional test SMS; audit_log sms_sender_changed"
 
   inbound:
     file: src/routes/inbound_routes.py

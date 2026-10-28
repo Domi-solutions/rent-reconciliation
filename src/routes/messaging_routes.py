@@ -39,6 +39,14 @@ def _substitute(text, variables):
     return fill(text, variables)
 
 
+def _sms_lead(prop):
+    """How this property's SMS start: "Kijani Court: ", or nothing when it has its own sender
+    name (the phone already shows it — src/messaging/delivery.sender_for)."""
+    from src.messaging.delivery import sender_for
+    lead = prop['name'].title() + ': '
+    return '' if sender_for(lead + 'x', prop['id'])[1] == 'X' else lead
+
+
 def _link_sms():
     """A sign-in link goes by SMS only once tenant outreach is approved (src/messaging/outreach.py)."""
     from src.messaging.outreach import enabled
@@ -295,8 +303,8 @@ def thread(tenant_id):
         templates=templates,
         sms_on=sms_on,
         link_sms=_link_sms() and bool(tenant['short_code']),
-        sms_preview=_tenant_sms(prop, tenant, 'Message from management', ''),
-        sms_prefix=prop['name'].title() + ': ',
+        sms_preview=delivery.sender_for(_tenant_sms(prop, tenant, 'Message from management', ''), pid)[1],
+        sms_prefix=_sms_lead(prop),
     )
 
 
@@ -438,6 +446,7 @@ def broadcast():
         templates=templates,
         outreach_enabled=__import__('src.messaging.outreach', fromlist=['enabled']).enabled(),
         sms_on=os.environ.get('AT_SMS_ENABLED', 'true').lower() != 'false',
+        sms_prefix=_sms_lead(prop),
     )
 
 

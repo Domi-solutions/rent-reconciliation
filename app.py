@@ -143,6 +143,7 @@ from src.database.db import (
     migrate_add_tenant_contacts,
     migrate_add_lease_terms,
     migrate_add_admin_welcome,
+    migrate_add_property_sender,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -213,6 +214,7 @@ migrate_add_move_out_notices()
 migrate_add_tenant_contacts()
 migrate_add_lease_terms()
 migrate_add_admin_welcome()
+migrate_add_property_sender()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
