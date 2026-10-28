@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Management help (Claude, 2026-10-28)
+
+- "How Domi works" welcome for management (first visit, then from the sidebar) written for someone new to renting: glossary, the monthly routine with links, the daily To do habit. Every management page now has a help box (76 pages with help in guides.py). Demo deployed (domi-demo).
+
 ### Admin overview + one phone header everywhere (Claude, 2026-10-28)
 
 - Admin overview (dashboard.html) redesigned phone-first: this month's money (collected of expected, overdue → Follow up), one To do card (only non-zero rows: messages waiting, payments to match, M-Pesa to name, held, reported-waiting, moving out, leases to decide, expenses, caretaker messages, charges not created), latest 3 messages (who wrote last), who owes most (top 5), four quick actions.

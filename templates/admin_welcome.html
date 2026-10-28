@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}How Domi works{% endblock %}
+{% block extra_css %}
+<style>
+  /* Written for someone new to renting and to Domi: short sentences, one idea per line. */
+  .aw { max-width: 680px; margin: 0 auto; }
+  .aw h1 { font-size: 26px; font-weight: 650; margin: 0 0 6px; }
+  .aw-intro { font-size: 16px; color: var(--ink-2); margin-bottom: 20px; line-height: 1.55; }
+  .aw h2 { font-size: 18px; font-weight: 650; margin: 26px 0 10px; }
+  .aw-card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-card); overflow: hidden; }
+  .aw-word { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--border); font-size: 15px; }
+  .aw-word:first-child { border-top: 0; }
+  .aw-word b { color: var(--forest); }
+  .aw-steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+  .aw-step { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: start; padding: 14px 16px;
+    border-top: 1px solid var(--border); counter-increment: s; }
+  .aw-step:first-child { border-top: 0; }
+  .aw-step::before { content: counter(s); width: 30px; height: 30px; border-radius: 50%; background: var(--mint);
+    color: var(--forest); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .aw-step b { display: block; font-size: 15px; }
+  .aw-step span { font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+  .aw-step a { font-size: 13px; font-weight: 600; white-space: nowrap; align-self: center; }
+  .aw-note { background: var(--mint-2); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; font-size: 15px; line-height: 1.55; }
+  .aw-done { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; font-size: 17px; margin: 24px 0 8px; }
+  @media (max-width: 560px) {
+    .aw-word { grid-template-columns: 1fr; gap: 2px; }
+    .aw-step { grid-template-columns: 34px 1fr; }
+    .aw-step a { grid-column: 2; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="aw">
+  <h1>Welcome — here is how Domi works</h1>
+  <p class="aw-intro">Domi keeps the rent records for {{ property.name if property else 'your property' }}: who lives in each house,
+    what each tenant owes, what they have paid, and the messages between them and you. You do not need to know anything about
+    renting to start. Read this once; it takes three minutes.</p>
+
+  <h2>Words you will see</h2>
+  <div class="aw-card">
+    <div class="aw-word"><b>Unit</b><span>One house or apartment in the building, e.g. "A3".</span></div>
+    <div class="aw-word"><b>Tenant</b><span>The person who rents a unit and pays for it.</span></div>
+    <div class="aw-word"><b>Lease</b><span>The signed agreement between the tenant and the landlord: rent, deposit, start date, notice.</span></div>
+    <div class="aw-word"><b>Charges (bills)</b><span>What a tenant must pay each month: rent, service charge (cleaning, security) and water.</span></div>
+    {% set d = property.rent_due_day if property else None %}
+    <div class="aw-word"><b>Due date</b><span>The day rent must be paid{% if d %} — here the {{ d }}{{ 'st' if d in (1, 21, 31) else 'nd' if d in (2, 22) else 'rd' if d in (3, 23) else 'th' }} of each month{% elif d == 0 %} — here the last day of each month{% endif %}.</span></div>
+    <div class="aw-word"><b>Arrears / overdue</b><span>Money a tenant still owes after the due date.</span></div>
+    <div class="aw-word"><b>Deposit</b><span>Money paid when moving in, kept until they move out, then used for anything owed; the rest is returned.</span></div>
+    <div class="aw-word"><b>Paybill</b><span>The M-Pesa business number tenants pay rent to. The account number is their house number.</span></div>
+    <div class="aw-word"><b>Bank statement</b><span>The bank's list of all money received. Domi reads it to find who paid.</span></div>
+    <div class="aw-word"><b>Matching</b><span>Deciding which tenant a payment belongs to. Most are matched by Domi; some need you.</span></div>
+    <div class="aw-word"><b>Statement</b><span>One tenant's full list of bills and payments, with what they still owe.</span></div>
+  </div>
+
+  <h2>Your month, step by step</h2>
+  <ol class="aw-steps aw-card">
+    <li class="aw-step"><div><b>Create the month's bills</b><span>At the start of each month Domi makes each tenant's rent and service charge bill.</span></div><a href="{{ url_for('generate_charges') }}">Generate charges ›</a></li>
+    <li class="aw-step"><div><b>Add water</b><span>The caretaker reads each water meter; the water bill is worked out from the readings.</span></div><a href="{{ url_for('water_uploads_list') }}">Water charges ›</a></li>
+    <li class="aw-step"><div><b>Tenants pay</b><span>They pay by M-Pesa to the paybill. Payments into the paybill appear by themselves; the rest come with the bank statement.</span></div><a href="{{ url_for('mpesa_admin.payments') }}">M-Pesa ›</a></li>
+    <li class="aw-step"><div><b>Upload the bank statement and match payments</b><span>Upload the bank's PDF. Domi matches what it can; you match the rest to the right tenant.</span></div><a href="{{ url_for('review') }}">Payments ›</a></li>
+    <li class="aw-step"><div><b>Follow up anyone behind</b><span>See who owes, how much and for how long. Call or message them.</span></div><a href="{{ url_for('admin_arrears') }}">Follow up ›</a></li>
+    <li class="aw-step"><div><b>Answer messages and repairs</b><span>Tenants write about payments, repairs and other things. Reply so they get an SMS.</span></div><a href="{{ url_for('messaging.inbox') }}">Tenant inbox ›</a></li>
+    <li class="aw-step"><div><b>Money out</b><span>Record what is spent on the building and approve what the caretaker spent.</span></div><a href="{{ url_for('money.expenses') }}">Expenses ›</a></li>
+    <li class="aw-step"><div><b>Report to the owner</b><span>A monthly report of money in, money out and who owes.</span></div><a href="{{ url_for('reports.report_history') }}">Reports ›</a></li>
+  </ol>
+
+  <h2>Every day</h2>
+  <p class="aw-note">Open <b>Overview</b>. The <b>To do</b> card lists everything waiting for you — messages, payments to match,
+    move-out notices, expenses to approve. When it says <b>"Nothing waiting ✓"</b>, you are up to date.</p>
+
+  <h2>Stuck on a page?</h2>
+  <p class="aw-note">Every page has a green help box at the top that says what the page is for and what to do there.
+    Closed it? Tap <b>"? Help for this page"</b> to bring it back. This page is always under <b>How Domi works</b> in the menu.</p>
+
+  <a class="btn btn-primary aw-done" href="{{ url_for('dashboard') }}">Go to the Overview</a>
+</div>
+{% endblock %}

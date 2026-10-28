@@ -157,6 +157,27 @@ class MoveOutAndWelcome(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT language_preference FROM tenants WHERE id = ?",
                                           (self.tenant['id'],)).fetchone()[0], 'sw')
 
+    # ── management welcome + help on every page ──────────────────────────────
+    def test_management_sees_how_domi_works_once(self):
+        admin = self.app.test_client()
+        admin.post('/login', data={'email': 'demo@demo', 'password': 'demo', 'next': ''})
+        admin.get('/properties')
+        r = admin.get('/')
+        self.assertIn('/start', r.headers.get('Location', ''))
+        page = admin.get('/start').get_data(as_text=True)
+        self.assertIn('Words you will see', page)
+        self.assertIn('Your month, step by step', page)
+        self.assertEqual(admin.get('/').status_code, 200)                 # not again
+
+    def test_every_management_menu_page_has_help(self):
+        from src.utils.guides import _T
+        for endpoint in ('dashboard', 'manage_units', 'admin_arrears', 'leases.board', 'review', 'flagged_claims_admin',
+                         'messaging.inbox', 'money.expenses', 'messaging.caretaker_chats', 'messaging.dashboard',
+                         'manage_statements', 'water_uploads_list', 'reports.report_history', 'reports.arrears_report',
+                         'reports.payment_lookup', 'activity', 'tools_index', 'team.team', 'manage_caretakers',
+                         'manage_owners', 'org_settings', 'generate_charges', 'upload_statement', 'tenant_statement'):
+            self.assertIn(endpoint, _T, endpoint)
+
 
 if __name__ == '__main__':
     unittest.main()

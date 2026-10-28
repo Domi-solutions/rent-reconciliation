@@ -269,6 +269,211 @@ _T = {
         ]),
     },
     # ── Admin ────────────────────────────────────────────────────────────────
+    'dashboard': {
+        'en': ('Overview', "Your starting point every day: this month's money, and everything waiting for you.", [
+            'The green card: rent collected this month against what is expected. "Overdue" is money owed after the due date.',
+            'To do lists only what needs you. Tap a row to deal with it. "Nothing waiting ✓" means you are up to date.',
+            'New here? Open "How Domi works" in the menu — it explains every word and the monthly routine.',
+        ]),
+    },
+    'manage_units': {
+        'en': ('Units & tenants', 'Every house in the building, who lives there, and what they pay each month.', [
+            'Tap a value with a pencil (rent, phone…) to change it. Changes are recorded.',
+            '"Statement" shows everything a tenant was billed and paid.',
+            "The ••• menu moves a tenant out or changes a unit's status (empty, owner use).",
+        ]),
+    },
+    'manage_tenants': {
+        'en': ('Tenants', 'Everyone renting a unit, with their phone and what they owe.', [
+            'Tap a tenant to see their statement.',
+        ]),
+    },
+    'add_tenant': {
+        'en': ('Add a tenant', 'Put a new tenant in an empty unit.', [
+            'Better: use Leases → Record a lease, which also keeps the lease terms and deposit.',
+            'The phone number is how the tenant signs in and gets receipts — check it carefully.',
+        ]),
+    },
+    'add_unit': {
+        'en': ('Add a unit', 'Add a house or apartment to the building.', [
+            'Enter its number (e.g. "A7"), the monthly rent and the service charge.',
+        ]),
+    },
+    'tenant_statement': {
+        'en': ('Tenant statement', "One tenant's full history: every bill, every payment, and what they owe now.", [
+            'Paste an M-Pesa message or code in "Quick verify" to check whether a payment reached the bank.',
+            'Contacts the tenant added (another payer, emergency contact) are shown under their name.',
+            'The balance only counts payments confirmed against the bank or M-Pesa.',
+        ]),
+    },
+    'move_out_tenant': {
+        'en': ('Record a move-out', 'Close a tenancy: the move-out date, the deposit, and anything still owed.', [
+            'The deposit first pays anything still owed; the rest is the refund to send the tenant.',
+            'If they still owe after the deposit, choose to keep following up or write it off (with a reason).',
+            'If the tenant gave notice in their portal, the date is already filled in.',
+        ]),
+    },
+    'review': {
+        'en': ('Payments', 'Money that came into the bank or paybill, and which tenant each payment belongs to.', [
+            'Most payments are matched to a tenant automatically.',
+            '"Unassigned" ones need you: pick the tenant the payment belongs to.',
+            'Not sure whose it is? Leave it — it stays here until someone decides. Never guess.',
+        ]),
+    },
+    'flagged_claims_admin': {
+        'en': ('Payments held for checking', 'Payments a tenant reported that Domi could not confirm, or that did not look like theirs.', [
+            "Each one says why it was held — e.g. the code was not in the bank statement, or the name on the payment was not the tenant's.",
+            'Check with the tenant or caretaker, then add a note. If it belongs to the tenant, match it on Payments.',
+        ]),
+    },
+    'report_payment': {
+        'en': ('Record a payment', 'Note a payment a tenant says they made, by pasting their M-Pesa message.', [
+            'It is confirmed when the same code appears in the bank statement or paybill records.',
+            'Until then it is not taken off what the tenant owes.',
+        ]),
+    },
+    'upload_statement': {
+        'en': ('Upload a bank statement', "Give Domi the bank's PDF so it can find who paid.", [
+            'Download the statement from the bank as a PDF (a photo or scan works, but is less reliable).',
+            'After uploading, check Payments for anything Domi could not match.',
+        ]),
+    },
+    'manage_statements': {
+        'en': ('Bank statements', 'Every bank statement uploaded, and which months each one covers.', [
+            'A month with no statement means payments for that month cannot be confirmed yet.',
+            'Open one to see its payments and any lines Domi could not read.',
+        ]),
+    },
+    'statement_detail': {
+        'en': ('Bank statement', 'The payments in one bank statement and which tenant each was matched to.', [
+            'Match any unmatched payment to its tenant. Lines Domi could not read are listed under parse errors.',
+        ]),
+    },
+    'verify_payments': {
+        'en': ('Check payments', 'Confirms payments tenants reported against this bank statement.', [
+        ]),
+    },
+    'generate_charges': {
+        'en': ("Create the month's bills", "Makes this month's rent and service charge bill for every occupied unit.", [
+            'Do this once at the start of each month. Running it twice does not double-bill anyone.',
+            'Water is billed separately, from the meter readings.',
+            'A rent change confirmed under Leases → Renewals takes effect here, from its month.',
+        ]),
+    },
+    'water_uploads_list': {
+        'en': ('Water charges', "Each month's water meter readings and the water bills made from them.", [
+            "Water is billed a month later: September's readings go on the October bill.",
+            'The caretaker can enter readings on their phone; or upload a spreadsheet here.',
+        ]),
+    },
+    'upload_water_charges': {
+        'en': ('Upload water readings', "Add a month's meter readings from a spreadsheet.", [
+            "Each unit's bill = (new reading − previous reading) × the price per unit.",
+        ]),
+    },
+    'reports.report_history': {
+        'en': ('Reports', 'Monthly reports for the owner: money in, money out, who owes.', [
+            'A report for a recent month updates itself when new payments come in.',
+            'Print or save as PDF to send to the owner.',
+        ]),
+    },
+    'reports.generate_report': {
+        'en': ('Make a report', 'Create the monthly report for the owner.', [
+        ]),
+    },
+    'reports.arrears_report': {
+        'en': ('Arrears report', 'Everyone who owes, how much and for how long — to print or share.', [
+        ]),
+    },
+    'reports.payment_lookup': {
+        'en': ('Find a payment', 'Search for a person by name or phone to see what they paid and when.', [
+            'Use it when a tenant says "I paid" — you see whether, when and where the money arrived.',
+        ]),
+    },
+    'reports.unassigned_payments': {
+        'en': ('Unassigned payments', 'Payments received that are not yet matched to any tenant.', [
+            'Match each one to its tenant on the Payments page.',
+        ]),
+    },
+    'reports.tenant_evidence': {
+        'en': ('Tenant evidence', 'Everything on record for one tenant, to settle a dispute.', [
+        ]),
+    },
+    'activity': {
+        'en': ('Activity', 'A record of everything done in Domi and who did it.', [
+            'Nothing can be removed from it. Use it to see who changed what, and when.',
+        ]),
+    },
+    'messaging.dashboard': {
+        'en': ('Messages to tenants', 'Notices and reminders sent to tenants.', [
+            'To write to everyone, use "Write to tenants".',
+            "For one tenant's question, use the Tenant inbox instead.",
+        ]),
+    },
+    'messaging.broadcast': {
+        'en': ('Write to tenants', 'Send a notice to all tenants, or some of them.', [
+            "It appears in each tenant's portal; choose whether it also goes by SMS (SMS costs money per message).",
+            'Keep it short and say what the tenant should do, e.g. "Water off Saturday 9am–1pm".',
+        ]),
+    },
+    'messaging.inbox_thread': {
+        'en': ('Conversation', "One tenant's question or repair, and every reply.", [
+            'Your reply is signed "Management" and the tenant gets an SMS that a reply is waiting.',
+            'Ticks: grey ✓✓ sent, blue ✓✓ the tenant has seen it.',
+            'Close the conversation when it is sorted.',
+        ]),
+    },
+    'messaging.caretaker_chats': {
+        'en': ('Caretaker chat', 'Your messages with the caretaker.', [
+            'Use it to ask for a repair, a meter reading, or to pass on something a tenant asked.',
+        ]),
+    },
+    'messaging.templates_list': {
+        'en': ('Message templates', 'Ready-made wording for common messages.', [
+        ]),
+    },
+    'messaging.reminders': {
+        'en': ('Reminders', 'Automatic payment reminders to tenants.', [
+            'These are switched off until the records are approved; nothing is sent automatically.',
+        ]),
+    },
+    'messaging.reminder_schedules': {
+        'en': ('Reminder schedule', 'When reminders would go out, if switched on.', [
+        ]),
+    },
+    'money.new_expense': {
+        'en': ('Record an expense', 'Money spent on the building — repairs, cleaning, security, bills.', [
+            'Attach a photo of the receipt. Expenses are never deleted; a mistake is voided with a reason.',
+        ]),
+    },
+    'manage_caretakers': {
+        'en': ('Caretakers', 'The people who look after the building and their sign-ins.', [
+            'Replacing a caretaker: add the new one first, then remove the old one — removing someone signs them out at once.',
+        ]),
+    },
+    'manage_owners': {
+        'en': ('Owners', "The building's owners and their access.", [
+            'Owners see the money, reports and every conversation. They sign in with their own email and password.',
+            "An owner's payout number can only be set by the owner — never here.",
+        ]),
+    },
+    'org_settings': {
+        'en': ('Account settings', 'Your name, email and password.', [
+        ]),
+    },
+    'tools_index': {
+        'en': ('Monthly workflow', 'The monthly jobs in order: bills, water, bank statement, reports.', [
+            'Work from top to bottom at the start of each month.',
+        ]),
+    },
+    'export_page': {
+        'en': ('Export data', 'Download spreadsheets: what each unit owes, the activity record, payment checks.', [
+        ]),
+    },
+    'property_list': {
+        'en': ('Properties', 'The buildings you manage. Choose one to work on.', [
+        ]),
+    },
     'messaging.inbox': {
         'en': ('Tenant inbox', 'Tenant questions and repairs. Waiting longest comes first.', [
             'Replies are signed "Management"; this page and the activity log record who replied.',

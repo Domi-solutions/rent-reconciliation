@@ -316,7 +316,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_lease_terms`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_admin_welcome`.
 
 ---
 
@@ -374,6 +374,7 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - `_get_tenant_by_token(conn, token)` in `tenant_routes.py` → (tenant, unit, property) or None
 - Documents: `/tenant/<token>/statement` (every charge + payment, running balance, newest first), `/invoice/<YYYY-MM>` (brought forward + month's charges − month's payments), `/receipt/<payment_id>` (amount, M-Pesa code, what it settled, account balance today). All printable (`window.print()`), all built from `get_tenant_statement` via `tenant_documents.py`. A receipt shows "balance today", never "balance after this payment" — charges fall due on their own dates, so a mid-ledger balance is ambiguous.
 - Overview shows the same bank-matched balance as the statement; reported-but-unmatched claims are shown beside it, never netted into it.
+- **Management welcome** (`/start`, `admin_welcome.html`): shown once on a person's first visit to the overview (`admin_users.welcomed_at`, `migrate_add_admin_welcome`), then from "How Domi works" in the sidebar — words you will see, the month step by step, every day, where help is.
 - Every tenant/caretaker/admin page shows a guide box from `src/utils/guides.py` (keyed by endpoint; `?lang=sw` switches tenant/caretaker text to Kiswahili for the session). New page → add its guide there.
 - Pay page: payment instructions first; the STK "Pay" button only when `daraja.configured()`.
 - **Welcome** (`/tenant/<token>/welcome`): shown once on the first visit to the overview (`tenants.welcomed_at`), then from "How to use Domi". Seven plain steps with icons, English/Kiswahili — words in `guides.WELCOME`.

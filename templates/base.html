@@ -185,6 +185,10 @@
         {{ icon('settings') }}
         Tools
       </a>
+      <a class="sidebar-item {% if request.endpoint == 'admin_welcome' %}active{% endif %}" href="{{ url_for('admin_welcome') }}">
+        {{ icon('check') }}
+        How Domi works
+      </a>
       <a class="sidebar-item {% if active_nav == 'settings' %}active{% endif %}" href="{{ url_for('org_settings') }}" style="margin-top: 2px;">
         {{ icon('user') }}
         Account Settings{% if session.get('admin_name') %}<span style="margin-left:auto;font-size:11px;opacity:.6;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ session['admin_name'] }}</span>{% endif %}

@@ -142,6 +142,7 @@ from src.database.db import (
     migrate_add_move_out_notices,
     migrate_add_tenant_contacts,
     migrate_add_lease_terms,
+    migrate_add_admin_welcome,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -211,6 +212,7 @@ migrate_add_payment_target()
 migrate_add_move_out_notices()
 migrate_add_tenant_contacts()
 migrate_add_lease_terms()
+migrate_add_admin_welcome()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -1012,10 +1014,26 @@ def delete_property(property_id):
     return redirect(url_for('property_list'))
 
 
+@app.route('/start')
+def admin_welcome():
+    """How Domi works — for someone new to renting and to Domi. Shown once on a person's first
+    visit to the overview, then from "How Domi works" in the menu."""
+    with get_connection() as conn:
+        if session.get('admin_user_id'):
+            conn.execute("UPDATE admin_users SET welcomed_at = COALESCE(welcomed_at, CURRENT_TIMESTAMP) WHERE id = ?",
+                         (session['admin_user_id'],))
+        property_row = get_current_property(conn)
+    return render_template('admin_welcome.html', property=property_row)
+
+
 @app.route('/')
 def dashboard():
     """Main dashboard: current property, stats, arrears, pending claims, unassigned txns, recent audit."""
     with get_connection() as conn:
+        _me = conn.execute("SELECT welcomed_at FROM admin_users WHERE id = ?",
+                           (session.get('admin_user_id'),)).fetchone() if session.get('admin_user_id') else None
+        if _me and not _me['welcomed_at']:
+            return redirect(url_for('admin_welcome'))          # first visit: how it all works
         property_row = get_current_property(conn)
         if not property_row:
             org_id = session.get('org_id')

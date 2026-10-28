@@ -2256,3 +2256,11 @@ def migrate_add_lease_terms():
         if 'tenant_visible' not in {r['name'] for r in conn.execute("PRAGMA table_info(lease_documents)")}:
             conn.execute("ALTER TABLE lease_documents ADD COLUMN tenant_visible INTEGER DEFAULT 0")
         print("Migration complete: lease terms ready.")
+
+
+def migrate_add_admin_welcome():
+    """admin_users.welcomed_at: the person has seen the management welcome page ("How Domi works"). Idempotent."""
+    with get_connection() as conn:
+        if 'welcomed_at' not in {r['name'] for r in conn.execute("PRAGMA table_info(admin_users)")}:
+            conn.execute("ALTER TABLE admin_users ADD COLUMN welcomed_at TIMESTAMP")
+        print("Migration complete: admin welcome ready.")
