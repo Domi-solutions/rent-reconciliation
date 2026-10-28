@@ -17,10 +17,20 @@
       {% else %}<span class="credit" style="font-size: 0.95rem; font-weight: 600;">Nothing owed</span>
       <strong class="credit" style="font-size: 1.1rem;">KES 0</strong>{% endif %}
     </div>
-    {% if balance > 0 and owed.bills %}<div class="mt-2">{{ owed_breakdown(owed, balance, question='Which bills is this for?', pay_url='#pay-now') }}</div>{% endif %}
+    {% if balance > 0 and owed.bills %}<div class="mt-2">{{ owed_breakdown(owed, balance, question='Which bills is this for?', pay_url='#pay-now', token=token) }}</div>{% endif %}
     <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every bill and payment</a></div>
   </div>
 </div>
+
+{% if chosen %}
+<div class="chosen-bill mb-3">
+  <div class="chosen-bill-label">Paying for</div>
+  <div class="chosen-bill-name">{{ chosen.label }}</div>
+  <div class="chosen-bill-meta">KES {{ chosen.remaining|money_amount }} still owed on this bill{% if chosen.late %} · <span class="owed-late">Late</span>{% endif %}.
+    Your payment goes to this bill first; anything above that goes to your oldest unpaid bills.</div>
+  <a href="{{ url_for('tenant.pay', token=token) }}#pay-now" class="chosen-bill-reset">Pay the oldest bills instead</a>
+</div>
+{% endif %}
 
 {% if stk_enabled %}
 <div class="card shadow-sm mb-3" id="pay-now" style="max-width: 480px; border: 2px solid #16a34a; scroll-margin-top: 16px;">
@@ -30,7 +40,8 @@
     <form id="stk-form">
       <label class="form-label fw-semibold" style="font-size:0.85rem">Amount (KES)</label>
       <input name="amount" type="number" min="1" step="1" class="form-control mb-2" inputmode="numeric" required
-             value="{{ '%d' % balance if balance > 0 else '' }}">
+             value="{{ ('%d' % chosen.remaining) if chosen else ('%d' % balance if balance > 0 else '') }}">
+      {% if chosen %}<input type="hidden" name="charge_id" value="{{ chosen.charge_id }}">{% endif %}
       <label class="form-label fw-semibold" style="font-size:0.85rem">M-Pesa phone number</label>
       <input name="phone" type="tel" class="form-control mb-3" value="{{ tenant.phone or '' }}" required>
       <button type="submit" class="btn btn-success w-100" style="padding:10px;font-weight:600">Pay</button>
@@ -111,6 +122,7 @@
       Paste the M-Pesa confirmation SMS (or just its code). It shows on your statement once the payment is confirmed.
     </p>
     <form method="POST" action="{{ url_for('tenant.report_payment', token=token) }}">
+      {% if chosen %}<input type="hidden" name="charge_id" value="{{ chosen.charge_id }}">{% endif %}
       <textarea name="mpesa_sms" class="form-control mb-2" rows="4"
                 placeholder="e.g. UJK9G289GY Confirmed. Ksh18,000.00 sent to ..." required></textarea>
       <button type="submit" class="btn btn-primary w-100">Send</button>

@@ -179,6 +179,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `leases` / `lease_documents` (`migrate_add_leases`) — a lease opens a tenancy. Re-leasing a recorded tenant freezes the old `tenants` row (inactive, `move_out_date` = day before the start month; token + short code move to the new row; conversations/notices follow) and opens a new one with a clean account. Pre-lease debt moves only as a `charge_type='brought_forward'` (period `ARREARS`) charge with `brought_forward_evidence`; correct it via `set_brought_forward` (audit + platform_log). A recorded occupant who is NOT the signer must be moved out first. No SMS. National ID and documents are admin-only.
 - `expenses` / `expense_receipts` (`migrate_add_expenses`) — money out per property. Caretaker submits (`submitted`, optional `reimburse_caretaker`) → admin approves (`approved`) or rejects → marks `paid` (method + reference). Admin entries are `paid` or `approved`. Never edited or deleted: `void` with a reason. Cash book = payments − paid expenses − paid owner payouts. Receipts (PDF/photo, HEIC ok) in `<db dir>/expense_receipts/`, served only via ownership-checked routes. **No management fee is applied in the system** (owner wallet shows none) until fees come from contracts.
 - `tenant_balances` VIEW — one row per tenant (any status, departed included). Use for a tenant's own balance. `unit_balances` VIEW — the unit's current active tenant's balance, read from `tenant_balances`; same columns as before.
+- **"Pay this bill"** (`migrate_add_payment_target`): `target_charge_id` on `payment_transactions` (M-Pesa prompt started for one bill), `payment_claims` (pasted code for one bill) and `payments`. `allocate_payment` settles the target first (only if it is the paying tenant's own charge on that unit), the rest oldest first — the payer appropriates. Set from the tenant's Pay page `?bill=<charge_id>` (`_chosen_bill()` validates); "Make a payment" and all other paths stay oldest-first. Tests: `tests/test_pay_this_bill.py`.
 - `allocate_payment` settles only the paying tenant's own charges (`rc.tenant_id IS payment.tenant_id`). Allocations made before this could cross tenants; `scripts/tenant_ledger_report.py` lists them and `--execute` redoes them per unit (snapshot first). Editing `move_in_date` no longer moves debt between people — re-pointing rows is an explicit rebuild.
 - `bank_transactions` — has index `idx_bank_txn_date` on `(txn_date)` added by `migrate_add_bank_txn_date_index` to avoid strftime full-table scans on period queries.
 
@@ -311,7 +312,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_alert_routing`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_target`.
 
 ---
 

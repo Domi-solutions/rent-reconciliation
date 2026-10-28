@@ -379,6 +379,7 @@ tables:
       resolved_note: {type: TEXT}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
+  # payments / payment_transactions / payment_claims .target_charge_id (migrate_add_payment_target): the bill the tenant chose to pay; allocate_payment settles it first.
   conversations:
     status: live
     migration: migrate_add_conversations

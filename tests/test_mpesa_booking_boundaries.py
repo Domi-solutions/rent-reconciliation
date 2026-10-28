@@ -35,18 +35,20 @@ class MpesaBookingBoundaries(unittest.TestCase):
                 raw_callback TEXT, processing_status TEXT, error_detail TEXT, processed_at TEXT,
                 callback_amount REAL, mpesa_ref TEXT, paid_at TEXT, account_ref TEXT,
                 attempts INTEGER DEFAULT 0, verified_via TEXT, payment_id TEXT,
-                received_at TEXT DEFAULT CURRENT_TIMESTAMP);
+                received_at TEXT DEFAULT CURRENT_TIMESTAMP, target_charge_id TEXT);
             CREATE TABLE payments (id TEXT PRIMARY KEY, property_id TEXT, unit_id TEXT,
                                    tenant_id TEXT, claim_id TEXT, bank_txn_id TEXT,
                                    statement_id TEXT, amount REAL, payment_date TEXT,
                                    assignment_type TEXT, assignment_reason TEXT,
-                                   assigned_by TEXT, source TEXT, created_at TEXT);
+                                   assigned_by TEXT, source TEXT, created_at TEXT,
+                                   target_charge_id TEXT);
             CREATE TABLE rent_charges (id TEXT PRIMARY KEY, unit_id TEXT, tenant_id TEXT,
                                        amount REAL, period TEXT, charge_type TEXT, created_at TEXT);
             CREATE TABLE payment_allocations (id TEXT PRIMARY KEY, payment_id TEXT,
                                               charge_id TEXT, amount REAL);
             CREATE TABLE payment_claims (id TEXT PRIMARY KEY, property_id TEXT, unit_id TEXT,
-                                         tenant_id TEXT, mpesa_ref TEXT, status TEXT, verified_at TEXT);
+                                         tenant_id TEXT, mpesa_ref TEXT, status TEXT, verified_at TEXT,
+                                         target_charge_id TEXT);
             CREATE TABLE audit_log (action TEXT, entity_type TEXT, entity_id TEXT,
                                     details TEXT, user_id TEXT);
             CREATE TABLE bank_transactions (id TEXT PRIMARY KEY, mpesa_ref TEXT);
@@ -153,9 +155,9 @@ class MpesaBookingBoundaries(unittest.TestCase):
     def test_booking_only_resolves_claim_of_paying_tenant(self):
         with get_connection() as conn:
             conn.execute("""INSERT INTO payment_claims VALUES
-                         ('CLAIM1', 'PROP1', 'UNIT1', 'TEN1', 'ABCDEF1239', 'pending', NULL)""")
+                         ('CLAIM1', 'PROP1', 'UNIT1', 'TEN1', 'ABCDEF1239', 'pending', NULL, NULL)""")
             conn.execute("""INSERT INTO payment_claims VALUES
-                         ('CLAIM2', 'PROP2', 'UNIT2', 'TEN2', 'ABCDEF1239', 'flagged', NULL)""")
+                         ('CLAIM2', 'PROP2', 'UNIT2', 'TEN2', 'ABCDEF1239', 'flagged', NULL, NULL)""")
         body = {'TransID': 'ABCDEF1239', 'TransAmount': '1000', 'TransTime': '20261020103000',
                 'BusinessShortCode': '123456', 'BillRefNumber': 'ABC123'}
         txn_id = mpesa.record_c2b_confirmation(body)

@@ -685,6 +685,8 @@ def pay(token):
         balance = float(balance_row['balance']) if balance_row else 0.0
         _, ledger, _ = get_tenant_statement(conn, tenant['id'], prop['id'])
         owed = unpaid_bills(ledger, balance)
+        bill = request.args.get('bill')
+        chosen = next((b for b in owed['bills'] if b['charge_id'] == bill), None) if bill else None
 
         claims_raw = conn.execute("""
             SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.flag_reason, pc.created_at,
@@ -737,6 +739,7 @@ def pay(token):
         active_tab='pay',
         balance=balance,
         owed=owed,
+        chosen=chosen,
         claims=claims,
         caretaker=caretaker,
         success=success,
@@ -744,6 +747,15 @@ def pay(token):
         notice=notice,
         held_text=claim_owner.TENANT_TEXT,
     )
+
+
+def _chosen_bill(conn, tenant, prop, charge_id):
+    """One of this tenant's own unpaid bills ("Pay this bill"), or None."""
+    if not charge_id:
+        return None
+    _, rows, _ = get_tenant_statement(conn, tenant['id'], prop['id'])
+    balance = rows[-1]['running_balance'] if rows else 0.0
+    return next((b for b in unpaid_bills(rows, balance)['bills'] if b['charge_id'] == charge_id), None)
 
 
 @tenant_bp.route('/<token>/report-payment', methods=['POST'])
@@ -802,11 +814,14 @@ def report_payment(token):
         mpesa_period = _mpesa_ts.strftime('%Y-%m') if (_mpesa_ts and _has_real_ts) else None
 
         claim_id = generate_id('CLM')
+        _chosen = _chosen_bill(conn, tenant, prop, request.form.get('charge_id'))
         conn.execute("""
             INSERT INTO payment_claims
-            (id, property_id, mpesa_ref, unit_id, tenant_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'tenant', ?, ?)
-        """, (claim_id, prop['id'], reference, unit['id'], tenant['id'], amount, message, mpesa_date, mpesa_period))
+            (id, property_id, mpesa_ref, unit_id, tenant_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period,
+             target_charge_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'tenant', ?, ?, ?)
+        """, (claim_id, prop['id'], reference, unit['id'], tenant['id'], amount, message, mpesa_date, mpesa_period,
+              _chosen['charge_id'] if _chosen else None))
 
         amt_str = f'{amount:,.0f}' if amount is not None else '-'
         unit_number = unit['unit_number']
@@ -1047,11 +1062,14 @@ def pay_stk(token):
         """, (tenant['id'],)).fetchone()
     if recent:
         return jsonify({'success': False, 'error': 'A payment prompt was just sent. Check your phone, or try again in a minute.'})
+    with get_connection() as conn:
+        chosen = _chosen_bill(conn, tenant, prop, request.form.get('charge_id'))
+    target = chosen['charge_id'] if chosen else None
 
     description = f"Rent — Unit {unit['unit_number']}"
     from src.utils.runtime import is_demo
     if is_demo():
-        return _demo_stk(tenant, unit, prop, phone, amount)
+        return _demo_stk(tenant, unit, prop, phone, amount, target)
     result = stk_push(phone, amount, unit['unit_number'], description)
 
     if result['success']:
@@ -1059,14 +1077,14 @@ def pay_stk(token):
         from src.payments import mpesa
         with get_connection() as conn:
             if not mpesa.link_stk_request(conn, checkout_request_id, prop['organization_id'],
-                                          prop['id'], unit['id'], tenant['id'], phone, amount):
+                                          prop['id'], unit['id'], tenant['id'], phone, amount, target):
                 return jsonify({'success': False, 'error': 'Payment request could not be recorded'}), 409
         return jsonify({'success': True, 'checkout_request_id': checkout_request_id})
 
     return jsonify({'success': False, 'error': result.get('error', 'Payment initiation failed')})
 
 
-def _demo_stk(tenant, unit, prop, phone, amount):
+def _demo_stk(tenant, unit, prop, phone, amount, target=None):
     """Demo site only: what Safaricom would do, done here. The request is recorded and
     'paid' through the same booking path as a real M-Pesa payment, so the receipt,
     allocations and balance are the real thing — only the money is pretend."""
@@ -1079,7 +1097,7 @@ def _demo_stk(tenant, unit, prop, phone, amount):
         from src.demo.phones import claim_for_tenant
         claim_for_tenant(conn, tenant['id'], phone)          # the receipt goes to the phone typed here
         mpesa.link_stk_request(conn, checkout_id, prop['organization_id'], prop['id'], unit['id'],
-                               tenant['id'], phone, amount)
+                               tenant['id'], phone, amount, target)
         row = conn.execute("SELECT id FROM payment_transactions WHERE external_reference = ?", (checkout_id,)).fetchone()
         conn.execute("""UPDATE payment_transactions SET callback_amount = ?, mpesa_ref = ?, paid_at = ?, raw_callback = ?
                         WHERE id = ?""", (amount, receipt, datetime.now().isoformat(timespec='seconds'),

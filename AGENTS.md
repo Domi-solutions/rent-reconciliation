@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### "Pay this bill" (Claude, 2026-10-28)
+
+- Each unpaid bill (Still owed list on overview/statement/Pay, and each statement bill row) has **Pay this bill** beside **Ask about this**. The Pay page then shows "Paying for <bill>", fills in its amount, and ties the M-Pesa prompt or a pasted code to it; that bill is settled first, anything extra oldest first. **Make a payment** stays generic (oldest first). Paybill payments made from the M-Pesa menu can't carry a bill (the account number is the house); a pasted code can. 6 tests.
+
 ### Repairs folded into Messages (Claude, 2026-10-28)
 
 - Tenant Repairs tab removed (it repeated the repair conversations). Messages shows each repair as Open / Fixed; pre-conversation repair requests under "Earlier repair requests"; old Repairs links redirect to Messages. The older repair form now texts staff like a new repair. Caretaker Issues tab and admin side unchanged.

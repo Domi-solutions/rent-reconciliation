@@ -107,8 +107,10 @@ def record_stk_callback(body):
     return None
 
 
-def link_stk_request(conn, checkout_id, org_id, property_id, unit_id, tenant_id, phone, amount):
-    """Link an initiated push to its tenant, including an early callback."""
+def link_stk_request(conn, checkout_id, org_id, property_id, unit_id, tenant_id, phone, amount,
+                     target_charge_id=None):
+    """Link an initiated push to its tenant, including an early callback.
+    target_charge_id: the bill the tenant chose to pay ("Pay this bill"), settled first."""
     row = conn.execute("""SELECT id, processing_status FROM payment_transactions
                           WHERE external_reference = ?""", (checkout_id,)).fetchone()
     if row:
@@ -116,19 +118,19 @@ def link_stk_request(conn, checkout_id, org_id, property_id, unit_id, tenant_id,
             return False
         conn.execute("""
             UPDATE payment_transactions SET org_id = ?, property_id = ?, unit_id = ?, tenant_id = ?,
-                phone = ?, amount = ?, processing_status = CASE
+                phone = ?, amount = ?, target_charge_id = ?, processing_status = CASE
                     WHEN error_detail IS NULL THEN 'pending' ELSE 'failed' END,
                 processed_at = CASE WHEN error_detail IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END
             WHERE id = ?
-        """, (org_id, property_id, unit_id, tenant_id, phone, float(amount), row['id']))
+        """, (org_id, property_id, unit_id, tenant_id, phone, float(amount), target_charge_id, row['id']))
         return True
     conn.execute("""
         INSERT INTO payment_transactions
             (id, org_id, property_id, unit_id, tenant_id, source,
-             external_reference, phone, amount, processing_status)
-        VALUES (?, ?, ?, ?, ?, 'daraja', ?, ?, ?, 'pending')
+             external_reference, phone, amount, processing_status, target_charge_id)
+        VALUES (?, ?, ?, ?, ?, 'daraja', ?, ?, ?, 'pending', ?)
     """, (generate_id('PTXN'), org_id, property_id, unit_id, tenant_id,
-          checkout_id, phone, float(amount)))
+          checkout_id, phone, float(amount), target_charge_id))
     return True
 
 
@@ -315,10 +317,11 @@ def book(txn_id, base_url=None):
         conn.execute("""
             INSERT INTO payments
                 (id, property_id, unit_id, tenant_id, claim_id, bank_txn_id, statement_id, amount, payment_date,
-                 assignment_type, assignment_reason, assigned_by, source, created_at)
-            VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, 'mpesa', 'daraja', CURRENT_TIMESTAMP)
+                 assignment_type, assignment_reason, assigned_by, source, created_at, target_charge_id)
+            VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, 'mpesa', 'daraja', CURRENT_TIMESTAMP, ?)
         """, (payment_id, txn['property_id'], txn['unit_id'], tenant['id'], amount, paid_on,
-              'mpesa_stk' if txn['source'] == 'daraja' else 'mpesa_paybill', txn['mpesa_ref'] or txn['external_reference']))
+              'mpesa_stk' if txn['source'] == 'daraja' else 'mpesa_paybill', txn['mpesa_ref'] or txn['external_reference'],
+              txn['target_charge_id'] if 'target_charge_id' in txn.keys() else None))
         allocations = allocate_payment(conn, payment_id, txn['unit_id'], amount)
         conn.execute("""
             UPDATE payment_transactions SET processing_status = 'completed', processed_at = CURRENT_TIMESTAMP,

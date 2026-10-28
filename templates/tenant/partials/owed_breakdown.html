@@ -1,7 +1,8 @@
 {# "Still owed" that opens into the bills it is made of (src/utils/tenant_documents.unpaid_bills).
    question: replaces the "Still owed: KES X" heading when the page already shows the total.
-   pay_url: where "Make a payment" goes (the Pay page, or #pay-now when already on it). #}
-{% macro owed_breakdown(owed, balance, question=None, big=False, pay_url=None) -%}
+   pay_url: where "Make a payment" goes (the Pay page, or #pay-now when already on it).
+   token: when given, each bill gets "Pay this bill" and "Ask about this". #}
+{% macro owed_breakdown(owed, balance, question=None, big=False, pay_url=None, token=None) -%}
 {% if owed.bills %}
 <details class="owed-breakdown{% if big %} owed-breakdown-big{% endif %}">
   <summary>
@@ -11,7 +12,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
   </summary>
   <div class="owed-body">
-    <p class="owed-intro">These bills are not fully paid yet, oldest first. A payment pays the oldest one first.</p>
+    <p class="owed-intro">These bills are not fully paid yet, oldest first. A payment pays the oldest one first — or choose "Pay this bill" to pay a particular one.</p>
     <ul class="owed-list">
       {% for b in owed.bills %}
       <li>
@@ -22,6 +23,12 @@
           {% elif b.due %}Due {{ b.due }}{% endif %}
           {% if b.paid > 0 %} · KES {{ b.paid|money_amount }} of {{ b.amount|money_amount }} already paid{% endif %}
         </div>
+        {% if token %}
+        <div class="owed-actions no-print">
+          <a href="{{ url_for('tenant.pay', token=token, bill=b.charge_id) }}#pay-now">Pay this bill</a>
+          <a href="{{ url_for('tenant.message_new', token=token, topic='money', ref='charge:' ~ b.charge_id) }}">Ask about this</a>
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -30,7 +37,8 @@
     <div class="owed-sum"><span>Confirmed payments not yet set against a bill</span><span>−KES {{ owed.unapplied|money_amount }}</span></div>
     {% endif %}
     <div class="owed-sum owed-sum-total"><span>Still owed</span><span>KES {{ balance|money_amount }}</span></div>
-    {% if pay_url %}<a class="btn btn-primary owed-pay no-print" href="{{ pay_url }}">Make a payment</a>{% endif %}
+    {% if pay_url %}<a class="btn btn-primary owed-pay no-print" href="{{ pay_url }}">Make a payment</a>
+    <p class="owed-pay-note no-print">Pays your oldest unpaid bills first.</p>{% endif %}
   </div>
 </details>
 {% else %}

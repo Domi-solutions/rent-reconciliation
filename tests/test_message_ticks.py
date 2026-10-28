@@ -35,7 +35,10 @@ class MessageTicks(unittest.TestCase):
         from src.database.db import get_connection
         from src.messaging import threads
         with get_connection() as conn:
-            conv_id = conn.execute("SELECT id FROM conversations LIMIT 1").fetchone()[0]
+            conv_id = conn.execute("""
+                SELECT conversation_id FROM conversation_messages GROUP BY conversation_id
+                HAVING SUM(sender_type = 'tenant') > 0 AND SUM(sender_type IN ('admin', 'caretaker')) > 0
+                LIMIT 1""").fetchone()[0]
             # Sent long after anyone last opened it: not seen yet
             conn.execute("UPDATE conversations SET staff_read_at = '2000-01-01 00:00:00', "
                          "tenant_read_at = '2000-01-01 00:00:00' WHERE id = ?", (conv_id,))

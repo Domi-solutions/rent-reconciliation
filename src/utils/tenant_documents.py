@@ -59,6 +59,7 @@ def unpaid_bills(rows, balance, today=None):
         except ValueError:
             due_label = None
         bills.append({
+            'charge_id': r.get('charge_id'),
             'label': (period_label(r['period']) if r['is_arrears']
                       else f"{CHARGE_LABELS.get(r['charge_type'], (r['charge_type'] or '').title())} — {period_label(r['period'])}"),
             'amount': r['debit'],

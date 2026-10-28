@@ -10,7 +10,7 @@
   </header>
   <div class="statement-print-identity">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
   <div class="muted">Your account now</div>
-  {% if balance > 0 %}{{ owed_breakdown(owed, balance, big=True, pay_url=url_for('tenant.pay', token=token) ~ '#pay-now') }}
+  {% if balance > 0 %}{{ owed_breakdown(owed, balance, big=True, token=token, pay_url=url_for('tenant.pay', token=token) ~ '#pay-now') }}
   {% elif balance < 0 %}<div class="big credit">Extra paid: KES {{ (-balance)|money_amount }}</div>
   {% else %}<div class="big credit">Nothing owed</div>{% endif %}
   {% if pending %}
@@ -67,6 +67,7 @@
           {% endif %}
           <div class="statement-detail-actions no-print">
             {% if r.row_type == 'payment' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenant.receipt', token=token, payment_id=r.payment_id) }}">View receipt →</a>{% endif %}
+            {% if r.row_type == 'charge' and (r.remaining or 0) > 0.005 %}<a class="btn btn-sm btn-primary" href="{{ url_for('tenant.pay', token=token, bill=r.charge_id) }}#pay-now">Pay this bill</a>{% endif %}
             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenant.message_new', token=token, topic='money', ref=('payment:' ~ r.payment_id) if r.row_type == 'payment' else ('charge:' ~ r.charge_id)) }}">Ask about this</a>
           </div>
         </div>

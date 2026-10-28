@@ -167,9 +167,17 @@ def allocate_payment(conn, payment_id, unit_id, amount):
 
     Only the paying tenant's own charges are settled — never a previous or later
     occupant's. A payment with no tenant settles only charges with no tenant.
+
+    If the tenant said which bill the payment is for (payments.target_charge_id, or
+    the target on the claim it came from), that bill is settled first — the payer
+    decides what a payment is for — and anything left goes oldest first.
     """
-    payment = conn.execute("SELECT tenant_id FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    payment = conn.execute("""
+        SELECT p.tenant_id, COALESCE(p.target_charge_id, pc.target_charge_id) AS target_charge_id
+        FROM payments p LEFT JOIN payment_claims pc ON pc.id = p.claim_id WHERE p.id = ?
+    """, (payment_id,)).fetchone()
     tenant_id = payment['tenant_id'] if payment else None
+    target = payment['target_charge_id'] if payment else None
     charges = conn.execute("""
         SELECT rc.id, rc.amount, rc.period, rc.charge_type,
                COALESCE(alloc.allocated, 0) as already_allocated
@@ -182,6 +190,9 @@ def allocate_payment(conn, payment_id, unit_id, amount):
         WHERE rc.unit_id = ? AND rc.tenant_id IS ?
         ORDER BY rc.created_at ASC
     """, (unit_id, tenant_id)).fetchall()
+    if target:
+        # Only ever one of this tenant's own charges on this unit — anything else is ignored.
+        charges = sorted(charges, key=lambda c: c['id'] != target)
 
     remaining = float(amount)
     allocations = []
@@ -2108,3 +2119,17 @@ def migrate_add_alert_routing():
         if 'escalated_at' not in columns('conversations'):
             conn.execute("ALTER TABLE conversations ADD COLUMN escalated_at TIMESTAMP")
         print("Migration complete: alert routing ready.")
+
+
+def migrate_add_payment_target():
+    """A tenant may say which bill a payment is for ("Pay this bill"). Idempotent.
+
+    target_charge_id on payment_transactions (an M-Pesa prompt started for one bill),
+    payment_claims (a pasted M-Pesa code for one bill) and payments (carried onto the
+    booked payment). allocate_payment settles that bill first, the rest oldest first.
+    """
+    with get_connection() as conn:
+        for table in ('payments', 'payment_transactions', 'payment_claims'):
+            if 'target_charge_id' not in {r['name'] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN target_charge_id TEXT")
+        print("Migration complete: payment target ready.")
