@@ -28,7 +28,7 @@
       <div id="collapse-{{ loop.index }}" class="collapse">
         <div class="data-row">
           <p class="data-row-meta mb-2">{{ property.name }} — Unit {{ unit.unit_number }} — {{ tenant.name }}</p>
-          <div class="tenant-ledger"><table class="table table-sm mb-2 viewer-table">
+          <div class="tenant-ledger"><table class="table table-sm mb-2 viewer-table bills-table">
             <thead>
               <tr>
                 <th>Bill</th>
@@ -40,21 +40,32 @@
             </thead>
             <tbody>
               {% for c in items %}
-              <tr>
-                <td>{{ c.charge_type|charge_label }}</td>
-                <td class="text-end">KES {{ (c.amount)|money_amount }}</td>
-                <td class="text-end">KES {{ (c.paid)|money_amount }}</td>
-                <td class="text-end">KES {{ (c.outstanding)|money_amount }}</td>
-                <td>{{ c.due_date or '-' }}</td>
+              {% set unpaid = c.outstanding > 0.005 %}
+              <tr{% if unpaid %} class="has-actions"{% endif %}>
+                <td class="bill-name">{{ c.charge_type|charge_label }}</td>
+                <td class="text-end" data-label="Amount">KES {{ (c.amount)|money_amount }}</td>
+                <td class="text-end" data-label="Paid">KES {{ (c.paid)|money_amount }}</td>
+                <td class="text-end{% if c.outstanding > 0.005 %} owed{% endif %}" data-label="Still owed">KES {{ (c.outstanding)|money_amount }}</td>
+                <td data-label="Due date">{{ c.due_date or '-' }}</td>
               </tr>
+              {% if unpaid %}
+              <tr class="bill-actions-row no-print">
+                <td colspan="5">
+                  <div class="owed-actions">
+                    <a href="{{ url_for('tenant.pay', token=token, bill=c.id) }}#pay-now">Pay this bill</a>
+                    <a href="{{ url_for('tenant.message_new', token=token, topic='money', ref='charge:' ~ c.id) }}">Ask about this</a>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
               {% endfor %}
             </tbody>
             <tfoot class="fw-bold">
               <tr>
-                <td>Total</td>
-                <td class="text-end">KES {{ (period_total)|money_amount }}</td>
-                <td class="text-end">KES {{ (period_paid)|money_amount }}</td>
-                <td class="text-end">KES {{ (period_outstanding)|money_amount }}</td>
+                <td class="bill-name">Total for the month</td>
+                <td class="text-end" data-label="Amount">KES {{ (period_total)|money_amount }}</td>
+                <td class="text-end" data-label="Paid">KES {{ (period_paid)|money_amount }}</td>
+                <td class="text-end" data-label="Still owed">KES {{ (period_outstanding)|money_amount }}</td>
                 <td></td>
               </tr>
             </tfoot>

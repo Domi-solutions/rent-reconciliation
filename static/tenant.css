@@ -194,3 +194,25 @@ body .statement-entry.is-payment > summary.statement-row:hover,
 @media print {
   body .statement-entry.is-payment > summary.statement-row { background: none; box-shadow: inset 3px 0 0 var(--green); }
 }
+
+/* Bills page: amounts never break mid-number; on a phone each bill stacks — name, then
+   Amount / Paid / Still owed / Due date as label–value lines, then its buttons. */
+.bills-table td { white-space: nowrap; }
+body .bills-table tr.has-actions > td { border-bottom: 0; }
+body .bills-table tr.bill-actions-row > td { padding-top: 0 !important; white-space: normal; }
+.bills-table .bill-actions-row .owed-actions { margin-top: 0; }
+.bills-table td.owed { color: var(--red); font-weight: 650; }
+@media (max-width: 600px) {
+  .tenant-ledger table.bills-table { min-width: 0; }
+  .bills-table thead { display: none; }
+  .bills-table tr { display: block; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .bills-table tr:last-child { border-bottom: 0; }
+  body .bills-table td { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0 !important; border: 0 !important; text-align: right; }
+  .bills-table td[data-label]::before { content: attr(data-label); color: var(--ink-2); font-weight: 500; text-align: left; }
+  body .bills-table td.bill-name { display: block; text-align: left; font-size: 15px; font-weight: 650; padding-bottom: 4px !important; }
+  .bills-table td:empty { display: none; }
+  .bills-table tr.has-actions { border-bottom: 0; padding-bottom: 4px; }
+  .bills-table tr.bill-actions-row { padding-top: 4px; }
+  body .bills-table tr.bill-actions-row > td { display: block; }
+  .bills-table tfoot tr { background: var(--surface-2); padding: 10px 8px; border-radius: var(--r-input); }
+}

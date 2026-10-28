@@ -404,10 +404,8 @@ body {
     font-size: 24px;
   }
 
-  .viewer-table {
-    display: none;
-  }
-
+  /* Tables stay visible on phones (they scroll sideways in their card). A page that
+     offers a phone list instead hides its table itself with d-none d-md-table. */
   .mobile-card-list {
     display: block;
   }

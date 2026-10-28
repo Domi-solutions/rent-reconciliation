@@ -391,6 +391,7 @@ def charges(token):
             amt = float(r['amount'])
             paid = float(r['paid'])
             raw_by_period[period].append({
+                'id': r['id'],
                 'charge_type': r['charge_type'],
                 'amount': amt,
                 'paid': paid,
