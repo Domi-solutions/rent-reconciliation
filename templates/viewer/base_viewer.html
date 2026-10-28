@@ -16,9 +16,9 @@
   <div style="max-width: 860px; margin: 0 auto; padding: 0 20px;">
     <div class="d-flex justify-content-between align-items-center" style="padding: 12px 0 4px;">
       <div>
-        <div class="viewer-prop-name">
-          {% if property is defined and property %}{{ property.name }}{% else %}Properties{% endif %}
-        </div>
+        {% if property is defined and property %}
+        <a class="viewer-prop-name home-link" href="{{ url_for('viewer.property_dashboard', property_id=property.id) }}">{{ property.name }}</a>
+        {% else %}<div class="viewer-prop-name">Properties</div>{% endif %}
         {% if property is defined and property %}
         <div class="viewer-prop-label">Owner View</div>
         {% endif %}

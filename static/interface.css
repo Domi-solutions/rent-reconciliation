@@ -208,3 +208,8 @@ body a.data-row-link:hover { background: var(--mint-2); color: var(--ink); }
 /* Checkboxes next to buttons: big enough to tap. */
 body .check-big { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; font-size: 14px; cursor: pointer; }
 body .check-big input[type=checkbox] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+
+/* The property name in a portal header goes home (tenant Overview, owner overview, caretaker dashboard). */
+body :is(.viewer-header, .ct-header) a.home-link { display: block; width: fit-content; color: #fff !important; text-decoration: none !important; }
+body .ct-header a.home-link { display: inline; }
+body :is(.viewer-header, .ct-header) a.home-link:hover { text-decoration: underline !important; text-underline-offset: 3px; }
