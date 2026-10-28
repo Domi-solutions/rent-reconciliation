@@ -1553,8 +1553,18 @@ def tenant_quick_assign(property_id, tenant_id, txn_id):
              f"Assigned to {tenant['name']} by {caretaker_name} from statement view",
              caretaker_name)
         )
+        # The same receipt as every other way a payment is matched (tenant_payment.receipt_sms).
+        from src.messaging.tenant_payment import receipt_sms
+        _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
 
-    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
+    if _receipt:                                   # after commit
+        try:
+            from src.messaging.delivery import send_sms_async
+            send_sms_async([{'phone': _receipt[0]}], _receipt[1])
+        except Exception:
+            pass
+    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated."
+          + (" The tenant gets a receipt by SMS." if _receipt else ""), 'success')
     # Assigning now also happens from the dashboard and the unassigned list, so
     # send the caretaker back where they were instead of always to the statement.
     if request.form.get('return_to') == 'unassigned':

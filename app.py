@@ -1814,9 +1814,9 @@ def tenant_quick_assign(tenant_id, txn_id):
             INSERT INTO payments
             (id, property_id, unit_id, tenant_id, bank_txn_id, statement_id, amount, payment_date,
              assignment_type, assignment_reason, assigned_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from tenant statement view', 'admin')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'Assigned from tenant statement view', ?)
         """, (payment_id, prop['id'], unit_id, tenant_id, txn_id, txn['statement_id'],
-              txn['amount'], txn['txn_date'] or ''))
+              txn['amount'], txn['txn_date'] or '', staff.actor()))
         allocate_payment(conn, payment_id, unit_id, txn['amount'])
 
         conn.execute(
@@ -1825,8 +1825,18 @@ def tenant_quick_assign(tenant_id, txn_id):
              f"Ref: {txn['mpesa_ref'] or '-'} | KES {float(txn['amount']):,.0f} | "
              f"Assigned to {tenant['name']} from statement view", staff.actor())
         )
+        # The same receipt as every other way a payment is matched (tenant_payment.receipt_sms).
+        from src.messaging.tenant_payment import receipt_sms
+        _receipt = receipt_sms(conn, payment_id, os.environ.get('APP_BASE_URL') or request.host_url)
 
-    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated.", 'success')
+    if _receipt:                                   # after commit
+        try:
+            from src.messaging.delivery import send_sms_async
+            send_sms_async([{'phone': _receipt[0]}], _receipt[1])
+        except Exception:
+            pass
+    flash(f"KES {float(txn['amount']):,.0f} (ref {txn['mpesa_ref']}) assigned and allocated."
+          + (" The tenant gets a receipt by SMS." if _receipt else ""), 'success')
     return redirect(url_for('tenant_statement', tenant_id=tenant_id))
 
 
