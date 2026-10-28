@@ -25,6 +25,7 @@
 {% endblock %}
 
 {% block content %}
+{% import "partials/balance.html" as balance %}
 {% set final_balance = ledger[-1].running_balance if ledger else 0 %}
 {% set total_charged = ledger | selectattr('row_type','eq','charge') | sum(attribute='debit') %}
 {% set total_paid    = ledger | selectattr('row_type','eq','payment') | sum(attribute='credit') %}
@@ -67,9 +68,9 @@
     <div class="vw-stat-value">{{ payment_count }}</div>
   </div>
   <div class="vw-stat">
-    <div class="vw-stat-label">Outstanding</div>
+    <div class="vw-stat-label">{{ balance.words(final_balance) }}</div>
     <div class="vw-stat-value {{ 'amount-danger' if final_balance > 0 else '' }}">
-      {{ "{:,.0f}".format(final_balance) }}
+      {{ "{:,.0f}".format(final_balance|abs) }}
     </div>
   </div>
 </div>
@@ -125,7 +126,15 @@
 {# ── Ledger ── #}
 <div class="surface-card">
   {% if ledger %}
-    {% for r in ledger %}
+    <div class="data-row" style="background:#f8f9fa; font-weight:700;">
+      <div class="d-flex justify-content-between">
+        <span>{{ balance.words(final_balance) }} today</span>
+        <span class="{{ 'amount-danger' if final_balance > 0 else 'amount-success' }}">
+          KES {{ "{:,.0f}".format(final_balance|abs) }}
+        </span>
+      </div>
+    </div>
+    {% for r in ledger|reverse %}
     <div class="data-row data-row-{{ r.row_type }}{% if r.is_arrears %} data-row-arrears{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} data-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} data-row-partial{% endif %}">
       <div class="d-flex justify-content-between align-items-start">
         <div>
@@ -151,19 +160,11 @@
             {% elif r.status == 'Verified' %}<span class="status-paid">Verified</span>
             {% endif %}
           </div>
-          <div class="data-row-meta">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
+          <div class="data-row-meta">After: {{ balance.after(r.running_balance) }}</div>
         </div>
       </div>
     </div>
     {% endfor %}
-    <div class="data-row" style="background:#f8f9fa; font-weight:700;">
-      <div class="d-flex justify-content-between">
-        <span>Current balance</span>
-        <span class="{{ 'amount-danger' if final_balance > 0 else 'amount-success' }}">
-          KES {{ "{:,.0f}".format(final_balance) }}
-        </span>
-      </div>
-    </div>
   {% else %}
   <div class="empty-state">
     <div class="empty-state-title">No records yet</div>

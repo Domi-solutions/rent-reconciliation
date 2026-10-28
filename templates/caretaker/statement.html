@@ -69,6 +69,7 @@
 {% endblock %}
 
 {% block content %}
+{% import "partials/balance.html" as balance %}
 {% set final_balance = ledger[-1].running_balance if ledger else 0 %}
 
 {# ── Back link ── #}
@@ -292,7 +293,14 @@
 {# ── Ledger ── #}
 <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden;">
   {% if ledger %}
-    {% for r in ledger %}
+    <div style="padding:14px 16px; background:#f8f9fa; border-bottom:2px solid var(--border);
+                display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:15px;">
+      <span>{{ balance.words(final_balance) }} today</span>
+      <span class="{{ 'l-amount-charge' if final_balance > 0 else 'l-amount-payment' }}">
+        KES {{ "{:,.0f}".format(final_balance|abs) }}
+      </span>
+    </div>
+    {% for r in ledger|reverse %}
     <div class="l-row{% if r.is_arrears %} l-row-arrears{% elif r.row_type == 'payment' %} l-row-payment{% elif r.row_type == 'charge' and r.status == 'Outstanding' %} l-row-outstanding{% elif r.row_type == 'charge' and r.status == 'Partial' %} l-row-partial{% endif %}">
       <div class="d-flex justify-content-between align-items-start">
 
@@ -348,20 +356,13 @@
             <div class="l-amount l-amount-payment">+{{ "{:,.0f}".format(r.credit) }}</div>
             <div><span class="s-pill pill-verified">✓ Verified</span></div>
           {% endif %}
-          <div class="l-bal">Bal: {{ "{:,.0f}".format(r.running_balance) }}</div>
+          <div class="l-bal">After: {{ balance.after(r.running_balance) }}</div>
         </div>
 
       </div>
     </div>
     {% endfor %}
 
-    <div style="padding:14px 16px; background:#f8f9fa; border-top:2px solid var(--border);
-                display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:15px;">
-      <span>Current balance</span>
-      <span class="{{ 'l-amount-charge' if final_balance > 0 else 'l-amount-payment' }}">
-        KES {{ "{:,.0f}".format(final_balance) }}
-      </span>
-    </div>
 
   {% else %}
   <div style="padding:40px 16px; text-align:center; color:var(--ink-3); font-size:13px;">

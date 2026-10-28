@@ -1,0 +1,17 @@
+{# A balance in words, so a credit is never read as a debt or the other way round.
+   Positive = the tenant owes; negative = the tenant paid ahead. #}
+{% macro words(bal) -%}
+{%- if bal > 0 %}Still owed{% elif bal < 0 %}Extra paid{% else %}Nothing owed{% endif -%}
+{%- endmacro %}
+
+{% macro after(bal) -%}
+<span class="bal-after {{ 'bal-owed' if bal > 0 else 'bal-credit' }}">{{ words(bal) }}{% if bal %} {{ "{:,.0f}".format(bal|abs) }}{% endif %}</span>
+{%- endmacro %}
+
+{% macro card(bal, note='') -%}
+<div class="bal-card {{ 'bal-card-owed' if bal > 0 else 'bal-card-credit' }}">
+  <div class="bal-card-label">{{ words(bal) }} today</div>
+  <div class="bal-card-amount">{% if bal %}KES {{ "{:,.0f}".format(bal|abs) }}{% else %}KES 0{% endif %}</div>
+  {% if note %}<div class="bal-card-note">{{ note }}</div>{% endif %}
+</div>
+{%- endmacro %}

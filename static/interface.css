@@ -283,3 +283,15 @@ body :is(.viewer-header, .ct-header) nav a .domi-icon { display: none; }
     display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
   body .drawer-head b { flex: 1; font-size: 16px; }
 }
+
+/* Statement balance in words (partials/balance.html): the current position leads the page,
+   and every line's balance says owed or extra paid, never a bare signed number. */
+.bal-card { display: inline-block; min-width: 220px; padding: 12px 18px; border-radius: var(--r-card); border: 1px solid; margin-top: 10px; }
+.bal-card-owed { background: var(--red-soft); border-color: rgba(200,66,59,0.35); color: var(--red); }
+.bal-card-credit { background: var(--green-soft); border-color: rgba(46,139,98,0.35); color: var(--green-dark); }
+.bal-card-label { font-size: 13px; font-weight: 650; }
+.bal-card-amount { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.bal-card-note { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.bal-after { font-weight: 600; white-space: nowrap; }
+.bal-after.bal-owed { color: var(--red); }
+.bal-after.bal-credit { color: var(--green-dark); }
