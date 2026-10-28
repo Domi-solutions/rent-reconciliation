@@ -48,6 +48,12 @@ def account_coverage(conn, tenant_id):
                        (tenant_id,)).fetchall()
     periods = sorted(r['period'] for r in raw if r['period'] and
                      re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', r['period']))
+    period_range = None
+    if periods:
+        first, last = period_label(periods[0]), period_label(periods[-1])
+        if periods[0] != periods[-1] and periods[0][:4] == periods[-1][:4]:
+            first = calendar.month_name[int(periods[0][5:7])]
+        period_range = last if periods[0] == periods[-1] else f'{first}–{last}'
     last_paid = conn.execute('SELECT MAX(payment_date) FROM payments WHERE tenant_id = ?',
                              (tenant_id,)).fetchone()[0]
     try:
@@ -57,6 +63,7 @@ def account_coverage(conn, tenant_id):
     return {
         'first_period': period_label(periods[0]) if periods else None,
         'last_period': period_label(periods[-1]) if periods else None,
+        'period_range': period_range,
         'has_brought_forward': any(r['period'] == 'ARREARS' for r in raw),
         'last_payment_date': payment_date,
     }

@@ -17,22 +17,23 @@
     <h6>Balance summary</h6>
   </div>
   <div class="data-row">
-    {% include 'tenant/partials/balance_coverage.html' %}
     <div class="data-row-meta mb-1">
-      Total charges: KES {{ (total_charged)|money_amount }}.
+      {% if coverage.has_brought_forward %}Total bills and balance brought forward{% elif coverage.period_range %}Bills for {{ coverage.period_range }}{% else %}Total bills{% endif %}: KES {{ (total_charged)|money_amount }}
     </div>
+    {% if coverage.has_brought_forward and coverage.period_range %}<div class="data-row-meta mb-1">Bills cover {{ coverage.period_range }}, plus a balance brought forward.</div>{% endif %}
     <div class="data-row-meta mb-1">
-      Payments confirmed: KES {{ (total_paid)|money_amount }}.
+      Payments confirmed: KES {{ (total_paid)|money_amount }}
     </div>
     <div class="data-row-amount {% if balance > 0 %}amount-danger{% else %}amount-success{% endif %}">
       {% if balance > 0 %}
-        KES {{ (balance)|money_amount }} outstanding.
+        Amount still owed: KES {{ (balance)|money_amount }}
       {% elif balance < 0 %}
-        KES {{ (-balance)|money_amount }} in credit.
+        In credit: KES {{ (-balance)|money_amount }}
       {% else %}
-        All charges settled — KES 0 outstanding.
+        Amount still owed: KES 0 — all bills settled
       {% endif %}
     </div>
+    <div class="data-row-meta mt-2">{% if coverage.last_payment_date %}Latest confirmed payment: {{ coverage.last_payment_date }}.{% else %}No confirmed payments yet.{% endif %}</div>
     {% if pending_total > 0 %}
     <div class="data-row-meta mt-1">KES {{ (pending_total)|money_amount }} reported as paid, awaiting confirmation. Not deducted from this balance.</div>
     {% endif %}

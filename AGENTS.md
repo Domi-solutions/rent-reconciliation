@@ -26,8 +26,13 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — tenant notices, dated balance coverage and water breakdowns; SMS non-delivery diagnosed.
+**Who:** Codex — simplified tenant balance wording after LINCKS approved the plain-language explanation.
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
+
+### Latest wording approval
+
+- LINCKS approved “Bills for July–October 2026”, “Payments confirmed”, “Amount still owed”, with “Latest confirmed payment” below the totals. Applied that wording to the tenant overview and simplified the statement coverage label. Single-month and cross-year ranges retain explicit years; brought-forward balances remain separately identified. Amounts and payment allocation are unchanged.
+- Validated the existing coverage integration check and the rendered tenant preview. SMS delivery remains pending live provider credentials as recorded below.
 
 ### Tenant feedback addressed this session
 

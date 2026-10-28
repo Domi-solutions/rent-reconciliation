@@ -109,9 +109,9 @@ class TenantPortalDetails(unittest.TestCase):
         self.assertEqual(coverage['last_period'], period_label(latest))
         self.assertTrue(coverage['last_payment_date'])
         html = self.client.get(self.path).get_data(as_text=True)
-        self.assertIn('Charges recorded through ' + period_label(latest), html)
+        self.assertIn('Bills for ' + coverage['period_range'], html)
         self.assertNotIn('charged across recorded periods', html)
-        self.assertIn('Includes payments recorded up to', html)
+        self.assertIn('Latest confirmed payment:', html)
         with self.connection() as conn:
             self.assertIsNone(account_coverage(conn, 'unknown')['last_period'])
             conn.execute('DELETE FROM payment_allocations WHERE charge_id IN (SELECT id FROM rent_charges WHERE tenant_id=?)', (self.tenant['id'],))
