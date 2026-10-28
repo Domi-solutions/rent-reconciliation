@@ -1,6 +1,7 @@
 {# "Still owed" that opens into the bills it is made of (src/utils/tenant_documents.unpaid_bills).
-   question: replaces the "Still owed: KES X" heading when the page already shows the total. #}
-{% macro owed_breakdown(owed, balance, question=None, big=False) -%}
+   question: replaces the "Still owed: KES X" heading when the page already shows the total.
+   pay_url: where "Make a payment" goes (the Pay page, or #pay-now when already on it). #}
+{% macro owed_breakdown(owed, balance, question=None, big=False, pay_url=None) -%}
 {% if owed.bills %}
 <details class="owed-breakdown{% if big %} owed-breakdown-big{% endif %}">
   <summary>
@@ -29,6 +30,7 @@
     <div class="owed-sum"><span>Confirmed payments not yet set against a bill</span><span>−KES {{ owed.unapplied|money_amount }}</span></div>
     {% endif %}
     <div class="owed-sum owed-sum-total"><span>Still owed</span><span>KES {{ balance|money_amount }}</span></div>
+    {% if pay_url %}<a class="btn btn-primary owed-pay no-print" href="{{ pay_url }}">Make a payment</a>{% endif %}
   </div>
 </details>
 {% else %}

@@ -26,7 +26,7 @@
       Payments confirmed: KES {{ (total_paid)|money_amount }}
     </div>
     {% if balance > 0 %}
-    {{ owed_breakdown(owed, balance) }}
+    {{ owed_breakdown(owed, balance, pay_url=url_for('tenant.pay', token=token) ~ '#pay-now') }}
     {% else %}
     <div class="data-row-amount amount-success">
       {% if balance < 0 %}

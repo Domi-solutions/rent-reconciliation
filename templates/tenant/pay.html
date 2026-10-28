@@ -16,13 +16,13 @@
       {% else %}<span class="credit" style="font-size: 0.95rem; font-weight: 600;">Nothing owed</span>
       <strong class="credit" style="font-size: 1.1rem;">KES 0</strong>{% endif %}
     </div>
-    {% if balance > 0 and owed.bills %}<div class="mt-2">{{ owed_breakdown(owed, balance, question='Which bills is this for?') }}</div>{% endif %}
+    {% if balance > 0 and owed.bills %}<div class="mt-2">{{ owed_breakdown(owed, balance, question='Which bills is this for?', pay_url='#pay-now') }}</div>{% endif %}
     <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every bill and payment</a></div>
   </div>
 </div>
 
 {% if stk_enabled %}
-<div class="card shadow-sm mb-3" style="max-width: 480px; border: 2px solid #16a34a;">
+<div class="card shadow-sm mb-3" id="pay-now" style="max-width: 480px; border: 2px solid #16a34a; scroll-margin-top: 16px;">
   <div class="card-body p-4">
     <div class="viewer-section-title" style="margin-bottom:4px">Pay with M-Pesa now</div>
     <p class="text-muted" style="font-size: 0.85rem;">A prompt appears on your phone; enter your M-Pesa PIN there. Your receipt shows here within seconds.</p>
@@ -86,7 +86,7 @@
 {% endif %}
 
 {% if how %}
-<div class="card shadow-sm mb-3" style="max-width: 480px;">
+<div class="card shadow-sm mb-3" style="max-width: 480px; scroll-margin-top: 16px;"{% if not stk_enabled %} id="pay-now"{% endif %}>
   <div class="card-body p-4">
     <div class="viewer-section-title" style="margin-bottom:8px">{{ 'Or pay from the M-Pesa menu' if stk_enabled else 'How to pay rent' }}</div>
     <ol style="font-size:0.9rem;padding-left:1.2rem;margin-bottom:10px">

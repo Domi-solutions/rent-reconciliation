@@ -118,6 +118,7 @@ body details.owed-breakdown > summary:hover { background: rgba(200,66,59,.06); c
 .owed-late { color: var(--red); font-weight: 650; }
 .owed-sum { display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .owed-sum-total { font-size: 15px; font-weight: 650; color: var(--red); }
+body .owed-pay { display: flex; align-items: center; justify-content: center; width: 100%; margin-top: 14px; min-height: 46px; font-size: 16px; }
 .owed-total-plain { font-size: 18px; font-weight: 650; color: var(--red); }
 @media print {
   .owed-breakdown { border: 0; background: none; }

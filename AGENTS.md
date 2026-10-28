@@ -31,7 +31,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ### "Still owed" opens into its bills (Claude, 2026-10-28)
 
-- Tapping **Still owed** (tenant overview, statement, Pay) lists the exact unpaid bills, oldest first: which bill, KES left on it, due date, **Late** once past due, and how much is already paid. Built by `tenant_documents.unpaid_bills(rows, balance)` from the statement rows; rendered by `templates/tenant/partials/owed_breakdown.html`; styles in `static/tenant.css`. If a confirmed payment is not yet set against a bill, the list shows it as a separate line so the total still matches. Tests: `tests/test_unpaid_bills.py`.
+- Tapping **Still owed** (tenant overview, statement, Pay) lists the exact unpaid bills, oldest first, ending in a **Make a payment** button (Pay page `#pay-now`: the M-Pesa form, or the paybill steps when STK is off): which bill, KES left on it, due date, **Late** once past due, and how much is already paid. Built by `tenant_documents.unpaid_bills(rows, balance)` from the statement rows; rendered by `templates/tenant/partials/owed_breakdown.html`; styles in `static/tenant.css`. If a confirmed payment is not yet set against a bill, the list shows it as a separate line so the total still matches. Tests: `tests/test_unpaid_bills.py`.
 - Demo: second returning tenant who owes — David Kiprop, B2, `0700000108` / PIN `1234` (`LOGINS['tenant_owing']`, on the /demo page). Added to the local `/tmp/domi-ui-review.db` too (backup `/tmp/domi-ui-review.before-owing-login.db`).
 - Water line now: "Water you used in September 2026, applied to your October 2026 bill"; Bills help says the same.
 

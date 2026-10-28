@@ -10,7 +10,7 @@
   </header>
   <div class="statement-print-identity">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
   <div class="muted">Your account now</div>
-  {% if balance > 0 %}{{ owed_breakdown(owed, balance, big=True) }}
+  {% if balance > 0 %}{{ owed_breakdown(owed, balance, big=True, pay_url=url_for('tenant.pay', token=token) ~ '#pay-now') }}
   {% elif balance < 0 %}<div class="big credit">Extra paid: KES {{ (-balance)|money_amount }}</div>
   {% else %}<div class="big credit">Nothing owed</div>{% endif %}
   {% if pending %}
