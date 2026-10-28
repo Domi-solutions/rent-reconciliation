@@ -283,6 +283,3 @@ body .welcome-done { display: flex; align-items: center; justify-content: center
 .ov-msg.is-unread .ov-msg-date { color: var(--accent); font-weight: 700; }
 .ov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 .ov-msg-empty { color: var(--ink-2); font-size: 14px; }
-
-.card-header-go .go-short { display: none; }
-@media (max-width: 480px) { .card-header-go .go-long { display: none; } .card-header-go .go-short { display: inline; } }
