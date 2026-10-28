@@ -45,6 +45,7 @@
       <div class="sidebar-brand">
         <div class="sidebar-mark"><span>{% if current_property %}{{ current_property.name[0] }}{% else %}D{% endif %}</span></div>
         <span class="sidebar-name">{{ current_property.name if current_property else 'Domi OS' }}</span>
+        <button type="button" class="sidebar-close" onclick="closeSidebar()" aria-label="Close menu">×</button>
       </div>
     </div>
 
@@ -201,14 +202,17 @@
     <!-- TOPBAR -->
     <header class="topbar">
       <div class="topbar-actions" style="gap: 8px;">
-        <button class="d-md-none topbar-btn-ghost" onclick="toggleSidebar()" style="padding: 7px 10px;" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">{{ icon('menu') }}</button>
+        <button class="d-md-none topbar-btn-ghost admin-menu-btn" onclick="toggleSidebar()" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">{{ icon('menu') }}</button>
+        {# Phones: same header as the tenant portal — ☰, the property name going home, the page on the right. #}
+        <a class="topbar-home" href="{{ url_for('dashboard') }}">{{ current_property.name if current_property else 'Domi' }}<small>Management</small></a>
         <form action="{{ url_for('search') }}" method="get" class="d-none d-md-block">
           <input class="topbar-search" type="text" name="q" placeholder="Search units, tenants..." value="{{ request.args.get('q', '') }}" autocomplete="off">
         </form>
       </div>
       <div class="topbar-actions">
         <a href="{{ url_for('export_page') }}" class="topbar-btn-ghost topbar-hide-mobile">Export Data</a>
-        <a href="{{ url_for('report_payment') }}" class="topbar-btn-primary">Report Payment</a>
+        <a href="{{ url_for('report_payment') }}" class="topbar-btn-primary topbar-hide-mobile">Report Payment</a>
+        <button type="button" class="topbar-page" onclick="toggleSidebar()" aria-controls="sidebar"><span id="topbarPage">Menu</span></button>
       </div>
     </header>
 
@@ -245,6 +249,15 @@ function closeSidebar() {
   document.querySelector('[aria-controls=sidebar]').setAttribute('aria-expanded', 'false');
   document.getElementById('sidebarBackdrop').classList.remove('open');
 }
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) closeSidebar();
+});
+(function () {   // the open page's name, top right on phones
+  var active = document.querySelector('.sidebar-item.active'), label = document.getElementById('topbarPage');
+  var name = active ? active.textContent.replace(/\s+/g, ' ').trim().replace(/\s\d+$/, '') : '';
+  if (!name) name = (document.title.split(' — ')[0] || '').trim();
+  if (label && name) label.textContent = name;
+})();
 </script>
 {% block extra_js %}{% endblock %}
 </body>

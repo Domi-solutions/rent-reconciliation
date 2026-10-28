@@ -1174,9 +1174,15 @@ def dashboard():
         # dashboard, the Follow up page and the caretaker all show the same months behind.
         from src.reports.follow_up import behind_list
         behind = behind_list(conn, property_id, min_months=0, include_departed=False)
+        # Latest conversations, newest first, like a phone's message list (unanswered in bold).
+        latest_threads = sorted(list_for_staff(conn, property_id), key=lambda r: r['last_message_at'] or '',
+                                reverse=True)[:3]
 
         return render_template(
             'dashboard.html',
+            latest_threads=latest_threads,
+            owes_most=sorted(behind, key=lambda r: r['overdue'] or 0, reverse=True)[:5],
+            month_label=datetime.today().strftime('%B'),
             property=property_row,
             stats=stats,
             arrears=arrears,

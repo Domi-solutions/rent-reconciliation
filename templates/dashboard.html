@@ -1,192 +1,179 @@
 {% extends "base.html" %}
-{% block title %}{{ property.name }}{% endblock %}
+{% from 'partials/icons.html' import icon %}
+{% block title %}Overview — {{ property.name }}{% endblock %}
 
 {% block extra_css %}
 <style>
-  /* Phone first. People who need a reply or payment review come before
-     the monthly bank-upload workflow. */
-  .ph-wrap { max-width: 620px; margin: 0 auto; }
+  /* Phone first, one column, like the tenant overview: the month's money first, then only what
+     needs a person, then the latest messages, who owes most, and the everyday actions. */
+  .ov { max-width: 640px; margin: 0 auto; }
+  .ov-card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-card);
+    overflow: hidden; margin-bottom: 16px; }
+  .ov-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+  .ov-head h2 { font-size: 15px; font-weight: 650; margin: 0; }
+  .ov-head span { font-size: 13px; font-weight: 600; color: var(--accent); }
+  a.ov-head:hover { background: var(--mint-2); color: var(--ink); }
 
-  .ph-action {
-    display: block; text-decoration: none;
-    background: var(--ink); color: #fff;
-    border-radius: var(--r-card); padding: 22px 20px; margin-bottom: 14px;
-    box-shadow: var(--shadow-sm);
-  }
-  .ph-action:hover { opacity: .92; color: #fff; }
-  .ph-action-title { font-size: 19px; font-weight: 700; line-height: 1.2; }
-  .ph-action-sub { font-size: 13px; opacity: .72; margin-top: 4px; }
+  /* 1 · This month */
+  .ov-money { background: var(--frame); color: #fff; border-radius: var(--r-card); padding: 18px 18px 16px; margin-bottom: 16px; }
+  .ov-money-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .ov-money-label { color: var(--sage); font-size: 13px; font-weight: 600; }
+  .ov-money-due { color: rgba(255,255,255,.75); font-size: 12px; text-align: right; }
+  .ov-money-value { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; line-height: 1.15; }
+  .ov-money-value small { font-size: 15px; font-weight: 500; color: rgba(255,255,255,.75); }
+  .ov-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.18); margin: 10px 0 12px; overflow: hidden; }
+  .ov-bar span { display: block; height: 100%; background: var(--sage); }
+  .ov-money-row { display: flex; justify-content: space-between; gap: 12px; color: #fff; text-decoration: none;
+    padding: 10px 0 0; border-top: 1px solid rgba(140,199,161,.25); font-size: 14px; }
+  .ov-money-row:hover { color: #fff; }
+  .ov-money-row b { color: #FFB4AE; }
+  .ov-money-row span:last-child { color: var(--sage); font-weight: 600; white-space: nowrap; }
+  .ov-money-sub { font-size: 12px; color: rgba(255,255,255,.7); margin-top: 8px; }
 
-  .ph-headline {
-    background: var(--frame); color: #fff; border: none;
-    border-radius: var(--r-card); padding: 26px 22px; margin-bottom: 14px;
-    text-align: center; box-shadow: var(--shadow-md);
-  }
-  .ph-headline-label { font-size: 11px; font-weight: 700; letter-spacing: .01em;
-    text-transform: none; color: var(--sage); }
-  .ph-headline-value { font-size: 36px; font-weight: 650; color: #fff; letter-spacing: -.02em;
-    line-height: 1.1; margin-top: 8px; }
-  .ph-headline-sub { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 6px; }
-  .ph-headline-sub b { color: var(--sage); }
+  /* 2 · To do */
+  .ov-todo { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border);
+    color: var(--ink); text-decoration: none; min-height: 52px; }
+  .ov-head + .ov-todo { border-top: 0; }
+  .ov-todo:hover { background: var(--mint-2); color: var(--ink); }
+  .ov-todo .domi-icon { color: var(--accent); flex-shrink: 0; }
+  .ov-todo-text { flex: 1; font-size: 15px; font-weight: 600; }
+  .ov-todo-text small { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  .ov-count { min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; background: var(--orange-soft);
+    color: var(--orange); border: 1px solid var(--orange-border); font-size: 13px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .ov-chev { color: var(--accent); font-size: 22px; line-height: 1; }
+  .ov-done { padding: 14px 16px; color: var(--green-dark); font-weight: 600; }
 
-  .ph-section-title { font-size: 12px; font-weight: 700; letter-spacing: .01em;
-    text-transform: none; color: var(--ink-3); margin: 22px 4px 10px; }
+  /* 3 · Latest messages (as on a phone) */
+  .ov-msg { display: block; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+  .ov-head + .ov-msg { border-top: 0; }
+  .ov-msg:hover { background: var(--mint-2); color: var(--ink); }
+  .ov-msg-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .ov-msg-subject { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-msg-when { font-size: 12px; color: var(--ink-2); flex-shrink: 0; }
+  .ov-msg-preview { display: block; font-size: 14px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-msg.is-waiting .ov-msg-subject, .ov-msg.is-waiting .ov-msg-preview { font-weight: 700; color: var(--ink); }
+  .ov-msg.is-waiting .ov-msg-when { color: var(--orange); font-weight: 700; }
+  .ov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); margin-right: 6px; vertical-align: 1px; }
 
-  .ph-list { background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r-card); overflow: hidden; }
-  .ph-item { display: flex; justify-content: space-between; align-items: center;
-    gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border);
-    text-decoration: none; color: inherit; min-height: 60px; }
-  .ph-item:last-child { border-bottom: none; }
-  .ph-item:active { background: var(--bg); }
-  .ph-unit { font-size: 15px; font-weight: 700; color: var(--ink); }
-  .ph-name { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
-  .ph-owed { font-size: 16px; font-weight: 700; color: var(--red); white-space: nowrap; }
-  .ph-months { font-size: 11px; color: var(--ink-3); text-align: right; margin-top: 2px; }
+  /* 4 · Who owes most */
+  .ov-owe { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 16px;
+    border-top: 1px solid var(--border); color: var(--ink); text-decoration: none; }
+  .ov-head + .ov-owe { border-top: 0; }
+  .ov-owe:hover { background: var(--mint-2); color: var(--ink); }
+  .ov-owe-who b { font-size: 15px; } .ov-owe-who small { display: block; color: var(--ink-2); font-size: 13px; }
+  .ov-owe-amt { text-align: right; font-weight: 700; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ov-owe-amt small { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  .ov-owe.is-late .ov-owe-amt { color: var(--red); }
+  .ov-owe.is-late .ov-owe-amt small { color: var(--red); }
 
-  .ph-alert { border-radius: var(--r-card); padding: 12px 15px; margin-bottom: 12px;
-    font-size: 13px; font-weight: 600; }
-  .ph-alert a { font-weight: 700; }
-  .ph-warn { background: var(--orange-soft); border: 1px solid var(--orange-border); color: #92400e; }
-  .ph-info { background: var(--blue-soft); border: 1px solid #bfdbfe; color: #1e40af; }
-
-  .ph-more { display: block; text-align: center; padding: 14px;
-    font-size: 14px; font-weight: 600; color: var(--blue); text-decoration: none; }
+  /* 5 · Quick actions */
+  .ov-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
+  .ov-action { display: flex; flex-direction: column; gap: 6px; padding: 14px; min-height: 84px; border: 1px solid var(--border-strong);
+    border-radius: var(--r-card); background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 14px; }
+  .ov-action .domi-icon { color: var(--accent); }
+  .ov-action:hover { border-color: var(--accent); background: var(--mint-2); color: var(--ink); }
+  .ov-section { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0 0 8px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="ph-wrap">
+<div class="ov">
 
-  <div style="margin-bottom: 16px;">
-    <div style="font-size: 22px; font-weight: 700; color: var(--ink);">{{ property.name }}</div>
-    {% if days_to_due is not none %}
-    <div style="font-size: 13px; color: var(--ink-2);">
-      {% if days_to_due == 0 %}Rent due today
-      {% elif days_to_due < 0 %}Rent was due {{ -days_to_due }} day{{ 's' if days_to_due != -1 }} ago
-      {% else %}{{ days_to_due }} day{{ 's' if days_to_due != 1 }} to rent due{% endif %}
-      · {{ next_due_date }}
+  {# ── 1 · This month at a glance ── #}
+  {% set expected = stats.expected_monthly or 0 %}
+  {% set collected = stats.total_collected or 0 %}
+  {% set pct = ((collected / expected * 100) if expected else 0)|round|int %}
+  <section class="ov-money" aria-label="This month">
+    <div class="ov-money-top">
+      <span class="ov-money-label">Collected in {{ month_label }}</span>
+      {% if days_to_due is not none %}
+      <span class="ov-money-due">{% if days_to_due == 0 %}Rent due today{% elif days_to_due < 0 %}Rent was due {{ -days_to_due }} day{{ 's' if days_to_due != -1 }} ago{% else %}Rent due in {{ days_to_due }} day{{ 's' if days_to_due != 1 }}{% endif %}</span>
+      {% endif %}
     </div>
-    {% endif %}
-  </div>
+    <div class="ov-money-value">KES {{ '{:,.0f}'.format(collected) }} <small>of {{ '{:,.0f}'.format(expected) }}</small></div>
+    <div class="ov-bar" role="img" aria-label="{{ pct }}% collected"><span style="width: {{ [pct, 100]|min }}%"></span></div>
+    <a class="ov-money-row" href="{{ url_for('admin_arrears') }}">
+      <span>{% if behind %}Overdue <b>KES {{ '{:,.0f}'.format(behind_overdue or 0) }}</b> · {{ behind|length }} tenant{{ 's' if behind|length != 1 }}{% else %}Nothing overdue{% endif %}</span>
+      <span>Follow up ›</span>
+    </a>
+    <div class="ov-money-sub">{{ pct }}% of this month's rent and service charge · {{ stats.occupied_units or 0 }} of {{ stats.total_units or 0 }} houses let</div>
+  </section>
 
-  {# ---- Only items that need a person's attention appear here ---- #}
-  <div class="ph-section-title">Needs follow-up</div>
-
-  {% if renewals_count %}
-  <div class="ph-alert ph-warn">
-    {{ renewals_count }} lease{{ 's' if renewals_count != 1 }} to decide on — ending soon or due a rent review.
-    <a href="{{ url_for('leases.renewals') }}">Open →</a>
-  </div>
-  {% endif %}
-  {% if moving_out_count %}
-  <div class="ph-alert ph-warn">
-    {{ moving_out_count }} tenant{{ 's have' if moving_out_count != 1 else ' has' }} given notice to move out.
-    <a href="{{ url_for('leases.moving_out') }}">See who →</a>
-  </div>
-  {% endif %}
-
-  {% if inbox_awaiting_count %}
-  <div class="ph-alert ph-warn">
-    {{ inbox_awaiting_count }} tenant conversation{{ 's' if inbox_awaiting_count != 1 }} waiting for a reply.
-    <a href="{{ url_for('messaging.inbox') }}">Open inbox →</a>
-  </div>
-  <div class="ph-list" style="margin-bottom: 12px;">
-    {% for thread in awaiting_threads %}
-    <a class="ph-item" href="{{ url_for('messaging.inbox_thread', conv_id=thread.id) }}">
-      <div>
-        <div class="ph-unit">{{ thread.subject }}</div>
-        <div class="ph-name">{{ thread.unit_number or 'Unit not recorded' }} · {{ thread.tenant_name }}</div>
-      </div>
-      <div class="ph-months">
-        {% if (thread.hours_waiting or 0) >= 24 %}{{ thread.hours_waiting // 24 }} day{{ 's' if thread.hours_waiting // 24 != 1 }} waiting
-        {% elif (thread.hours_waiting or 0) >= 1 %}{{ thread.hours_waiting }} h waiting
-        {% else %}&lt; 1 h waiting{% endif %}
-      </div>
+  {# ── 2 · To do: only what needs a person ── #}
+  {% set unmatched = (unassigned_stats.total_count if unassigned_stats else 0) or 0 %}
+  {% set todo = [
+      (inbox_awaiting_count, 'message', 'Tenant messages waiting', None, url_for('messaging.inbox')),
+      (unmatched, 'wallet', 'Payments to match', ('KES ' ~ '{:,.0f}'.format(unassigned_stats.total_amount or 0)) if unmatched else None, url_for('review', tab='unreported')),
+      (mpesa_unmatched_count or 0, 'phone', 'M-Pesa payments to name', None, url_for('mpesa_admin.payments')),
+      (flagged_claims_count, 'warning', 'Payments held for checking', None, url_for('flagged_claims_admin')),
+      ((pending|length) if pending else 0, 'clock', 'Reported, waiting for the bank statement', None, url_for('review', tab='unconfirmed')),
+      (moving_out_count, 'home', 'Moving-out notices', None, url_for('leases.moving_out')),
+      (renewals_count, 'file', 'Leases to decide on', 'ending soon or rent review', url_for('leases.renewals')),
+      (expenses_waiting or 0, 'receipt', 'Expenses to approve', None, url_for('money.expenses')),
+      (staff_chat_unread or 0, 'users', 'Caretaker messages', None, url_for('messaging.caretaker_chats')),
+  ] %}
+  {% set open_items = todo|selectattr(0)|list %}
+  <section class="ov-card" aria-labelledby="todo-heading">
+    <div class="ov-head"><h2 id="todo-heading">To do</h2></div>
+    {% for count, ic, label, sub, href in open_items %}
+    <a class="ov-todo" href="{{ href }}">
+      {{ icon(ic, 20) }}
+      <span class="ov-todo-text">{{ label }}{% if sub %}<small>{{ sub }}</small>{% endif %}</span>
+      <span class="ov-count">{{ count }}</span><span class="ov-chev" aria-hidden="true">›</span>
     </a>
     {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if flagged_claims_count %}
-  <div class="ph-alert ph-warn">
-    {{ flagged_claims_count }} payment claim{{ 's' if flagged_claims_count != 1 }} flagged for review.
-    <a href="{{ url_for('flagged_claims_admin') }}">Review →</a>
-  </div>
-  {% endif %}
-
-  {% if unassigned_stats and unassigned_stats.total_count %}
-  <div class="ph-alert ph-warn">
-    {{ unassigned_stats.total_count }} payment{{ 's' if unassigned_stats.total_count != 1 }} received but not matched to a tenant
-    — KES {{ '{:,.0f}'.format(unassigned_stats.total_amount or 0) }}.
-    <a href="{{ url_for('review', tab='unreported') }}">Assign →</a>
-  </div>
-  {% endif %}
-
-  {% if pending %}
-  <div class="ph-alert ph-info">
-    {{ pending|length }} payment claim{{ 's' if pending|length != 1 }} awaiting confirmation.
-    <a href="{{ url_for('review', tab='unconfirmed') }}">Review →</a>
-  </div>
-  {% endif %}
-
-  {% if not inbox_awaiting_count and not flagged_claims_count and not (unassigned_stats and unassigned_stats.total_count) and not pending and not arrears %}
-  <div class="ph-alert ph-info">No tenant questions, payment exceptions, or outstanding balances recorded for this property.</div>
-  {% endif %}
-
-  {# ---- Who owes what ---- #}
-  <div class="ph-headline">
-    <div class="ph-headline-label">Overdue rent</div>
-    <div class="ph-headline-value">KES {{ '{:,.0f}'.format(behind_overdue or 0) }}</div>
-    <div class="ph-headline-sub">
-      {{ (behind or [])|length }} tenant{{ 's' if (behind or [])|length != 1 }} behind ·
-      <b>{{ behind_follow_up or 0 }} more than a month</b> ·
-      {{ stats.occupied_units or 0 }} of {{ stats.total_units or 0 }} units occupied
-    </div>
-    <div class="ph-headline-sub" style="font-size:12px;">Total balance, including charges not yet due: KES {{ '{:,.0f}'.format(stats.total_arrears or 0) }}</div>
-  </div>
-
-  <div class="ph-section-title">Who owes what</div>
-  {% if behind %}
-  <div class="ph-list">
-    {% for a in behind[:15] %}
-    <a class="ph-item" href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) }}">
-      <div>
-        <div class="ph-unit">{{ a.unit_number }}</div>
-        <div class="ph-name">{{ a.name }}</div>
-      </div>
-      <div>
-        <div class="ph-owed">{{ '{:,.0f}'.format(a.overdue or 0) }}</div>
-        <div class="ph-months">{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }} behind</div>
-      </div>
-    </a>
-    {% endfor %}
-    {% if behind|length > 15 %}
-    <a class="ph-more" href="{{ url_for('admin_arrears', show='all') }}">
-      See all {{ behind|length }} →
+    {% if show_generate_charges_hint %}
+    <a class="ov-todo" href="{{ url_for('generate_charges') }}">
+      {{ icon('calendar', 20) }}
+      <span class="ov-todo-text">{{ month_label }} charges not created yet<small>Rent and service charge for the month</small></span>
+      <span class="ov-chev" aria-hidden="true">›</span>
     </a>
     {% endif %}
-  </div>
-  {% else %}
-  <div class="ph-list">
-    <div class="ph-item" style="color: var(--green-dark); font-weight: 600;">
-      Nothing overdue.
-    </div>
-  </div>
-  {% endif %}
+    {% if not open_items and not show_generate_charges_hint %}
+    <div class="ov-done">Nothing waiting ✓</div>
+    {% endif %}
+  </section>
 
-  <div class="ph-section-title">Monthly workflow</div>
-  <a href="{{ url_for('upload_statement') }}" class="ph-action">
-    <div class="ph-action-title">Upload bank statement</div>
-    <div class="ph-action-sub">Match payments to tenants automatically</div>
-  </a>
+  {# ── 3 · Latest messages ── #}
+  <section class="ov-card" aria-labelledby="msgs-heading">
+    <a class="ov-head" href="{{ url_for('messaging.inbox') }}"><h2 id="msgs-heading">Latest messages</h2><span>All messages ›</span></a>
+    {% for t in latest_threads %}
+    {% set waiting = t.status == 'awaiting_reply' %}
+    <a class="ov-msg{% if waiting %} is-waiting{% endif %}" href="{{ url_for('messaging.inbox_thread', conv_id=t.id) }}">
+      <span class="ov-msg-top">
+        <span class="ov-msg-subject">{{ t.unit_number or '—' }} · {{ t.subject }}</span>
+        <span class="ov-msg-when">{% if waiting and (t.hours_waiting or 0) >= 24 %}{{ t.hours_waiting // 24 }} day{{ 's' if t.hours_waiting // 24 != 1 }}{% elif waiting %}{{ t.hours_waiting or 0 }} h{% else %}{{ (t.last_message_at or '')[:10] }}{% endif %}</span>
+      </span>
+      <span class="ov-msg-preview">{% if waiting %}<span class="ov-dot" aria-hidden="true"></span><span class="visually-hidden">Waiting for a reply: </span>{% endif %}{% if t.last_from == 'tenant' %}{{ (t.tenant_name or '')|title }}{% elif t.last_from == 'caretaker' %}Caretaker{% elif t.last_from == 'system' %}Update{% else %}Management{% endif %}: {{ (t.last_body or '')|truncate(90) }}</span>
+    </a>
+    {% else %}
+    <div class="ov-done" style="color:var(--ink-2)">No messages yet.</div>
+    {% endfor %}
+  </section>
 
-  {% if show_generate_charges_hint %}
-  <div class="ph-alert ph-warn">
-    No charges generated for {{ current_month }} yet.
-    <a href="{{ url_for('generate_charges') }}">Generate now →</a>
+  {# ── 4 · Who owes most ── #}
+  <section class="ov-card" aria-labelledby="owe-heading">
+    <a class="ov-head" href="{{ url_for('admin_arrears', show='all') }}"><h2 id="owe-heading">Who owes most</h2><span>{% if behind|length > 5 %}See all {{ behind|length }} ›{% else %}Follow up ›{% endif %}</span></a>
+    {% for a in owes_most %}
+    <a class="ov-owe{% if a.follow_up %} is-late{% endif %}" href="{{ url_for('tenant_statement', tenant_id=a.tenant_id) }}">
+      <span class="ov-owe-who"><b>{{ a.unit_number }}</b><small>{{ a.name }}</small></span>
+      <span class="ov-owe-amt">KES {{ '{:,.0f}'.format(a.overdue or 0) }}<small>{{ a.months_behind }} month{{ 's' if a.months_behind != 1 }} behind</small></span>
+    </a>
+    {% else %}
+    <div class="ov-done">Nothing overdue.</div>
+    {% endfor %}
+  </section>
+
+  {# ── 5 · Everyday actions ── #}
+  <div class="ov-section">Quick actions</div>
+  <div class="ov-actions">
+    <a class="ov-action" href="{{ url_for('report_payment') }}">{{ icon('wallet', 22) }}Record a payment</a>
+    <a class="ov-action" href="{{ url_for('upload_statement') }}">{{ icon('file', 22) }}Upload bank statement</a>
+    <a class="ov-action" href="{{ url_for('messaging.broadcast') }}">{{ icon('mail', 22) }}Write to tenants</a>
+    <a class="ov-action" href="{{ url_for('leases.board') }}">{{ icon('home', 22) }}Record a lease</a>
   </div>
-  {% endif %}
 
 </div>
 {% endblock %}
