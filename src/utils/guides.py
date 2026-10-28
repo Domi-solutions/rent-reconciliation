@@ -301,8 +301,8 @@ _T = {
     },
     'tenant_statement': {
         'en': ('Tenant statement', "One tenant's full history: every bill, every payment, and what they owe now.", [
-            'Paste an M-Pesa message or code in "Quick verify" to check whether a payment reached the bank.',
-            'Contacts the tenant added (another payer, emergency contact) are shown under their name.',
+            'Tap "Still owed" to see which bills make it up. Tap any bill or payment below for its details.',
+            'Open "Check an M-Pesa code" to see whether a payment the tenant mentions reached the bank.',
             'The balance only counts payments confirmed against the bank or M-Pesa.',
         ]),
     },

@@ -1751,10 +1751,14 @@ def tenant_statement(tenant_id):
         phone_history = conn.execute("""SELECT old_phone, new_phone, decided_at FROM phone_change_requests
                                          WHERE tenant_id = ? AND status = 'approved' ORDER BY decided_at""",
                                       (tenant_id,)).fetchall()
+    from src.utils.tenant_documents import unpaid_bills
+    balance = ledger[-1]['running_balance'] if ledger else 0.0
     return render_template('tenant_statement.html',
                            property=prop,
                            tenant=tenant,
-                           ledger=ledger,
+                           rows=list(reversed(ledger)),
+                           balance=balance,
+                           owed=unpaid_bills(ledger, balance),
                            open_claims=open_claims,
                            contacts=contacts,
                            contact_kinds=tenant_contacts.KINDS,

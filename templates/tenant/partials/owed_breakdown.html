@@ -1,8 +1,9 @@
 {# "Still owed" that opens into the bills it is made of (src/utils/tenant_documents.unpaid_bills).
    question: replaces the "Still owed: KES X" heading when the page already shows the total.
    pay_url: where "Make a payment" goes (the Pay page, or #pay-now when already on it).
-   token: when given, each bill gets "Pay this bill" and "Ask about this". #}
-{% macro owed_breakdown(owed, balance, question=None, big=False, pay_url=None, token=None) -%}
+   token: when given, each bill gets "Pay this bill" and "Ask about this".
+   staff: worded for management (admin statement) instead of the tenant. #}
+{% macro owed_breakdown(owed, balance, question=None, big=False, pay_url=None, token=None, staff=False) -%}
 {% if owed.bills %}
 <details class="owed-breakdown{% if big %} owed-breakdown-big{% endif %}">
   <summary>
@@ -12,13 +13,13 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
   </summary>
   <div class="owed-body">
-    <p class="owed-intro">These bills are not fully paid yet, oldest first. A payment pays the oldest one first — or choose "Pay this bill" to pay a particular one.</p>
+    <p class="owed-intro">{% if staff %}These bills are not fully paid yet, oldest first. A payment pays the oldest one first, unless the tenant chose "Pay this bill".{% else %}These bills are not fully paid yet, oldest first. A payment pays the oldest one first — or choose "Pay this bill" to pay a particular one.{% endif %}</p>
     <ul class="owed-list">
       {% for b in owed.bills %}
       <li>
         <div class="owed-line"><span class="owed-name">{{ b.label }}</span><span class="owed-amount">KES {{ b.remaining|money_amount }}</span></div>
         <div class="owed-meta">
-          {% if b.is_arrears %}Unpaid from before your current records
+          {% if b.is_arrears %}Unpaid from before {{ 'the' if staff else 'your' }} current records
           {% elif b.late %}<span class="owed-late">Late</span> — was due {{ b.due }}
           {% elif b.due %}Due {{ b.due }}{% endif %}
           {% if b.paid > 0 %} · KES {{ b.paid|money_amount }} of {{ b.amount|money_amount }} already paid{% endif %}

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block extra_css %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='interface.css') }}">
+  {% block late_css %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
 {% include 'partials/demo_banner.html' %}
