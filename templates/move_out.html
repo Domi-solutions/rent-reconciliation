@@ -35,12 +35,20 @@
     </div>
   </div>
 
+  {% if notice %}
+  <div style="border:1px solid var(--orange-border);border-left:4px solid var(--orange);background:var(--orange-soft);border-radius:var(--r-card);padding:12px 14px;margin-bottom:16px;font-size:14px;">
+    <b>The tenant gave notice</b> on {{ notice.given_on }} to move out on <b>{{ notice.planned_date }}</b>
+    ({{ notice.notice_days }} days{% if notice.notice_days < 30 %}, less than one month{% endif %}).
+    {% if notice.refund_phone %}Deposit refund requested to M-Pesa <b>{{ notice.refund_phone }}</b>.{% endif %}
+    {% if notice.reason %}Reason: {{ notice.reason }}.{% endif %}
+  </div>
+  {% endif %}
   <form method="POST" id="move-out-form">
 
     <div style="margin-bottom: 16px;">
       <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Departure date</label>
       <input type="date" name="departure_date" id="departure_date" required
-             value="{{ today }}"
+             value="{{ notice.planned_date if notice else today }}"
              style="padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface);">
     </div>
 

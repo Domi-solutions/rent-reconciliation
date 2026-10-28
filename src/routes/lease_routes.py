@@ -5,7 +5,7 @@ from datetime import date
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
 
 from src.database.db import get_connection
-from src.leases import intake
+from src.leases import intake, move_out
 from src.utils import staff
 
 lease_bp = Blueprint('leases', __name__, url_prefix='/leases')
@@ -36,8 +36,31 @@ def board():
         if not prop:
             return redirect(url_for('property_list'))
         rows, counts = intake.unit_board(conn, prop['id'])
+        moving_out = move_out.open_count(conn, prop['id'])
     return render_template('leases/board.html', property=prop, rows=rows, counts=counts,
-                           phase=request.args.get('phase', ''))
+                           phase=request.args.get('phase', ''), moving_out=moving_out)
+
+
+@lease_bp.route('/moving-out', methods=['GET', 'POST'])
+def moving_out():
+    """Notices to move out that tenants gave in their portal (src/leases/move_out.py)."""
+    from src.utils.phone import normalize_to_e164
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        if request.method == 'POST':
+            notice_id = request.form.get('notice_id', '')
+            move_out.acknowledge(conn, notice_id, prop['id'], staff.actor())
+            conn.execute("INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                         ('move_out_notice_seen', 'move_out_notice', notice_id, 'Marked as seen', staff.actor()))
+            flash('Marked as seen — the tenant sees this on their Moving out page.', 'success')
+            return redirect(url_for('leases.moving_out'))
+        rows = move_out.for_property(conn, prop['id'])
+        for r in rows:
+            r['refund_other'] = bool(r['refund_phone'] and r['refund_phone'] != normalize_to_e164(r['tenant_phone'] or ''))
+            r['estimate'] = move_out.estimate(r['deposit_paid'], r['balance'])
+    return render_template('leases/moving_out.html', property=prop, rows=rows)
 
 
 @lease_bp.route('/new', methods=['GET', 'POST'])

@@ -2,6 +2,7 @@
 
 import os
 import re
+from datetime import datetime, timedelta
 
 from flask import Blueprint, abort, render_template, request, redirect, url_for, session, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,6 +14,7 @@ from src.utils.tenant_documents import (account_coverage, build_invoice, build_r
 from src.utils.water_breakdown import water_breakdowns
 from src.messaging import staff_alerts, threads
 from src.reconciliation import claim_owner
+from src.leases import move_out
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
 from src.utils.tenant_auth import (
@@ -31,7 +33,8 @@ def _get_tenant_by_token(conn, token):
         SELECT t.id AS tenant_id, t.name AS tenant_name, t.phone AS tenant_phone, t.unit_id,
                u.id AS unit_id, u.unit_number, u.property_id,
                p.id AS property_id, p.name AS property_name, p.organization_id,
-               p.pay_paybill, p.pay_account, p.pay_account_name, t.short_code
+               p.pay_paybill, p.pay_account, p.pay_account_name, p.repair_alerts_to, t.short_code,
+               t.status AS tenant_status, t.deposit_paid, t.welcomed_at
         FROM tenants t
         JOIN units u ON t.unit_id = u.id
         JOIN properties p ON u.property_id = p.id
@@ -40,13 +43,14 @@ def _get_tenant_by_token(conn, token):
     if not row:
         return None
     tenant = {'id': row['tenant_id'], 'name': row['tenant_name'], 'phone': row['tenant_phone'], 'unit_id': row['unit_id'],
-              'short_code': row['short_code']}
+              'short_code': row['short_code'], 'status': row['tenant_status'], 'deposit_paid': row['deposit_paid'],
+              'welcomed_at': row['welcomed_at']}
     unit = {'id': row['unit_id'], 'unit_number': row['unit_number'], 'property_id': row['property_id']}
     # organization_id: report_payment's bank check is org-scoped (it used to be missing here,
     # so the check silently fell back to property-scoped statements only).
     prop = {'id': row['property_id'], 'name': row['property_name'], 'organization_id': row['organization_id'],
             'pay_paybill': row['pay_paybill'], 'pay_account': row['pay_account'],
-            'pay_account_name': row['pay_account_name']}
+            'pay_account_name': row['pay_account_name'], 'repair_alerts_to': row['repair_alerts_to']}
     return (tenant, unit, prop)
 
 
@@ -312,6 +316,9 @@ def portal(token):
         if not ctx:
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
+        if not tenant['welcomed_at'] and tenant['status'] == 'active':
+            return redirect(url_for('tenant.welcome', token=token))     # first visit: how it all works
+        notice = move_out.current(conn, tenant['id'])
         balance_row = conn.execute("""
             SELECT total_charged, total_paid, balance
             FROM tenant_balances WHERE tenant_id = ?
@@ -362,7 +369,72 @@ def portal(token):
         caretaker=caretaker,
         coverage=coverage,
         owed=owed,
+        notice=notice,
     )
+
+
+@tenant_bp.route('/<token>/welcome')
+def welcome(token):
+    """First visit: what every part of the account does, in plain words (English / Kiswahili).
+    Seen once automatically; open again any time from "How to use Domi"."""
+    from src.utils.guides import current_lang, welcome as welcome_text
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        if not tenant['welcomed_at']:
+            conn.execute("UPDATE tenants SET welcomed_at = CURRENT_TIMESTAMP WHERE id = ?", (tenant['id'],))
+    lang = current_lang()
+    return render_template('tenant/welcome.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='portal', w=welcome_text(lang), lang=lang)
+
+
+@tenant_bp.route('/<token>/move-out', methods=['GET', 'POST'])
+def move_out_page(token):
+    """Give notice to move out; see the deposit and roughly what comes back."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        balance_row = conn.execute("SELECT balance FROM tenant_balances WHERE tenant_id = ?", (tenant['id'],)).fetchone()
+        balance = float(balance_row['balance']) if balance_row else 0.0
+        error, alerts, notice_given = None, [], False
+        if request.method == 'POST' and tenant['status'] == 'active':
+            try:
+                _, conv_id = move_out.give_notice(conn, tenant, unit, prop, request.form.get('planned_date'),
+                                                  request.form.get('reason_detail') or request.form.get('reason'),
+                                                  request.form.get('refund_phone'))
+                alerts = staff_alerts.due(conn, conv_id, os.environ.get('APP_BASE_URL') or request.host_url)
+                notice_given = True
+            except ValueError as e:
+                error = str(e)
+        notice = move_out.current(conn, tenant['id'])
+        departure = conn.execute("""SELECT * FROM tenant_departures WHERE tenant_id = ?
+                                     ORDER BY created_at DESC LIMIT 1""", (tenant['id'],)).fetchone()
+    if notice_given:
+        staff_alerts.send(alerts)          # after commit
+        return redirect(url_for('tenant.move_out_page', token=token, given=1))
+    return render_template('tenant/move_out.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='portal', notice=notice, departure=departure, error=error,
+                           est=move_out.estimate(tenant['deposit_paid'], balance), balance=balance,
+                           reasons=move_out.REASONS, full_notice=move_out.earliest_with_full_notice(),
+                           tomorrow=(datetime.now().date() + timedelta(days=1)).isoformat(),
+                           form=request.form, given=request.args.get('given'))
+
+
+@tenant_bp.route('/<token>/move-out/withdraw', methods=['POST'])
+def move_out_withdraw(token):
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        notice = move_out.current(conn, tenant['id'])
+        if notice:
+            move_out.withdraw(conn, notice, tenant, unit)
+    return redirect(url_for('tenant.move_out_page', token=token))
 
 
 @tenant_bp.route('/<token>/charges')

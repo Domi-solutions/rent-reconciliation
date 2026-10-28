@@ -95,6 +95,7 @@ src/utils/tenant_auth.py       # tenant sign-in: tenancies_for_phone, issue_otp/
 src/utils/tenant_documents.py  # build_invoice(), build_receipt(), unpaid_bills() (what "Still owed" is made of) — cut from get_tenant_statement so statement/invoice/receipt never disagree
 src/utils/staff.py             # admin accounts: actor() (who acted), find_login/sign_in/sign_out, current_account
 src/routes/team_routes.py      # /team — lead admin adds/switches off administrators
+src/leases/move_out.py         # tenant notice to move out: give_notice() (opens an 'other' conversation → management texted), withdraw, acknowledge, complete_for_tenant (called by app.move_out_tenant), estimate(deposit, owed); admin /leases/moving-out
 src/leases/intake.py           # lease intake: record_lease() (re-lease freezes old record, clean account), set_brought_forward(), unit_board(), documents
 src/money/expenses.py          # money out: record (admin) / submit (caretaker), decide, mark_paid, void, cash_book(); categories incl. owner_payout
 src/routes/money_routes.py     # /money/expenses, /money/cashbook (admin); caretaker /caretaker/<pid>/expenses; owner Cash book = /view/<pid>/wallet
@@ -312,7 +313,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_target`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_move_out_notices`.
 
 ---
 
@@ -372,6 +373,8 @@ Migration call order: append-only, never reorder. See `app.py` startup for full 
 - Overview shows the same bank-matched balance as the statement; reported-but-unmatched claims are shown beside it, never netted into it.
 - Every tenant/caretaker/admin page shows a guide box from `src/utils/guides.py` (keyed by endpoint; `?lang=sw` switches tenant/caretaker text to Kiswahili for the session). New page → add its guide there.
 - Pay page: payment instructions first; the STK "Pay" button only when `daraja.configured()`.
+- **Welcome** (`/tenant/<token>/welcome`): shown once on the first visit to the overview (`tenants.welcomed_at`), then from "How to use Domi". Seven plain steps with icons, English/Kiswahili — words in `guides.WELCOME`.
+- **Moving out** (`/tenant/<token>/move-out`, `migrate_add_move_out_notices`): deposit on record vs still owed, give notice (date, optional reason, refund M-Pesa number; one month expected, shorter is recorded not refused), withdraw. Each notice opens an `other` conversation (management texted) and a `move_out_notices` row; admin `/leases/moving-out` marks it seen and links to the existing move-out (`/units/<id>/move-out`), which shows the notice, pre-fills the date and closes it. A departed tenant's page shows the departure record. Tests: `tests/test_move_out_and_welcome.py`.
 
 ### Monthly Reports (/reports/*)
 - Always call `enrich_report_data()` before rendering — back-fills fields on old saved reports

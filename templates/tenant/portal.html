@@ -4,6 +4,12 @@
 {% block title %}Overview — {{ property.name }}{% endblock %}
 {% set active_tab = 'portal' %}
 {% block content %}
+{% if notice %}
+<a class="mo-banner" href="{{ url_for('tenant.move_out_page', token=token) }}">
+  <span><b>You gave notice:</b> moving out on {{ notice.planned_date }}.</span>
+  <span class="mo-banner-go">{% if notice.status == 'acknowledged' %}Management has seen it{% else %}Waiting for management{% endif %} ›</span>
+</a>
+{% endif %}
 {% if recent_messages %}
 <section class="tenant-notices" aria-labelledby="notices-heading">
   <div class="tenant-section-heading">
@@ -44,7 +50,11 @@
   </div>
 </div>
 
-<p><a href="{{ url_for('tenant.messages', token=token) }}" class="print-btn d-inline-block">Your conversations &amp; messages →</a></p>
+<nav class="overview-links" aria-label="More">
+  <a href="{{ url_for('tenant.messages', token=token) }}">Messages &amp; repairs <span aria-hidden="true">›</span></a>
+  <a href="{{ url_for('tenant.move_out_page', token=token) }}">Moving out &amp; your deposit <span aria-hidden="true">›</span></a>
+  <a href="{{ url_for('tenant.welcome', token=token) }}">How to use Domi <span aria-hidden="true">›</span></a>
+</nav>
 
 {% if caretaker and caretaker.phone %}
 <div class="surface-card mt-4">

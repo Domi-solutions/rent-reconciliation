@@ -1,0 +1,32 @@
+{% extends "tenant/base_tenant.html" %}
+{% from 'partials/icons.html' import icon %}
+{% block title %}{{ w.title.format(property=property.name|title) }}{% endblock %}
+{% block content %}
+{# Words live in src/utils/guides.py (WELCOME). One idea per step, an icon, a button to try it. #}
+<section class="welcome">
+  <div class="welcome-lang">
+    <a href="?lang=en" class="{{ 'on' if lang == 'en' }}">English</a> · <a href="?lang=sw" class="{{ 'on' if lang == 'sw' }}">Kiswahili</a>
+  </div>
+  <h1>{{ w.title.format(property=property.name|title) }}</h1>
+  <p class="welcome-intro">{{ w.intro.format(unit=unit.unit_number, name=tenant.name|title) }}</p>
+
+  <ol class="welcome-steps">
+    {% for ic, title, text, endpoint, button in w.steps %}
+    <li class="welcome-step">
+      <span class="welcome-num" aria-hidden="true">{{ loop.index }}</span>
+      <span class="welcome-icon" aria-hidden="true">{{ icon(ic, 26) }}</span>
+      <div class="welcome-body">
+        <h2>{{ title }}</h2>
+        <p>{{ text }}</p>
+        {% if endpoint and button %}
+        <a class="welcome-try" href="{{ url_for('tenant.' ~ ('move_out_page' if endpoint == 'move_out' else endpoint), token=token) }}">{{ button }} →</a>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  <a class="btn btn-primary welcome-done" href="{{ url_for('tenant.portal', token=token) }}">{{ w.done }}</a>
+  <p class="welcome-again">{{ w.again }}</p>
+</section>
+{% endblock %}

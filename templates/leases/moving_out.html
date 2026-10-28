@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Moving out — {{ property.name }}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('leases.board') }}" style="font-size:13px">← Leases</a>
+  <div class="page-title mt-2">Moving out</div>
+  <div class="page-meta">Notices tenants gave in their portal. Soonest move-out first.</div>
+</div>
+<div class="surface-card">
+  {% for r in rows %}
+  <div class="data-row mo-admin-row{% if r.status in ('completed', 'withdrawn') %} mo-closed{% endif %}">
+    <div class="d-flex justify-content-between flex-wrap gap-2">
+      <div>
+        <div class="data-row-unit">{{ r.unit_number }} · {{ r.tenant_name|title }}</div>
+        <div class="data-row-meta">Moving out <b>{{ r.planned_date }}</b> · given {{ r.given_on }} ·
+          {% if r.notice_days < 30 %}<span style="color:var(--orange);font-weight:600">{{ r.notice_days }} days' notice (short)</span>{% else %}{{ r.notice_days }} days' notice{% endif %}
+          {% if r.reason %} · {{ r.reason }}{% endif %}</div>
+        <div class="data-row-meta">
+          Deposit KES {{ r.estimate.deposit|money_amount }} · owed today KES {{ r.estimate.owed|money_amount }} ·
+          {% if r.estimate.left_owing %}<span style="color:var(--red)">KES {{ r.estimate.left_owing|money_amount }} more than the deposit</span>
+          {% else %}about KES {{ r.estimate.refund|money_amount }} to refund{% endif %}
+          {% if r.refund_phone %} · refund to <span {% if r.refund_other %}style="color:var(--orange);font-weight:600" title="Not the number on the tenancy — confirm with the tenant"{% endif %}>{{ r.refund_phone }}{% if r.refund_other %} (not the tenancy number){% endif %}</span>{% endif %}
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-start">
+        {% if r.status == 'given' %}<span class="badge bg-warning text-dark">New</span>
+        {% elif r.status == 'acknowledged' %}<span class="badge bg-light text-dark">Seen</span>
+        {% elif r.status == 'completed' %}<span class="badge bg-success">Moved out</span>
+        {% else %}<span class="badge bg-secondary">Withdrawn</span>{% endif %}
+      </div>
+    </div>
+    {% if r.status in ('given', 'acknowledged') %}
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      {% if r.conversation_id %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('messaging.inbox_thread', conv_id=r.conversation_id) }}">Open the conversation</a>{% endif %}
+      {% if r.status == 'given' %}
+      <form method="POST"><input type="hidden" name="notice_id" value="{{ r.id }}"><button class="btn btn-sm btn-outline-secondary">Mark as seen</button></form>
+      {% endif %}
+      <a class="btn btn-sm btn-primary" href="{{ url_for('move_out_tenant', unit_id=r.unit_id) }}">Record the move-out</a>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="data-row" style="color:var(--ink-3)">No notices yet. When a tenant gives notice in their portal it appears here, and management gets a text.</div>
+  {% endfor %}
+</div>
+<style>.mo-closed { opacity: .6; }</style>
+{% endblock %}

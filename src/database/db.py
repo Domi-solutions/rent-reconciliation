@@ -2133,3 +2133,38 @@ def migrate_add_payment_target():
             if 'target_charge_id' not in {r['name'] for r in conn.execute(f"PRAGMA table_info({table})")}:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN target_charge_id TEXT")
         print("Migration complete: payment target ready.")
+
+
+def migrate_add_move_out_notices():
+    """A tenant gives notice to move out from their portal (src/leases/move_out.py). Idempotent.
+
+    move_out_notices: one row per notice. status given → acknowledged (management has
+    seen it) → completed (the move-out was recorded); or withdrawn by the tenant.
+    refund_phone is where the tenant asks for the deposit refund; it is the tenant's
+    own request and management pays it after the inspection, through the normal
+    move-out (tenant_departures). A conversation is opened with each notice.
+    tenants.welcomed_at: the tenant has seen the welcome page.
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS move_out_notices (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenants(id),
+                property_id TEXT NOT NULL REFERENCES properties(id),
+                unit_id TEXT REFERENCES units(id),
+                planned_date DATE NOT NULL,
+                given_on DATE NOT NULL,
+                notice_days INTEGER,
+                reason TEXT,
+                refund_phone TEXT,
+                status TEXT NOT NULL DEFAULT 'given',      -- given | acknowledged | completed | withdrawn
+                conversation_id TEXT,
+                acknowledged_at TIMESTAMP, acknowledged_by TEXT,
+                withdrawn_at TIMESTAMP, completed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_move_out_property ON move_out_notices(property_id, status)")
+        if 'welcomed_at' not in {r['name'] for r in conn.execute("PRAGMA table_info(tenants)")}:
+            conn.execute("ALTER TABLE tenants ADD COLUMN welcomed_at TIMESTAMP")
+        print("Migration complete: move-out notices ready.")

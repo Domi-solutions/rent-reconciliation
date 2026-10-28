@@ -185,7 +185,8 @@ body a.card-header-link:hover { background: var(--mint-2); color: var(--ink); }
 
 /* Statement: a payment row reads green end to end — name, amount and tint — so money in
    stands apart from bills at a glance. The balance column keeps its own red/green meaning. */
-body .statement-entry.is-payment > summary.statement-row { background: var(--green-soft); box-shadow: inset 4px 0 0 var(--green); }
+body .statement-entry.is-payment > summary.statement-row { background: var(--green-soft); box-shadow: inset 4px 0 0 var(--green); padding-left: 16px; }
+@media (max-width: 600px) { body .statement-entry.is-payment > summary.statement-row { padding-left: 14px; padding-right: 6px; } }
 body .statement-entry.is-payment > summary.statement-row:hover,
 .statement-entry.is-payment[open] > summary.statement-row { background: rgba(46,139,98,.16); }
 .statement-entry.is-payment .statement-name,
@@ -216,3 +217,49 @@ body .bills-table tr.bill-actions-row > td { padding-top: 0 !important; white-sp
   body .bills-table tr.bill-actions-row > td { display: block; }
   .bills-table tfoot tr { background: var(--surface-2); padding: 10px 8px; border-radius: var(--r-input); }
 }
+
+/* Overview: quiet links to the other pages. */
+.overview-links { display: flex; flex-direction: column; border: 1px solid var(--border-strong); border-radius: var(--r-card); background: var(--surface); overflow: hidden; margin-bottom: 18px; }
+.overview-links a { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-top: 1px solid var(--border); color: var(--ink); font-weight: 600; text-decoration: none; }
+.overview-links a:first-child { border-top: 0; }
+.overview-links a span { color: var(--accent); font-size: 22px; line-height: 1; }
+.overview-links a:hover { background: var(--mint-2); color: var(--ink); }
+
+/* Welcome page: big, numbered, one idea per step. */
+.welcome { max-width: 620px; }
+.welcome-lang { font-size: 14px; margin-bottom: 10px; }
+.welcome-lang a.on { font-weight: 700; color: var(--forest); text-decoration: none; }
+.welcome h1 { font-size: 26px; font-weight: 650; margin: 0 0 6px; }
+.welcome-intro { font-size: 16px; color: var(--ink-2); margin-bottom: 18px; }
+.welcome-steps { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.welcome-step { display: grid; grid-template-columns: 28px 48px 1fr; gap: 12px; align-items: start; padding: 16px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-card); background: var(--surface); }
+.welcome-num { font-size: 15px; font-weight: 700; color: var(--ink-3); padding-top: 12px; text-align: center; }
+.welcome-icon { width: 48px; height: 48px; border-radius: 50%; background: var(--mint); color: var(--forest);
+  display: flex; align-items: center; justify-content: center; }
+.welcome-body h2 { font-size: 17px; font-weight: 650; margin: 2px 0 4px; }
+.welcome-body p { font-size: 15px; line-height: 1.55; margin: 0; color: var(--ink); }
+.welcome-try { display: inline-flex; align-items: center; min-height: 40px; margin-top: 10px; padding: 6px 14px; font-weight: 600;
+  border: 1px solid var(--border-strong); border-radius: var(--r-btn); color: var(--forest); text-decoration: none; }
+.welcome-try:hover { border-color: var(--accent); background: var(--mint-2); }
+body .welcome-done { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; font-size: 17px; }
+.welcome-again { font-size: 13px; color: var(--ink-2); text-align: center; margin-top: 10px; }
+@media (max-width: 480px) { .welcome-step { grid-template-columns: 40px 1fr; } .welcome-num { display: none; } .welcome-icon { width: 40px; height: 40px; } }
+
+/* Moving out. */
+.mo-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.mo-table td { padding: 9px 2px; border-top: 1px solid var(--border-strong); }
+.mo-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mo-table tr.total td { font-weight: 700; border-top: 2px solid var(--ink); }
+.mo-label { font-size: 12px; font-weight: 600; color: var(--orange); }
+.mo-short { color: var(--orange); font-weight: 600; }
+.mo-seen { font-weight: 600; color: var(--forest); }
+.mo-status h3 { font-size: 15px; font-weight: 650; margin: 16px 0 6px; }
+.mo-next { padding-left: 20px; font-size: 15px; line-height: 1.6; }
+.mo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.mo-hint { font-size: 13px; color: var(--orange); font-weight: 600; margin: 6px 0 0; }
+.mo-banner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 13px 16px; margin-bottom: 16px;
+  border: 1px solid var(--orange-border); border-left: 4px solid var(--orange); border-radius: var(--r-card);
+  background: var(--orange-soft); color: var(--ink); text-decoration: none; }
+.mo-banner:hover { color: var(--ink); border-color: var(--orange); }
+.mo-banner-go { font-size: 13px; font-weight: 600; color: var(--orange); }

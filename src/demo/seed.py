@@ -311,6 +311,6 @@ def seed(conn, today=None):
     for rt in (LOGINS['tenant'], LOGINS['tenant_owing']):
         person = person_for_phone(conn, rt['phone'], tenancies_for_phone(conn, rt['phone']))
         set_pin(conn, person, rt['pin'])
-        conn.execute("UPDATE tenants SET portal_pin_hash = ? WHERE id = ?",
-                     (generate_password_hash(rt['pin']), tenants[rt['unit']]['id']))
+        conn.execute("UPDATE tenants SET portal_pin_hash = ?, welcomed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                     (generate_password_hash(rt['pin']), tenants[rt['unit']]['id']))   # returning: seen the welcome
     return pid

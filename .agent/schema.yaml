@@ -380,6 +380,10 @@ tables:
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   # payments / payment_transactions / payment_claims .target_charge_id (migrate_add_payment_target): the bill the tenant chose to pay; allocate_payment settles it first.
+  move_out_notices:
+    status: live
+    migration: migrate_add_move_out_notices
+    notes: "A tenant's notice to move out, from their portal. status given → acknowledged → completed (move-out recorded) | withdrawn. refund_phone = where the tenant asks for the deposit refund (shown in orange to admin if not the tenancy phone). conversation_id = the 'other' conversation opened with it. Same migration adds tenants.welcomed_at."
   conversations:
     status: live
     migration: migrate_add_conversations

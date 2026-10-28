@@ -119,6 +119,18 @@ _T = {
             'Picha huhifadhiwa bila mahali simu yako ilipokuwa.',
         ]),
     },
+    'tenant.move_out': {
+        'en': ('Moving out', 'Tell management the date you plan to leave, and where your deposit refund should go.', [
+            'Your lease asks for one month\'s notice.',
+            'Management checks the house with you before you leave. Your deposit pays anything still owed; the rest comes back to you by M-Pesa.',
+            'Rent is due until the day you move out. Changed your mind? Withdraw the notice here.',
+        ]),
+        'sw': ('Kuhama', 'Mwambie usimamizi tarehe unayopanga kuhama, na mahali pa kurudishiwa amana (deposit).', [
+            'Mkataba wako unataka notisi ya mwezi mmoja.',
+            'Usimamizi utakagua nyumba pamoja nawe kabla hujaondoka. Amana inalipa deni lolote lililobaki; kinachobaki kinarudishwa kwako kwa M-Pesa.',
+            'Kodi inadaiwa hadi siku unayohama. Umebadilisha nia? Ondoa notisi hapa.',
+        ]),
+    },
     'tenant.invoice': {
         'en': ('Invoice', 'One month: what was still owed before it, that month\'s bills, payments that month, and what is left.', []),
         'sw': ('Ankara', 'Mwezi mmoja: deni la kabla yake, bili za mwezi, malipo ya mwezi, na kilichobaki.', []),
@@ -287,6 +299,13 @@ _T = {
             'You are reading only — replies are written by management.',
         ]),
     },
+    'leases.moving_out': {
+        'en': ('Moving out', 'Tenants who gave notice in their portal, soonest move-out first.', [
+            'Mark a notice as seen so the tenant knows it reached you; reply in its conversation.',
+            'Arrange the inspection, then record the move-out — it sets the deposit against anything owed and shows the refund due.',
+            'A refund number that is not the one on the tenancy is shown in orange: confirm it with the tenant first.',
+        ]),
+    },
     'leases.board': {
         'en': ('Leases', 'Every unit and where its lease stands. Work down this list to onboard a property.', [
             '"Old record only" means someone is on the old records but no lease has been entered for them yet.',
@@ -333,3 +352,43 @@ def for_endpoint(endpoint, lang='en'):
     title, intro, points = entry.get(lang) or entry['en']
     return {'key': endpoint, 'title': title, 'intro': intro, 'points': points,
             'bilingual': 'sw' in entry, 'lang': lang if lang in entry else 'en'}
+
+
+# ── Welcome page (shown once, then from "How to use Domi") ─────────────────────
+# Short sentences on purpose: some tenants read slowly, some read best in Kiswahili.
+WELCOME = {
+    'en': {
+        'title': 'Welcome to {property}',
+        'intro': 'Unit {unit} · {name}. This is your rent account. Here is everything it does.',
+        'steps': [
+            ('wallet', 'See what you owe', 'Red means money you still owe. Green means you paid extra. Tap the red box to see which bills.', 'portal', 'Open my account'),
+            ('phone', 'Pay with M-Pesa', 'Pay only to the paybill and account on the Pay page. Nobody — not even the caretaker — can give you another number.', 'pay', 'How to pay'),
+            ('receipt', 'Get your receipts', 'Every payment gets a receipt, by SMS and here. The Statement shows every bill and every payment.', 'statement', 'My statement'),
+            ('message', 'Ask, or report a repair', 'Write to management in Messages. For a repair, add a photo. You get an SMS when they reply.', 'messages', 'Messages'),
+            ('mail', 'Read notices', 'Notices from management are at the top of Messages.', 'messages', None),
+            ('home', 'Moving out', 'Give one month\'s notice on the Moving out page. It also shows your deposit.', 'move_out', 'Moving out'),
+            ('user', 'Keep your PIN secret', 'Like your M-Pesa PIN. On a shared phone, tap Sign out when you finish.', None, None),
+        ],
+        'done': 'Go to my account',
+        'again': 'You can open this page again from "How to use Domi" on your account page.',
+    },
+    'sw': {
+        'title': 'Karibu {property}',
+        'intro': 'Nyumba {unit} · {name}. Hii ni akaunti yako ya kodi. Hivi ndivyo inavyofanya kazi.',
+        'steps': [
+            ('wallet', 'Ona unachodaiwa', 'Nyekundu ni pesa bado unadaiwa. Kijani ni ulilipa zaidi. Gusa kisanduku chekundu kuona bili zipi.', 'portal', 'Fungua akaunti yangu'),
+            ('phone', 'Lipa kwa M-Pesa', 'Lipa tu kwenye paybill na akaunti zilizo kwenye ukurasa wa Pay. Hakuna mtu — hata caretaker — anayeweza kukupa nambari nyingine.', 'pay', 'Jinsi ya kulipa'),
+            ('receipt', 'Pata risiti zako', 'Kila malipo yanapata risiti, kwa SMS na hapa. Statement inaonyesha kila bili na kila malipo.', 'statement', 'Statement yangu'),
+            ('message', 'Uliza, au ripoti matengenezo', 'Andikia usimamizi kwenye Messages. Kwa matengenezo, ongeza picha. Utapata SMS wakijibu.', 'messages', 'Messages'),
+            ('mail', 'Soma matangazo', 'Matangazo ya usimamizi yako juu kwenye Messages.', 'messages', None),
+            ('home', 'Kuhama', 'Toa notisi ya mwezi mmoja kwenye ukurasa wa Moving out. Pia unaonyesha amana (deposit) yako.', 'move_out', 'Kuhama'),
+            ('user', 'Usimwambie mtu PIN yako', 'Kama PIN ya M-Pesa. Kwenye simu ya pamoja, gusa Sign out ukimaliza.', None, None),
+        ],
+        'done': 'Nenda kwenye akaunti yangu',
+        'again': 'Unaweza kufungua ukurasa huu tena kupitia "How to use Domi" kwenye ukurasa wa akaunti yako.',
+    },
+}
+
+
+def welcome(lang):
+    return WELCOME.get(lang) or WELCOME['en']

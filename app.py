@@ -139,6 +139,7 @@ from src.database.db import (
     migrate_add_staff_alerts,
     migrate_add_alert_routing,
     migrate_add_payment_target,
+    migrate_add_move_out_notices,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -205,6 +206,7 @@ migrate_add_expenses()
 migrate_add_staff_alerts()
 migrate_add_alert_routing()
 migrate_add_payment_target()
+migrate_add_move_out_notices()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -1087,6 +1089,8 @@ def dashboard():
 
         from src.messaging.threads import list_for_staff
         awaiting_threads = list_for_staff(conn, property_id, status='awaiting_reply')[:3]
+        from src.leases.move_out import open_count as _moving_out_count
+        moving_out_count = _moving_out_count(conn, property_id)
 
         _dash_org_id = (property_row['organization_id'] if property_row['organization_id'] else None) or session.get('org_id')
         _stmt_filter = "bs.org_id = ?" if _dash_org_id else "bs.property_id = ?"
@@ -1175,6 +1179,7 @@ def dashboard():
             behind_follow_up=sum(1 for r in behind if r['follow_up']),
             pending=pending,
             awaiting_threads=awaiting_threads,
+            moving_out_count=moving_out_count,
             unassigned=unassigned,
             unassigned_stats=unassigned_stats,
             recent=recent,
@@ -1846,7 +1851,7 @@ def move_out_tenant(unit_id):
 
         unit = conn.execute(
             "SELECT u.*, t.id AS tenant_id, t.name AS tenant_name, t.phone AS tenant_phone, "
-            "       t.move_in_date, t.access_token AS tenant_token "
+            "       t.move_in_date, t.access_token AS tenant_token, t.deposit_paid "
             "FROM units u "
             "LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active' "
             "WHERE u.id = ? AND u.property_id = ?",
@@ -1906,6 +1911,9 @@ def move_out_tenant(unit_id):
                 debt_status = 'written_off'
             else:
                 debt_status = 'active'
+
+            from src.leases import move_out as _move_out
+            _move_out.complete_for_tenant(conn, unit['tenant_id'])     # the tenant's notice, if any, is done
 
             dep_id = generate_id('DEP')
             conn.execute("""
@@ -1988,12 +1996,15 @@ def move_out_tenant(unit_id):
             )
             return redirect(url_for('manage_units'))
 
+        from src.leases import move_out as _move_out
+        notice = _move_out.current(conn, unit['tenant_id'])
         return render_template('move_out.html',
                                unit=unit,
                                current_balance=current_balance,
                                total_charged=total_charged,
                                total_paid=total_paid,
                                property=property_row,
+                               notice=notice,
                                today=datetime.now().date().isoformat())
 
 

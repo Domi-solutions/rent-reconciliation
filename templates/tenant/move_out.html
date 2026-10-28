@@ -1,0 +1,98 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Moving out — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+{% if given %}<div class="alert alert-success py-2 mb-3">Your notice was sent to management. You get an SMS when they reply.</div>{% endif %}
+
+{% if departure %}
+{# Already moved out: what the move-out recorded. #}
+<section class="doc">
+  <h2>You moved out on {{ departure.departure_date }}</h2>
+  <table class="mo-table">
+    <tr><td>Deposit held</td><td class="num">KES {{ departure.deposit_held|money_amount }}</td></tr>
+    <tr><td>Used for bills still owed</td><td class="num">KES {{ departure.deposit_applied|money_amount }}</td></tr>
+    <tr class="total"><td>Deposit back to you</td><td class="num credit">KES {{ departure.deposit_refunded|money_amount }}</td></tr>
+    {% if departure.remaining_debt %}<tr><td>Still owed after the deposit</td><td class="num owed">KES {{ departure.remaining_debt|money_amount }}</td></tr>{% endif %}
+  </table>
+  <p class="muted mt-2">Questions about this? <a href="{{ url_for('tenant.message_new', token=token, topic='money') }}">Ask management</a>.</p>
+</section>
+
+{% elif notice %}
+{# Notice given: where it stands and what happens next. #}
+<section class="doc mo-status">
+  <div class="mo-label">Notice given</div>
+  <h2>Moving out on {{ notice.planned_date }}</h2>
+  <p class="muted">Given on {{ notice.given_on }} · {{ notice.notice_days }} days' notice
+    {% if notice.notice_days < 30 %}<span class="mo-short">· less than one month</span>{% endif %}</p>
+  <p class="mo-seen">{% if notice.status == 'acknowledged' %}✓ Management has seen your notice.{% else %}Waiting for management to see it.{% endif %}</p>
+  {% if notice.refund_phone %}<p>Deposit refund to M-Pesa <b>{{ notice.refund_phone }}</b>.</p>{% endif %}
+  <h3>What happens next</h3>
+  <ol class="mo-next">
+    <li>Management agrees a day to check the house with you.</li>
+    <li>Pay the rent until the day you move out.</li>
+    <li>Your deposit pays anything still owed. The rest comes back to you by M-Pesa.</li>
+  </ol>
+  <div class="mo-actions">
+    {% if notice.conversation_id %}<a class="btn btn-outline-secondary" href="{{ url_for('tenant.conversation', token=token, conv_id=notice.conversation_id) }}">Talk to management about it</a>{% endif %}
+    <form method="POST" action="{{ url_for('tenant.move_out_withdraw', token=token) }}"
+          onsubmit="return confirm('Withdraw your notice? You will be staying.');">
+      <button class="btn btn-link">Withdraw notice — I am staying</button>
+    </form>
+  </div>
+</section>
+
+{% else %}
+{# Give notice. #}
+<section class="doc">
+  <h2>Your deposit</h2>
+  {% if est.deposit %}
+  <table class="mo-table">
+    <tr><td>Deposit on record</td><td class="num">KES {{ est.deposit|money_amount }}</td></tr>
+    <tr><td>Still owed today</td><td class="num {% if est.owed %}owed{% endif %}">KES {{ est.owed|money_amount }}</td></tr>
+    {% if est.left_owing %}
+    <tr class="total"><td>Still owed after the deposit</td><td class="num owed">KES {{ est.left_owing|money_amount }}</td></tr>
+  </table>
+  <p class="muted mt-2">Your deposit does not cover what you owe yet. Pay the rest before you leave, or ask management.</p>
+    {% else %}
+    <tr class="total"><td>About this much back to you</td><td class="num credit">KES {{ est.refund|money_amount }}</td></tr>
+  </table>
+  <p class="muted mt-2">If nothing else is owed when you leave and the house is in good order. Rent until your move-out day is added.</p>
+    {% endif %}
+  {% else %}
+  <p class="muted">No deposit is recorded for your tenancy. If you paid one, <a href="{{ url_for('tenant.message_new', token=token, topic='money') }}">tell management</a>.</p>
+  {% endif %}
+</section>
+
+<section class="doc">
+  <h2>Give notice to move out</h2>
+  <p class="muted">Your lease asks for one month's notice — the earliest date with full notice is <b>{{ full_notice.strftime('%-d %B %Y') }}</b>.</p>
+  {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+  <form method="POST" class="mo-form">
+    <label class="form-label fw-semibold" for="planned_date">The day you plan to move out</label>
+    <input id="planned_date" type="date" name="planned_date" class="form-control mb-1" required
+           min="{{ tomorrow }}" value="{{ form.planned_date or full_notice.isoformat() }}">
+    <p class="mo-hint" id="mo-hint" hidden>That is less than one month away. You can still give notice; management will tell you what it means for your rent and deposit.</p>
+
+    <label class="form-label fw-semibold mt-3" for="reason">Why are you moving? <span class="muted">(optional)</span></label>
+    <select id="reason" name="reason" class="form-select mb-2">
+      <option value="">— choose —</option>
+      {% for r in reasons %}<option value="{{ r }}" {% if form.reason == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+    </select>
+    <input type="text" name="reason_detail" class="form-control" maxlength="300" placeholder="Anything to add (optional)" value="{{ form.reason_detail or '' }}">
+
+    <label class="form-label fw-semibold mt-3" for="refund_phone">M-Pesa number for your deposit refund</label>
+    <input id="refund_phone" type="tel" name="refund_phone" class="form-control" inputmode="tel"
+           value="{{ form.refund_phone or tenant.phone or '' }}" placeholder="07XX XXX XXX">
+
+    <button type="submit" class="btn btn-primary w-100 mt-4" style="min-height:48px;font-size:16px">Send my notice to management</button>
+  </form>
+</section>
+<script>
+(function () {
+  var d = document.getElementById('planned_date'), hint = document.getElementById('mo-hint');
+  var full = '{{ full_notice.isoformat() }}';
+  function check() { hint.hidden = !d.value || d.value >= full; }
+  d.addEventListener('change', check); check();
+})();
+</script>
+{% endif %}
+{% endblock %}
