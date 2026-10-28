@@ -169,7 +169,7 @@
       {% if all_properties %}
       <div class="sidebar-section-label">Properties</div>
       {% for prop in all_properties %}
-      <a class="sidebar-item {% if current_property and current_property.id == prop.id %}active{% endif %}"
+      <a class="sidebar-item sidebar-prop {% if current_property and current_property.id == prop.id %}active{% endif %}"
          href="{{ url_for('select_property', property_id=prop.id) }}"
          style="font-size: 13px; padding-left: 14px;">
         {{ icon('building') }}
@@ -257,7 +257,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) closeSidebar();
 });
 (function () {   // the open page's name, top right on phones
-  var active = document.querySelector('.sidebar-item.active'), label = document.getElementById('topbarPage');
+  var active = document.querySelector('.sidebar-item.active:not(.sidebar-prop)'), label = document.getElementById('topbarPage');
   var name = active ? active.textContent.replace(/\s+/g, ' ').trim().replace(/\s\d+$/, '') : '';
   if (!name) name = (document.title.split(' — ')[0] || '').trim();
   if (label && name) label.textContent = name;
