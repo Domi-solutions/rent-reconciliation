@@ -1,3 +1,4 @@
+{% from 'partials/icons.html' import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,16 +40,16 @@
         {% include 'partials/nav_current.html' %}
       </div>
       <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px;">
-        <a class="viewer-nav-tab {% if active_tab == 'portal' %}active{% endif %}" href="{{ url_for('tenant.portal', token=token) }}">Overview</a>
-        <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}" style="font-weight:600">Pay</a>
-        <a class="viewer-nav-tab {% if active_tab == 'statement' %}active{% endif %}" href="{{ url_for('tenant.statement', token=token) }}">Statement</a>
-        <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">Messages</a>
-        <a class="viewer-nav-tab {% if active_tab == 'charges' %}active{% endif %}" href="{{ url_for('tenant.charges', token=token) }}">Bills</a>
-        <a class="viewer-nav-tab {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('tenant.payments', token=token) }}">Payments</a>
-        <a class="viewer-nav-tab {% if active_tab == 'lease' %}active{% endif %}" href="{{ url_for('tenant.my_lease', token=token) }}">My lease</a>
-        <a class="viewer-nav-tab {% if active_tab == 'move_out' %}active{% endif %}" href="{{ url_for('tenant.move_out_page', token=token) }}">Moving out</a>
-        <a class="viewer-nav-tab {% if active_tab == 'settings' %}active{% endif %}" href="{{ url_for('tenant.settings', token=token) }}">Settings</a>
-        <a class="viewer-nav-tab" style="margin-left:auto" href="{{ url_for('tenant.logout') }}">Sign out</a>
+        <a class="viewer-nav-tab {% if active_tab == 'portal' %}active{% endif %}" href="{{ url_for('tenant.portal', token=token) }}">{{ icon('home') }}Overview</a>
+        <a class="viewer-nav-tab {% if active_tab == 'pay' %}active{% endif %}" href="{{ url_for('tenant.pay', token=token) }}" style="font-weight:600">{{ icon('wallet') }}Pay</a>
+        <a class="viewer-nav-tab {% if active_tab == 'statement' %}active{% endif %}" href="{{ url_for('tenant.statement', token=token) }}">{{ icon('clock') }}Statement</a>
+        <a class="viewer-nav-tab {% if active_tab == 'messages' %}active{% endif %}" href="{{ url_for('tenant.messages', token=token) }}">{{ icon('message') }}Messages</a>
+        <a class="viewer-nav-tab {% if active_tab == 'charges' %}active{% endif %}" href="{{ url_for('tenant.charges', token=token) }}">{{ icon('receipt') }}Bills</a>
+        <a class="viewer-nav-tab {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('tenant.payments', token=token) }}">{{ icon('check') }}Payments</a>
+        <a class="viewer-nav-tab {% if active_tab == 'lease' %}active{% endif %}" href="{{ url_for('tenant.my_lease', token=token) }}">{{ icon('file') }}My lease</a>
+        <a class="viewer-nav-tab {% if active_tab == 'move_out' %}active{% endif %}" href="{{ url_for('tenant.move_out_page', token=token) }}">{{ icon('calendar') }}Moving out</a>
+        <a class="viewer-nav-tab {% if active_tab == 'settings' %}active{% endif %}" href="{{ url_for('tenant.settings', token=token) }}">{{ icon('settings') }}Settings</a>
+        <a class="viewer-nav-tab" style="margin-left:auto" href="{{ url_for('tenant.logout') }}">{{ icon('logout') }}Sign out</a>
       </nav>
     </div>
   </header>

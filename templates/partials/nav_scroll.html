@@ -28,8 +28,10 @@
     var home = header.querySelector('.home-link');
     var head = document.createElement('div');
     head.className = 'drawer-head';
-    head.innerHTML = '<b></b><button type="button" class="drawer-close" aria-label="Close menu">×</button>';
-    head.querySelector('b').textContent = home ? home.textContent.trim() : 'Menu';
+    head.innerHTML = '<span class="drawer-mark"></span><b></b><button type="button" class="drawer-close" aria-label="Close menu">×</button>';
+    var place = home ? home.textContent.trim() : 'Menu';
+    head.querySelector('b').textContent = place;
+    head.querySelector('.drawer-mark').textContent = place.charAt(0).toUpperCase();
     nav.insertBefore(head, nav.firstChild);
     var backdrop = document.createElement('div');
     backdrop.className = 'nav-backdrop';

@@ -260,3 +260,26 @@ body :is(.topbar-home, .topbar-page, .sidebar-close) { display: none; }
   body .sidebar-close { display: flex; align-items: center; justify-content: center; margin-left: auto; width: 38px; height: 38px;
     border: 1px solid rgba(140,199,161,.5); border-radius: var(--r-btn); background: none; color: #fff; font-size: 22px; }
 }
+
+/* Portal menu icons: only in the phone side menu; the wide-screen tab row stays text. */
+body :is(.viewer-header, .ct-header) nav a .domi-icon { display: none; }
+/* Phone side menu, styled like the admin sidebar: plain rows with an icon each, the open page
+   lightly filled with a sage edge, a letter mark beside the property name. */
+@media (max-width: 767px) {
+  body :is(.viewer-header, .ct-header) nav { gap: 2px; padding: 0 10px 20px !important; }
+  body :is(.viewer-header, .ct-header) nav a {
+    display: flex !important; align-items: center; gap: 12px; min-height: 44px; padding: 9px 12px !important;
+    border: 0 !important; border-radius: 6px; background: none; color: rgba(255,255,255,.82) !important;
+    font-size: 15px; font-weight: 500; box-shadow: none;
+  }
+  body :is(.viewer-header, .ct-header) nav a .domi-icon { display: inline-block; width: 20px; height: 20px; opacity: .9; }
+  body :is(.viewer-header, .ct-header) nav a:hover { background: rgba(255,255,255,.07); color: #fff !important; }
+  body :is(.viewer-header, .ct-header) nav a.active {
+    background: rgba(255,255,255,.1) !important; color: #fff !important; font-weight: 650;
+    box-shadow: inset 3px 0 0 var(--sage);
+  }
+  body .drawer-head { padding: 16px 4px 14px; margin: 0 0 8px; border-bottom: 1px solid rgba(255,255,255,.08); justify-content: flex-start; }
+  body .drawer-mark { width: 32px; height: 32px; border-radius: 6px; background: rgba(255,255,255,.12); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+  body .drawer-head b { flex: 1; font-size: 16px; }
+}

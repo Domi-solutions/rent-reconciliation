@@ -1,3 +1,4 @@
+{% from 'partials/icons.html' import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,50 +50,50 @@
     {% if property is defined and property %}
     <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
       <a class="ct-nav-tab {% if active_tab == 'overview' %}active{% endif %}"
-         href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">Overview</a>
+         href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">{{ icon('home') }}Overview</a>
       <a class="ct-nav-tab {% if active_tab == 'arrears' %}active{% endif %}"
-         href="{{ url_for('caretaker.arrears', property_id=property.id) }}">Follow up</a>
+         href="{{ url_for('caretaker.arrears', property_id=property.id) }}">{{ icon('phone') }}Follow up</a>
       {% if ct_money_tools %}
       <a class="ct-nav-tab {% if active_tab == 'unassigned' %}active{% endif %}"
-         href="{{ url_for('caretaker.unassigned', property_id=property.id) }}">Unassigned</a>
+         href="{{ url_for('caretaker.unassigned', property_id=property.id) }}">{{ icon('wallet') }}Unassigned</a>
       {% endif %}
       <a class="ct-nav-tab {% if active_tab == 'reports' %}active{% endif %}"
-         href="{{ url_for('caretaker.reports_list', property_id=property.id) }}">Reports</a>
+         href="{{ url_for('caretaker.reports_list', property_id=property.id) }}">{{ icon('chart') }}Reports</a>
       <a class="ct-nav-tab {% if active_tab == 'tenants' %}active{% endif %}"
-         href="{{ url_for('caretaker.tenants', property_id=property.id) }}">Tenants</a>
+         href="{{ url_for('caretaker.tenants', property_id=property.id) }}">{{ icon('users') }}Tenants</a>
       <a class="ct-nav-tab {% if active_tab == 'water' %}active{% endif %}"
-         href="{{ url_for('caretaker.water_list', property_id=property.id) }}">Water</a>
+         href="{{ url_for('caretaker.water_list', property_id=property.id) }}">{{ icon('water') }}Water</a>
       <a class="ct-nav-tab {% if active_tab in ('payment_activity', 'log_payment') %}active{% endif %}"
          href="{{ url_for('caretaker.payment_activity', property_id=property.id) }}"
-         style="position:relative;">
+         style="position:relative;">{{ icon('wallet') }}
         Payments
         {% if ct_tenant_pending_count > 0 %}
         <span style="background:#2563eb;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:var(--r-card);margin-left:4px;">{{ ct_tenant_pending_count }}</span>
         {% endif %}
       </a>
       <a class="ct-nav-tab {% if active_tab == 'management' %}active{% endif %}"
-         href="{{ url_for('caretaker.management_chat', property_id=property.id) }}">Management{% if ct_mgmt_unread %}
+         href="{{ url_for('caretaker.management_chat', property_id=property.id) }}">{{ icon('message') }}Management{% if ct_mgmt_unread %}
         <span style="background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:var(--r-card);margin-left:4px;">{{ ct_mgmt_unread }}</span>{% endif %}</a>
       <a class="ct-nav-tab {% if active_tab == 'expenses' %}active{% endif %}"
-         href="{{ url_for('caretaker.expenses', property_id=property.id) }}">Expenses</a>
+         href="{{ url_for('caretaker.expenses', property_id=property.id) }}">{{ icon('receipt') }}Expenses</a>
       <a class="ct-nav-tab {% if active_tab == 'issues' %}active{% endif %}"
-         href="{{ url_for('caretaker.issues', property_id=property.id) }}">Issues{% if ct_repairs_waiting > 0 %}
+         href="{{ url_for('caretaker.issues', property_id=property.id) }}">{{ icon('wrench') }}Issues{% if ct_repairs_waiting > 0 %}
         <span style="background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:var(--r-card);margin-left:4px;">{{ ct_repairs_waiting }}</span>{% endif %}</a>
       {% if ct_money_tools %}
       <a class="ct-nav-tab {% if active_tab == 'messages' %}active{% endif %}"
-         href="{{ url_for('caretaker.messages', property_id=property.id) }}">Messages</a>
+         href="{{ url_for('caretaker.messages', property_id=property.id) }}">{{ icon('mail') }}Messages</a>
       {% endif %}
       {% if ct_flagged_count > 0 or active_tab == 'flagged_claims' %}
       <a class="ct-nav-tab {% if active_tab == 'flagged_claims' %}active{% endif %}"
          href="{{ url_for('caretaker.flagged_claims', property_id=property.id) }}"
-         style="color: #ffb4ae; position: relative;">
+         style="color: #ffb4ae; position: relative;">{{ icon('warning') }}
         Flagged
         {% if ct_flagged_count > 0 %}
         <span style="background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: var(--r-card); margin-left: 4px;">{{ ct_flagged_count }}</span>
         {% endif %}
       </a>
       {% endif %}
-      <a class="ct-nav-tab nav-phone-only" href="{{ url_for('caretaker.logout') }}">Log out</a>
+      <a class="ct-nav-tab nav-phone-only" href="{{ url_for('caretaker.logout') }}">{{ icon('logout') }}Log out</a>
     </nav>
     {% endif %}
   </div>

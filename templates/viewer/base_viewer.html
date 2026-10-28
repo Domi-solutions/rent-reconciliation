@@ -1,3 +1,4 @@
+{% from 'partials/icons.html' import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,24 +38,24 @@
     {% if property is defined and property %}
     <nav id="portal-nav" style="display: flex; gap: 4px; padding-bottom: 8px; overflow-x: auto;">
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'overview' %}active{% endif %}"
-         href="{{ url_for('viewer.property_dashboard', property_id=property.id) }}">Overview</a>
+         href="{{ url_for('viewer.property_dashboard', property_id=property.id) }}">{{ icon('home') }}Overview</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'arrears' %}active{% endif %}"
-         href="{{ url_for('viewer.property_arrears', property_id=property.id) }}">Arrears</a>
+         href="{{ url_for('viewer.property_arrears', property_id=property.id) }}">{{ icon('clock') }}Arrears</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'payments' %}active{% endif %}"
-         href="{{ url_for('viewer.property_payments', property_id=property.id) }}">Payments</a>
+         href="{{ url_for('viewer.property_payments', property_id=property.id) }}">{{ icon('wallet') }}Payments</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'reports' %}active{% endif %}"
-         href="{{ url_for('viewer.property_reports', property_id=property.id) }}">Reports</a>
+         href="{{ url_for('viewer.property_reports', property_id=property.id) }}">{{ icon('chart') }}Reports</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'conversations' %}active{% endif %}"
-         href="{{ url_for('viewer.property_conversations', property_id=property.id) }}">Conversations</a>
+         href="{{ url_for('viewer.property_conversations', property_id=property.id) }}">{{ icon('message') }}Conversations</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'maintenance' %}active{% endif %}"
-         href="{{ url_for('viewer.property_maintenance', property_id=property.id) }}">Maintenance</a>
+         href="{{ url_for('viewer.property_maintenance', property_id=property.id) }}">{{ icon('wrench') }}Maintenance</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'notifications' %}active{% endif %}"
-         href="{{ url_for('viewer.property_notifications', property_id=property.id) }}">Messages</a>
+         href="{{ url_for('viewer.property_notifications', property_id=property.id) }}">{{ icon('mail') }}Messages</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'activity' %}active{% endif %}"
-         href="{{ url_for('viewer.property_activity', property_id=property.id) }}">Activity</a>
+         href="{{ url_for('viewer.property_activity', property_id=property.id) }}">{{ icon('clock') }}Activity</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'wallet' %}active{% endif %}"
-         href="{{ url_for('viewer.property_wallet', property_id=property.id) }}">Cash book</a>
-      {% if session.get('owner_id') %}<a class="viewer-nav-tab nav-phone-only" href="{{ url_for('viewer.logout') }}">Log out</a>{% endif %}
+         href="{{ url_for('viewer.property_wallet', property_id=property.id) }}">{{ icon('receipt') }}Cash book</a>
+      {% if session.get('owner_id') %}<a class="viewer-nav-tab nav-phone-only" href="{{ url_for('viewer.logout') }}">{{ icon('logout') }}Log out</a>{% endif %}
     </nav>
     {% endif %}
   </div>
