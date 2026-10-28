@@ -119,6 +119,16 @@ _T = {
             'Picha huhifadhiwa bila mahali simu yako ilipokuwa.',
         ]),
     },
+    'tenant.settings': {
+        'en': ('Settings', 'Your details, your PIN and your language.', [
+            'Only management can change your details. If something is wrong, tell them.',
+            'Keep your PIN secret, like your M-Pesa PIN.',
+        ]),
+        'sw': ('Mipangilio', 'Maelezo yako, PIN yako na lugha yako.', [
+            'Usimamizi pekee unaweza kubadilisha maelezo yako. Kama kuna kosa, waambie.',
+            'Usimwambie mtu PIN yako, kama PIN ya M-Pesa.',
+        ]),
+    },
     'tenant.move_out': {
         'en': ('Moving out', 'Tell management the date you plan to leave, and where your deposit refund should go.', [
             'Your lease asks for one month\'s notice.',

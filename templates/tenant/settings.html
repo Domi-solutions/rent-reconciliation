@@ -1,0 +1,45 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}Settings — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+{% if done %}<div class="alert alert-success py-2 mb-3">{{ done }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger py-2 mb-3">{{ error }}</div>{% endif %}
+
+<section class="doc">
+  <h2>Your details</h2>
+  <table class="mo-table">
+    <tr><td>Name</td><td class="num">{{ tenant.name|title }}</td></tr>
+    <tr><td>House</td><td class="num">{{ property.name|title }} · {{ unit.unit_number }}</td></tr>
+    <tr><td>Phone number</td><td class="num">{{ tenant.phone or 'Not recorded' }}</td></tr>
+    {% if details.lease_start or details.move_in_date %}<tr><td>Tenancy started</td><td class="num">{{ details.lease_start or details.move_in_date }}</td></tr>{% endif %}
+    <tr><td>Rent each month</td><td class="num">KES {{ (details.monthly_rent or 0)|money_amount }}</td></tr>
+    {% if details.service_charge %}<tr><td>Service charge each month</td><td class="num">KES {{ details.service_charge|money_amount }}</td></tr>{% endif %}
+    <tr><td>Deposit on record</td><td class="num">{% if details.deposit_paid %}KES {{ details.deposit_paid|money_amount }}{% else %}None recorded{% endif %}</td></tr>
+  </table>
+  <p class="muted mt-2">Something wrong here? <a href="{{ url_for('tenant.message_new', token=token, topic='other') }}">Tell management</a> — only management can change these.</p>
+</section>
+
+<section class="doc">
+  <h2>Change your PIN</h2>
+  <form method="POST" class="settings-form" autocomplete="off">
+    <input type="hidden" name="action" value="pin">
+    <label class="form-label fw-semibold" for="current_pin">Your PIN now</label>
+    <input id="current_pin" type="password" name="current_pin" class="form-control mb-3" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required>
+    <label class="form-label fw-semibold" for="new_pin">New 4-digit PIN</label>
+    <input id="new_pin" type="password" name="new_pin" class="form-control mb-3" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required>
+    <label class="form-label fw-semibold" for="new_pin_again">New PIN again</label>
+    <input id="new_pin_again" type="password" name="new_pin_again" class="form-control mb-3" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required>
+    <button class="btn btn-primary w-100" style="min-height:46px">Change my PIN</button>
+  </form>
+  <p class="muted mt-2">Forgot your PIN? Sign out and tap "First time, or forgot your PIN?" — a code comes by SMS.</p>
+</section>
+
+<section class="doc">
+  <h2>Language · Lugha</h2>
+  <form method="POST" class="d-flex flex-wrap gap-2">
+    <input type="hidden" name="action" value="language">
+    <button name="lang" value="en" class="btn {{ 'btn-primary' if lang == 'en' else 'btn-outline-secondary' }}">English</button>
+    <button name="lang" value="sw" class="btn {{ 'btn-primary' if lang == 'sw' else 'btn-outline-secondary' }}">Kiswahili</button>
+  </form>
+  <p class="muted mt-2">Help text on each page uses this language.</p>
+</section>
+{% endblock %}

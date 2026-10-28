@@ -133,6 +133,30 @@ class MoveOutAndWelcome(unittest.TestCase):
                    data={'departure_date': n['planned_date'], 'deposit_held': '18000', 'resolution': 'active'})
         self.assertEqual(self.notice()['status'], 'completed')
 
+    # ── settings ─────────────────────────────────────────────────────────────
+    def test_menu_has_moving_out_and_settings(self):
+        page = self.client.get(f'/tenant/{self.token}/statement').get_data(as_text=True)
+        self.assertIn('>Moving out</a>', page)
+        self.assertIn('>Settings</a>', page)
+
+    def test_change_pin_needs_the_current_one(self):
+        url = f'/tenant/{self.token}/settings'
+        page = self.client.post(url, data={'action': 'pin', 'current_pin': '9999', 'new_pin': '4321',
+                                           'new_pin_again': '4321'}).get_data(as_text=True)
+        self.assertIn('current PIN is not correct', page)
+        page = self.client.post(url, data={'action': 'pin', 'current_pin': '1234', 'new_pin': '4321',
+                                           'new_pin_again': '4321'}).get_data(as_text=True)
+        self.assertIn('Your PIN is changed', page)
+        from src.utils.tenant_auth import check_pin
+        with self.connection() as conn:
+            self.assertEqual(check_pin(conn, self.tenant['person_id'], '4321')[0], 'ok')
+
+    def test_language_is_saved(self):
+        self.client.post(f'/tenant/{self.token}/settings', data={'action': 'language', 'lang': 'sw'})
+        with self.connection() as conn:
+            self.assertEqual(conn.execute("SELECT language_preference FROM tenants WHERE id = ?",
+                                          (self.tenant['id'],)).fetchone()[0], 'sw')
+
 
 if __name__ == '__main__':
     unittest.main()

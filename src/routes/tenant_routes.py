@@ -419,11 +419,54 @@ def move_out_page(token):
         staff_alerts.send(alerts)          # after commit
         return redirect(url_for('tenant.move_out_page', token=token, given=1))
     return render_template('tenant/move_out.html', token=token, tenant=tenant, unit=unit, property=prop,
-                           active_tab='portal', notice=notice, departure=departure, error=error,
+                           active_tab='move_out', notice=notice, departure=departure, error=error,
                            est=move_out.estimate(tenant['deposit_paid'], balance), balance=balance,
                            reasons=move_out.REASONS, full_notice=move_out.earliest_with_full_notice(),
                            tomorrow=(datetime.now().date() + timedelta(days=1)).isoformat(),
                            form=request.form, given=request.args.get('given'))
+
+
+@tenant_bp.route('/<token>/settings', methods=['GET', 'POST'])
+def settings(token):
+    """Your details (read-only), change your PIN, and your language."""
+    from src.utils.guides import LANGS
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        person_id = session.get('tenant_person_id')
+        done = error = None
+        if request.method == 'POST' and request.form.get('action') == 'pin':
+            current, new, again = (request.form.get(k, '').strip() for k in ('current_pin', 'new_pin', 'new_pin_again'))
+            result, minutes = check_pin(conn, person_id, current)
+            if result == 'locked':
+                error = f'Too many wrong PINs. Try again in {minutes} minutes.'
+            elif result != 'ok':
+                error = 'Your current PIN is not correct.'
+            elif not valid_pin(new):
+                error = 'Your new PIN must be exactly 4 digits.'
+            elif new != again:
+                error = 'The two new PINs do not match.'
+            else:
+                set_pin(conn, person_id, new)
+                conn.execute("INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                             ('tenant_pin_changed', 'person', person_id, f"Unit {unit['unit_number']}", 'tenant'))
+                done = 'Your PIN is changed. Use the new one next time you sign in.'
+        elif request.method == 'POST' and request.form.get('action') == 'language':
+            lang = request.form.get('lang')
+            if lang in LANGS:
+                conn.execute("UPDATE tenants SET language_preference = ? WHERE id = ?", (lang, tenant['id']))
+                session['lang'] = lang
+                done = 'Saved.' if lang == 'en' else 'Imehifadhiwa.'
+        details = conn.execute("""
+            SELECT t.move_in_date, t.deposit_paid, t.language_preference, u.monthly_rent, u.service_charge,
+                   (SELECT l.start_date FROM leases l WHERE l.tenant_id = t.id ORDER BY l.created_at DESC LIMIT 1) AS lease_start
+            FROM tenants t JOIN units u ON u.id = t.unit_id WHERE t.id = ?
+        """, (tenant['id'],)).fetchone()
+    return render_template('tenant/settings.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='settings', details=details, done=done, error=error,
+                           lang=session.get('lang') or details['language_preference'] or 'en')
 
 
 @tenant_bp.route('/<token>/move-out/withdraw', methods=['POST'])
