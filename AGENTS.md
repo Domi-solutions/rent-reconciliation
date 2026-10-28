@@ -26,8 +26,15 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — saved compact statement and initial plain-language money labels for Claude handoff.
+**Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
+
+### Plain money words, finished (Claude, 2026-10-28)
+
+- Branch `ui-review-fixes`, local only, nothing deployed. Same words everywhere a tenant sees money: **Still owed** (red), **Extra paid** (green), **Nothing owed** at zero; "bills" not "charges"; "confirmed" not "verified/matched to the bank record".
+- Invoice (owed/extra paid from before the month; end-of-month line), receipt ("This payment covered", "Extra paid — kept for your next bills", "Your account today: …"), Pay (account box + payment statuses "Confirmed ✓" / "Not confirmed yet"), Payments, Bills page (tab renamed from Charges), tenancies dashboard, dispute box labels (stored subject values unchanged), and tenant guides EN + Kiswahili. `period_label('ARREARS')` → "Earlier unpaid bills" (tenant-side only; admin/owner `charge_label` unchanged). Amounts use `money_amount`.
+- No arithmetic, allocation or stored value changed. 63 tests OK; pages rendered for an owing, an extra-paid and a zero-balance tenant (copy DB) and checked at 375px.
+- Preview: `.claude/launch.json` → `ui-review` (port 5051, `/tmp/domi-ui-review.db`, SMS/outreach/scheduler off). Restarted so Python changes load; same logins.
 
 ### Handoff to Claude — user requested stopping here
 

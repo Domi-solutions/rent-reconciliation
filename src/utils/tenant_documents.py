@@ -27,9 +27,9 @@ def money_amount(value):
 
 
 def period_label(period):
-    """'2026-10' → 'October 2026'; 'ARREARS' → 'Arrears brought forward'."""
+    """'2026-10' → 'October 2026'; 'ARREARS' → 'Earlier unpaid bills'."""
     if period == 'ARREARS':
-        return 'Arrears brought forward'
+        return 'Earlier unpaid bills'
     try:
         return f"{calendar.month_name[int(period[5:7])]} {period[:4]}"
     except (ValueError, IndexError):
@@ -115,7 +115,8 @@ def build_receipt(conn, tenant_id, property_id, payment_id):
     row = next((r for r in rows if r['row_type'] == 'payment' and r.get('payment_id') == payment_id), None)
     if not row:
         return None
-    applied = [{'label': (CHARGE_LABELS.get(a['charge_type'], a['charge_type'].title()) + ' — '
+    applied = [{'label': (period_label(a['period']) if a['period'] == 'ARREARS'
+                          else CHARGE_LABELS.get(a['charge_type'], a['charge_type'].title()) + ' — '
                           + period_label(a['period'])),
                 'amount': float(a['amount'])} for a in row.get('allocations', [])]
     applied_total = sum(a['amount'] for a in applied)

@@ -41,47 +41,47 @@ _T = {
     # ── Tenant portal ────────────────────────────────────────────────────────
     'tenant.portal': {
         'en': ('Your account', 'This is your rent account: what is owed, what has been paid, and how to pay.', [
-            'Balance = all your charges minus all payments matched to the bank record, as of today.',
-            'A payment you reported that is not matched yet is shown beside the balance, not taken off it.',
-            'Statement shows every line behind the balance. Pay shows the only account for rent.',
+            'Still owed (red) = your bills minus your confirmed payments, as of today. Extra paid (green) = you have paid more than your bills so far; it goes to your next bills.',
+            'A payment you reported that is not confirmed yet is shown beside it, not taken off.',
+            'Statement shows every bill and payment. Pay shows the only account for rent.',
             'Questions or repairs? Use Messages — you get an SMS when there is a reply.',
         ]),
         'sw': ('Akaunti yako', 'Hii ni akaunti yako ya kodi: unachodaiwa, ulicholipa, na jinsi ya kulipa.', [
-            'Salio = gharama zako zote ukitoa malipo yote yaliyolinganishwa na rekodi ya benki, hadi leo.',
-            'Malipo uliyoripoti ambayo bado hayajalinganishwa yanaonyeshwa kando ya salio, hayajatolewa.',
-            'Taarifa (Statement) inaonyesha kila mstari wa salio. Lipa (Pay) inaonyesha akaunti pekee ya kodi.',
+            'Bado unadaiwa (nyekundu) = bili zako ukitoa malipo yaliyothibitishwa, hadi leo. Ulilipa zaidi (kijani) = umelipa zaidi ya bili zako; kinaenda kwenye bili zijazo.',
+            'Malipo uliyoripoti ambayo bado hayajathibitishwa yanaonyeshwa kando, hayajatolewa.',
+            'Taarifa (Statement) inaonyesha kila bili na kila malipo. Lipa (Pay) inaonyesha akaunti pekee ya kodi.',
             'Maswali au matengenezo? Tumia Ujumbe (Messages) — utapata SMS jibu likija.',
         ]),
     },
     'tenant.statement': {
-        'en': ('Statement', 'Every charge and every payment on your account, newest first.', [
-            'The balance column is what was owed after each line.',
+        'en': ('Statement', 'Every bill and every payment on your account, newest first.', [
+            'The last column shows what was still owed (red) or extra paid (green) after each line.',
             'Tap a row for meter readings, payment details or "Ask about this".',
             'Monthly invoices are under "Account details & monthly invoices". Print includes all entry details.',
         ]),
-        'sw': ('Taarifa ya akaunti', 'Kila gharama na kila malipo kwenye akaunti yako, ya karibuni kwanza.', [
-            'Safu ya salio ni kiasi kilichodaiwa baada ya kila mstari.',
+        'sw': ('Taarifa ya akaunti', 'Kila bili na kila malipo kwenye akaunti yako, ya karibuni kwanza.', [
+            'Safu ya mwisho inaonyesha kiasi ulichokuwa bado unadaiwa (nyekundu) au ulicholipa zaidi (kijani) baada ya kila mstari.',
             'Gusa mstari kuona maelezo ya maji, malipo au "Ask about this".',
             'Ankara ziko chini ya "Account details & monthly invoices". "Print" inajumuisha maelezo yote.',
         ]),
     },
     'tenant.charges': {
-        'en': ('Charges', 'Each month\'s rent, service charge and water, and how much of each is paid.', [
-            'Payments pay off the oldest charge first.',
+        'en': ('Bills', 'Each month\'s rent, service charge and water, and how much of each is paid.', [
+            'A payment pays the oldest unpaid bill first.',
             'Water is billed from the meter reading, after the month it was used.',
         ]),
-        'sw': ('Gharama', 'Kodi, ada ya huduma na maji ya kila mwezi, na kiasi kilicholipwa kwa kila moja.', [
-            'Malipo hulipa gharama ya zamani zaidi kwanza.',
+        'sw': ('Bili', 'Kodi, ada ya huduma na maji ya kila mwezi, na kiasi kilicholipwa kwa kila moja.', [
+            'Malipo hulipa bili ya zamani zaidi ambayo bado haijalipwa kwanza.',
             'Maji hutozwa kutokana na usomaji wa mita, baada ya mwezi uliotumika.',
         ]),
     },
     'tenant.payments': {
         'en': ('Payments', 'Payments received on your account, with their M-Pesa code.', [
-            'Tap a payment for its receipt — it shows which charges it paid.',
+            'Tap a payment to see which bills it paid.',
             'Paid but it is not here? Go to Pay and add the M-Pesa code.',
         ]),
         'sw': ('Malipo', 'Malipo yaliyopokelewa kwenye akaunti yako, pamoja na nambari ya M-Pesa.', [
-            'Bonyeza malipo kuona risiti — inaonyesha gharama ilizolipa.',
+            'Bonyeza malipo kuona bili ilizolipa.',
             'Ulilipa lakini hayapo hapa? Nenda Lipa (Pay) uweke nambari ya M-Pesa.',
         ]),
     },
@@ -89,12 +89,12 @@ _T = {
         'en': ('Paying rent', 'How to pay, and how to add a payment that is not showing yet.', [
             'Pay only to the paybill and account shown here. Nobody — caretaker included — can give you a different one.',
             'Check the name M-Pesa shows before you enter your PIN.',
-            'Paid already? Paste the M-Pesa SMS so it can be matched to the bank record.',
+            'Paid already but it is not showing? Paste the M-Pesa SMS. It is taken off what you owe once the payment is confirmed.',
         ]),
         'sw': ('Kulipa kodi', 'Jinsi ya kulipa, na jinsi ya kuongeza malipo ambayo bado hayaonekani.', [
             'Lipa tu kwenye paybill na akaunti zilizo hapa. Hakuna mtu — hata caretaker — anayeweza kukupa nyingine.',
             'Angalia jina M-Pesa inaonyesha kabla ya kuweka PIN.',
-            'Umeshalipa? Bandika SMS ya M-Pesa ili ilinganishwe na rekodi ya benki.',
+            'Umeshalipa lakini hayaonekani? Bandika SMS ya M-Pesa. Yanatolewa kwenye deni lako malipo yakithibitishwa.',
         ]),
     },
     'tenant.messages': {
@@ -128,15 +128,15 @@ _T = {
         ]),
     },
     'tenant.invoice': {
-        'en': ('Invoice', 'One month: what was carried in, that month\'s charges, payments that month, and what is left.', []),
-        'sw': ('Ankara', 'Mwezi mmoja: salio la nyuma, gharama za mwezi, malipo ya mwezi, na kilichobaki.', []),
+        'en': ('Invoice', 'One month: what was still owed before it, that month\'s bills, payments that month, and what is left.', []),
+        'sw': ('Ankara', 'Mwezi mmoja: deni la kabla yake, bili za mwezi, malipo ya mwezi, na kilichobaki.', []),
     },
     'tenant.receipt': {
-        'en': ('Receipt', 'One payment: when, how much, the M-Pesa code, and which charges it paid.', [
-            'The balance shown is your balance today, not on the day of the payment.',
+        'en': ('Receipt', 'One payment: when, how much, the M-Pesa code, and which bills it paid.', [
+            'The "your account today" line is for today, not for the day of the payment.',
         ]),
-        'sw': ('Risiti', 'Malipo moja: lini, kiasi gani, nambari ya M-Pesa, na gharama ilizolipa.', [
-            'Salio linaloonyeshwa ni salio lako la leo, si la siku ya malipo.',
+        'sw': ('Risiti', 'Malipo moja: lini, kiasi gani, nambari ya M-Pesa, na bili ilizolipa.', [
+            'Mstari wa "your account today" ni wa leo, si wa siku ya malipo.',
         ]),
     },
     # ── Caretaker ────────────────────────────────────────────────────────────

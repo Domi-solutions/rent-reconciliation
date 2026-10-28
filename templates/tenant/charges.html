@@ -1,9 +1,9 @@
 {% extends "tenant/base_tenant.html" %}
 {% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
-{% block title %}Charges — {{ property.name }}{% endblock %}
+{% block title %}Bills — {{ property.name }}{% endblock %}
 {% set active_tab = 'charges' %}
 {% block content %}
-<h6 class="text-muted mb-3">Charges by period with paid status</h6>
+<h6 class="text-muted mb-3">Bills for each month, and how much of each is paid</h6>
 {% if charges_by_period %}
   {% for period, data in charges_by_period.items() %}
     {% set items = data.charges %}
@@ -15,13 +15,13 @@
            role="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ loop.index }}">
         <div>
           <div class="data-row-unit">{{ period|period_label }} <span aria-hidden="true">⌄</span></div>
-          <div class="data-row-meta">KES {{ (period_total)|money_amount }} charged</div>
+          <div class="data-row-meta">KES {{ (period_total)|money_amount }} billed</div>
         </div>
         <div>
           {% if period_outstanding > 0 %}
-          <span class="status-arrears">KES {{ (period_outstanding)|money_amount }} outstanding</span>
+          <span class="status-arrears">Still owed: KES {{ (period_outstanding)|money_amount }}</span>
           {% else %}
-          <span class="status-paid">Settled</span>
+          <span class="status-paid">Fully paid</span>
           {% endif %}
         </div>
       </div>
@@ -31,10 +31,10 @@
           <div class="tenant-ledger"><table class="table table-sm mb-2 viewer-table">
             <thead>
               <tr>
-                <th>Type</th>
+                <th>Bill</th>
                 <th class="text-end">Amount</th>
                 <th class="text-end">Paid</th>
-                <th class="text-end">Outstanding</th>
+                <th class="text-end">Still owed</th>
                 <th>Due date</th>
               </tr>
             </thead>

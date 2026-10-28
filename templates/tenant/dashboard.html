@@ -52,26 +52,26 @@
 
       <div class="kpi-row">
         <div class="kpi">
-          <div class="val" style="{% if u.balance > 0 %}color:var(--red){% endif %}">
-            KES {{ '{:,.0f}'.format(u.balance) }}
+          <div class="val" style="color:{% if u.balance > 0 %}var(--red){% else %}var(--green-dark){% endif %}">
+            KES {{ (u.balance|abs)|money_amount }}
           </div>
-          <div class="lbl">{% if u.balance > 0 %}Outstanding{% else %}Balance{% endif %}</div>
+          <div class="lbl">{% if u.balance > 0 %}Still owed{% elif u.balance < 0 %}Extra paid{% else %}Nothing owed{% endif %}</div>
         </div>
         <div class="kpi">
-          <div class="val">KES {{ '{:,.0f}'.format(u.total_paid) }}</div>
+          <div class="val">KES {{ u.total_paid|money_amount }}</div>
           <div class="lbl">Total paid</div>
         </div>
         {% if u.pending > 0 %}
         <div class="kpi">
-          <div class="val" style="color:var(--orange);">KES {{ '{:,.0f}'.format(u.pending) }}</div>
-          <div class="lbl">Pending</div>
+          <div class="val" style="color:var(--orange);">KES {{ u.pending|money_amount }}</div>
+          <div class="lbl">Reported, waiting to be confirmed</div>
         </div>
         {% endif %}
       </div>
 
       {% if u.last_payment %}
       <div style="margin-top:12px;font-size:13px;color:var(--ink-2);">
-        Last payment: <strong>KES {{ '{:,.0f}'.format(u.last_payment.amount) }}</strong>
+        Last payment: <strong>KES {{ u.last_payment.amount|money_amount }}</strong>
         on {{ u.last_payment.payment_date }}
       </div>
       {% endif %}

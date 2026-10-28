@@ -66,15 +66,15 @@
   </div>
   <div class="data-row">
     <div class="data-row-meta mb-3">
-      If you notice a charge that doesn't match your agreement, a payment that isn't reflected, or anything else that concerns you — flag it here. Your report goes directly to Domi, not your property manager.
+      A bill that doesn't match your agreement, a payment that is missing, or anything else that worries you — tell Domi here. It goes to Domi, not to your property manager.
     </div>
     <form method="post" action="{{ url_for('tenant.raise_dispute', token=token) }}">
       <div class="mb-2">
         <select name="subject" class="form-select form-select-sm mb-2">
-          <option value="Incorrect charge">Incorrect charge</option>
-          <option value="Payment not reflected">Payment not reflected</option>
-          <option value="Unauthorised rent increase">Unauthorised rent increase</option>
-          <option value="Other concern">Other concern</option>
+          <option value="Incorrect charge">A bill looks wrong</option>
+          <option value="Payment not reflected">A payment is missing</option>
+          <option value="Unauthorised rent increase">Rent went up without my agreement</option>
+          <option value="Other concern">Something else</option>
         </select>
         <textarea name="message" class="form-control form-control-sm" rows="3"
                   placeholder="Describe the issue..." required style="font-size:13px;"></textarea>

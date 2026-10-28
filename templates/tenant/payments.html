@@ -11,14 +11,14 @@
          role="button" data-bs-toggle="collapse" data-bs-target="#pay-{{ loop.index }}"{% else %}"{% endif %}>
       <div>
         <div class="data-row-unit">{{ item.date }}</div>
-        <div class="data-row-meta">KES {{ "{:,.0f}".format(item.amount) }}</div>
+        <div class="data-row-meta">KES {{ item.amount|money_amount }}</div>
       </div>
       <div class="text-end">
         <div class="{{ 'status-paid' if is_verified else 'text-muted' }}" style="font-size:0.8rem;">
           {{ item.mpesa_ref }}
         </div>
         {% if item.status == 'pending' %}
-          <span class="badge bg-secondary" style="font-size:0.7rem;">Pending</span>
+          <span class="badge bg-secondary" style="font-size:0.7rem;">Not confirmed yet</span>
         {% elif item.status == 'flagged' %}
           <span class="badge bg-warning text-dark" style="font-size:0.7rem;">Under review</span>
         {% endif %}
@@ -27,7 +27,7 @@
 
     {% if item.status == 'pending' %}
     <div class="data-row" style="font-size:0.8rem;color:#6c757d;">
-      Payment recorded — awaiting verification.
+      Code received. The payment is not confirmed yet — it is not taken off what you owe until it is.
     </div>
     {% elif item.status == 'flagged' %}
     <div class="data-row" style="font-size:0.8rem;color:#856404;">
@@ -47,16 +47,16 @@
         <div class="row mb-3">
           <div class="col-12">
             <span class="data-row-meta">Amount</span><br>
-            <span class="data-row-amount amount-success">KES {{ "{:,.0f}".format(item.amount) }}</span>
+            <span class="data-row-amount amount-success">KES {{ item.amount|money_amount }}</span>
           </div>
         </div>
         {% if item.allocations %}
-        <h6 class="small text-muted">Applied to:</h6>
+        <h6 class="small text-muted">This payment covered:</h6>
         <table class="table table-sm mb-0 viewer-table">
           <thead>
             <tr>
-              <th>Charge</th>
-              <th>Period</th>
+              <th>Bill</th>
+              <th>Month</th>
               <th class="text-end">Amount</th>
             </tr>
           </thead>
@@ -64,8 +64,8 @@
             {% for a in item.allocations %}
             <tr>
               <td>{{ a.charge_type|charge_label }}</td>
-              <td>{{ a.period }}</td>
-              <td class="text-end">KES {{ "{:,.0f}".format(a.alloc_amount) }}</td>
+              <td>{{ a.period|period_label }}</td>
+              <td class="text-end">KES {{ a.alloc_amount|money_amount }}</td>
             </tr>
             {% endfor %}
           </tbody>

@@ -8,10 +8,14 @@
 <div class="card shadow-sm mb-3" style="max-width: 480px;">
   <div class="card-body p-4">
     <div class="d-flex justify-content-between align-items-center">
-      <span class="text-muted" style="font-size: 0.875rem;">Balance on your account</span>
-      <strong style="font-size: 1.1rem;">KES {{ "{:,.0f}".format(balance) }}</strong>
+      {% if balance > 0 %}<span class="owed" style="font-size: 0.95rem; font-weight: 600;">Still owed</span>
+      <strong class="owed" style="font-size: 1.1rem;">KES {{ balance|money_amount }}</strong>
+      {% elif balance < 0 %}<span class="credit" style="font-size: 0.95rem; font-weight: 600;">Extra paid</span>
+      <strong class="credit" style="font-size: 1.1rem;">KES {{ (-balance)|money_amount }}</strong>
+      {% else %}<span class="credit" style="font-size: 0.95rem; font-weight: 600;">Nothing owed</span>
+      <strong class="credit" style="font-size: 1.1rem;">KES 0</strong>{% endif %}
     </div>
-    <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every charge and payment</a></div>
+    <div class="text-muted" style="font-size:0.78rem;margin-top:4px"><a href="{{ url_for('tenant.statement', token=token) }}">See every bill and payment</a></div>
   </div>
 </div>
 
@@ -101,7 +105,7 @@
   <div class="card-body p-4">
     <div class="viewer-section-title" style="margin-bottom:4px">Already paid? Add the M-Pesa code</div>
     <p class="text-muted" style="font-size: 0.85rem;">
-      Paste the M-Pesa confirmation SMS (or just its code). It is checked against the bank record and shows on your statement once it matches.
+      Paste the M-Pesa confirmation SMS (or just its code). It shows on your statement once the payment is confirmed.
     </p>
     <form method="POST" action="{{ url_for('tenant.report_payment', token=token) }}">
       <textarea name="mpesa_sms" class="form-control mb-2" rows="4"
@@ -146,15 +150,15 @@
       <div class="text-end">
         {% set display_amount = c.verified_amount if c.status == 'verified' and c.verified_amount else c.claimed_amount %}
         {% if display_amount %}
-        <div style="font-size: 0.875rem; font-weight: 600;">KES {{ "{:,.0f}".format(display_amount) }}</div>
+        <div style="font-size: 0.875rem; font-weight: 600;">KES {{ display_amount|money_amount }}</div>
         {% endif %}
         {% if c.status == 'verified' %}
-          <span class="badge bg-success">Verified ✓</span>
-          {% if c.allocations %}<div class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">tap to see breakdown</div>{% endif %}
+          <span class="badge bg-success">Confirmed ✓</span>
+          {% if c.allocations %}<div class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">tap to see what it covered</div>{% endif %}
         {% elif c.status == 'flagged' %}
           <span class="badge bg-warning text-dark">Under review</span>
         {% else %}
-          <span class="badge bg-secondary">Pending</span>
+          <span class="badge bg-secondary">Not confirmed yet</span>
         {% endif %}
       </div>
     </div>
@@ -162,7 +166,7 @@
     {# ── Status explanation (non-verified) ── #}
     {% if c.status == 'pending' %}
     <div class="px-3 pb-3" style="font-size: 0.8rem; color: #6c757d; border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 0;">
-      Payment recorded — awaiting verification.
+      Code received. The payment is not confirmed yet — it is not taken off what you owe until it is.
     </div>
     {% elif c.status == 'flagged' %}
     <div class="px-3 pb-3" style="font-size: 0.8rem; color: #856404; border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 0;">
@@ -174,15 +178,15 @@
     {% if c.status == 'verified' and c.allocations %}
     <div id="claim-{{ loop.index }}" class="collapse">
       <div class="px-3 pb-3" style="border-top: 1px solid #f0f0f0; padding-top: 12px; margin-top: 0;">
-        <div class="text-muted mb-2" style="font-size: 0.8rem; font-weight: 600;">Applied to charges:</div>
+        <div class="text-muted mb-2" style="font-size: 0.8rem; font-weight: 600;">This payment covered:</div>
         <table class="table table-sm mb-0" style="font-size: 0.825rem;">
           <tbody>
             {% for a in c.allocations %}
             <tr>
               <td class="ps-0">{{ a.charge_type|charge_label }} — {{ a.period }}</td>
               <td class="text-end pe-0">
-                KES {{ "{:,.0f}".format(a.alloc_amount) }}
-                {% if a.charge_settled %}<span class="badge bg-success ms-1" style="font-size: 0.7rem;">Settled</span>{% endif %}
+                KES {{ a.alloc_amount|money_amount }}
+                {% if a.charge_settled %}<span class="badge bg-success ms-1" style="font-size: 0.7rem;">Fully paid</span>{% endif %}
               </td>
             </tr>
             {% endfor %}

@@ -8,22 +8,22 @@
 <div class="doc">
   <div class="muted">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
   <h2>Payment receipt</h2>
-  <div class="big credit" style="margin:6px 0 2px">KES {{ "{:,.0f}".format(rec.amount) }}</div>
+  <div class="big credit" style="margin:6px 0 2px">KES {{ rec.amount|money_amount }}</div>
   <div class="muted" style="margin-bottom:14px">Received {{ (rec.date or '')[:10] }}</div>
   <table>
     {% if rec.ref %}<tr><td>M-Pesa code</td><td class="num"><b>{{ rec.ref }}</b></td></tr>{% endif %}
     {% if rec.sender %}<tr><td>Paid by</td><td class="num">{{ rec.sender|title }}</td></tr>{% endif %}
     <tr><td>Method</td><td class="num">{{ rec.method }}</td></tr>
   </table>
-  <h2 style="font-size:15px;margin:18px 0 6px">Applied to</h2>
+  <h2 style="font-size:15px;margin:18px 0 6px">This payment covered</h2>
   <table>
-    {% for a in rec.applied %}<tr><td>{{ a.label }}</td><td class="num">{{ "{:,.0f}".format(a.amount) }}</td></tr>{% endfor %}
-    {% if rec.credit_left > 0 %}<tr><td>Held as credit for future charges</td><td class="num">{{ "{:,.0f}".format(rec.credit_left) }}</td></tr>{% endif %}
+    {% for a in rec.applied %}<tr><td>{{ a.label }}</td><td class="num">{{ a.amount|money_amount }}</td></tr>{% endfor %}
+    {% if rec.credit_left > 0 %}<tr><td>Extra paid — kept for your next bills</td><td class="num credit">{{ rec.credit_left|money_amount }}</td></tr>{% endif %}
   </table>
   <table style="margin-top:14px">
-    <tr class="total"><td>Account balance today{% if rec.balance_today > 0 %} (owed){% endif %}</td>
-        <td class="num">{% if rec.balance_today < 0 %}{{ "{:,.0f}".format(-rec.balance_today) }} credit{% else %}{{ "{:,.0f}".format(rec.balance_today) }}{% endif %}</td></tr>
+    <tr class="total"><td>Your account today: {% if rec.balance_today > 0 %}still owed{% elif rec.balance_today < 0 %}extra paid{% else %}nothing owed{% endif %}</td>
+        <td class="num {% if rec.balance_today > 0 %}owed{% else %}credit{% endif %}">{% if rec.balance_today %}{{ (rec.balance_today|abs)|money_amount }}{% else %}0{% endif %}</td></tr>
   </table>
-  <div class="muted" style="margin-top:12px">Oldest charges are settled first. Amounts in KES.</div>
+  <div class="muted" style="margin-top:12px">A payment pays the oldest unpaid bill first. Amounts in KES.</div>
 </div>
 {% endblock %}
