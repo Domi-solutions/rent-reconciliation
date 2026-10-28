@@ -34,12 +34,27 @@ def get_current_property(conn):
 
 
 def _substitute(text, variables):
-    if not text:
-        return text
-    out = text
-    for k, v in variables.items():
-        out = out.replace("{" + k + "}", str(v))
-    return out
+    """Replace {variable} placeholders; the money line is worded by src/messaging/wording.py."""
+    from src.messaging.wording import fill
+    return fill(text, variables)
+
+
+def _link_sms():
+    """A sign-in link goes by SMS only once tenant outreach is approved (src/messaging/outreach.py)."""
+    from src.messaging.outreach import enabled
+    return enabled()
+
+
+def _tenant_sms(prop, tenant, subject, body):
+    """The SMS for one message to a tenant: a note and their sign-in link (the message stays
+    in the portal), or — before sign-in links are switched on — the message itself."""
+    name = prop['name'].title()
+    code = tenant['short_code'] if 'short_code' in tenant.keys() else None
+    if _link_sms() and code:
+        base = (os.environ.get('APP_BASE_URL') or request.host_url).rstrip('/')
+        about = '' if subject == 'Message from management' else f' "{subject[:40]}"'
+        return f"{name}: you have a new message{about} from management. Sign in to read it: {base}/t/{code}"
+    return body if body.lower().startswith(prop['name'].lower()) else f"{name}: {body}"
 
 
 def _next_due_date(rent_due_day):
@@ -95,6 +110,7 @@ def _build_variables(conn, tenant, prop, base_url=None):
         'tenant_name': tenant['name'] or '',
         'unit_number': tenant['unit_number'] or '',
         'balance': f"{float(bal_row['balance'] or 0):,.0f}" if bal_row else '0',
+        'balance_value': float(bal_row['balance'] or 0) if bal_row else 0.0,
         'monthly_rent': f"{float(unit_info['monthly_rent'] or 0):,.0f}" if unit_info else '0',
         'service_charge': f"{float(unit_info['service_charge'] or 0):,.0f}" if unit_info else '0',
         'total_paid': f"{float(bal_row['total_paid'] or 0):,.0f}" if bal_row else '0',
@@ -179,17 +195,19 @@ def thread(tenant_id):
             return redirect(url_for('messaging.dashboard'))
 
         if request.method == 'POST':
-            # One box, one tap: "Send SMS" texts it and keeps it in the tenant's portal;
-            # "Portal only" just posts it. A subject is optional (a quick message fills it).
+            # One box, one Send. The message is kept in the tenant's portal and the tenant is
+            # texted: a short note with their sign-in link (they read and act in the portal).
+            # Until sign-in links are switched on (TENANT_OUTREACH_ENABLED), the text carries
+            # the message itself so it still reaches them.
             body = request.form.get('body', '').strip()
             subject = request.form.get('subject', '').strip() or 'Message from management'
-            send_sms_too = request.form.get('send', 'sms') == 'sms' and bool(tenant['phone'])
             if not body:
                 flash('Write a message first.', 'error')
                 return redirect(url_for('messaging.thread', tenant_id=tenant_id))
             variables = _build_variables(conn, tenant, prop)
             subj, b = _substitute(subject, variables), _substitute(body, variables)
-            channel = 'sms' if send_sms_too else 'portal'
+            sms_text = _tenant_sms(prop, tenant, subj, b) if tenant['phone'] else None
+            channel = 'sms' if sms_text else 'portal'
             conn.execute("""
                 INSERT INTO messages
                     (id, property_id, tenant_id, subject, body, template_body,
@@ -202,16 +220,15 @@ def thread(tenant_id):
                 ('message_sent', 'tenant', tenant_id,
                  f"Subject: {subj[:50]} | Channel: {channel}", staff.actor()),
             )
-            sms_text = b if b.lower().startswith(prop['name'].lower()) else f"{prop['name'].title()}: {b}"
     if request.method == 'POST':
-        if not send_sms_too:
-            flash('Posted in the tenant\'s portal.' if tenant['phone'] else
-                  'No phone number on record, so it was posted in the tenant\'s portal only.', 'success')
+        if not sms_text:
+            flash('Posted in the tenant\'s portal. No phone number on record, so no SMS went out.', 'warning')
         else:                                    # after the message is saved, so the record never waits on the SMS
             from src.messaging.delivery import send_sms
             sent, _, errors = send_sms([{'phone': tenant['phone']}], sms_text)
             if sent:
-                flash(f"SMS sent to {tenant['phone']} and saved in their portal.", 'success')
+                flash(f"Sent. {tenant['phone']} got an SMS"
+                      + (" with a link to read it." if _link_sms() else " with the message."), 'success')
             elif errors and 'disabled' in str(errors[0]):
                 flash('Saved in the tenant\'s portal. SMS sending is switched off on this system, so no SMS went out.', 'warning')
             else:
@@ -275,6 +292,8 @@ def thread(tenant_id):
         messages=messages,
         templates=templates,
         sms_on=sms_on,
+        link_sms=_link_sms() and bool(tenant['short_code']),
+        sms_preview=_tenant_sms(prop, tenant, 'Message from management', ''),
         sms_prefix=prop['name'].title() + ': ',
     )
 

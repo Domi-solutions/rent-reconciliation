@@ -8,10 +8,9 @@ from src.messaging.outreach import enabled as outreach_enabled
 
 
 def _substitute(body_or_subject, variables):
-    out = body_or_subject
-    for k, v in variables.items():
-        out = out.replace("{" + k + "}", str(v))
-    return out
+    """Replace {variable} placeholders; the money line is worded by src/messaging/wording.py."""
+    from src.messaging.wording import fill
+    return fill(body_or_subject, variables)
 
 
 def generate_due_reminders(conn, property_id):
@@ -96,6 +95,7 @@ def generate_due_reminders(conn, property_id):
                 'tenant_name': t['tenant_name'] or '',
                 'unit_number': t['unit_number'] or '',
                 'balance': f"{float(t['balance']):,.0f}",
+                'balance_value': float(t['balance'] or 0),
                 'month': t['period'],
                 'amount': f"{float(t['charge_amount']):,.0f}",
                 'due_date': t['charge_due_date'] or '',
@@ -186,6 +186,7 @@ def generate_due_reminders(conn, property_id):
                 'tenant_name': t['tenant_name'] or '',
                 'unit_number': t['unit_number'] or '',
                 'balance': f"{float(t['balance'] or 0):,.0f}",
+                'balance_value': float(t['balance'] or 0),
                 'month': t['period'] or '',
                 'amount': f"{float(t['charge_amount'] or 0):,.0f}",
                 'due_date': due_date_val,

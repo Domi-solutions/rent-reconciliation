@@ -376,13 +376,9 @@ def tenants(property_id):
 
 
 def _substitute(text, variables):
-    """Replace {variable} placeholders in text with values dict."""
-    if not text:
-        return text
-    out = text
-    for k, v in variables.items():
-        out = out.replace("{" + k + "}", str(v))
-    return out
+    """Replace {variable} placeholders; the money line is worded by src/messaging/wording.py."""
+    from src.messaging.wording import fill
+    return fill(text, variables)
 
 
 @caretaker_bp.route('/<property_id>/messages')
@@ -518,6 +514,7 @@ def send_message(property_id):
                 'tenant_name': t['name'] or '',
                 'unit_number': t['unit_number'] or '',
                 'balance': f"{float(t['balance'] or 0):,.0f}",
+                'balance_value': float(t['balance'] or 0),
                 'monthly_rent': f"{float(t['monthly_rent'] or 0):,.0f}",
                 'service_charge': f"{float(t['service_charge'] or 0):,.0f}",
                 'total_paid': f"{float(t['total_paid'] or 0):,.0f}",

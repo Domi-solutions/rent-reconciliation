@@ -1,5 +1,6 @@
-"""Messaging one tenant: write, tap "Send SMS" — no subject, no channel to pick. The message is
-kept in the portal first; the SMS goes after, and the page says what happened."""
+"""Messaging one tenant: write, tap Send — no subject, no channel to pick. The message is kept in
+the portal; the tenant is texted a link to sign in and read it (before sign-in links are switched
+on, the text carries the message). The SMS goes after the save, and the page says what happened."""
 
 import os
 import shutil
@@ -55,8 +56,8 @@ class MessageCompose(unittest.TestCase):
             return conn.execute("""SELECT subject, body, delivery_channel FROM messages WHERE tenant_id = ?
                                    ORDER BY rowid DESC LIMIT 1""", (self.tenant['id'],)).fetchone()
 
-    def test_one_tap_sms_without_subject(self):
-        page = self.admin.post(self.url, data={'body': 'Your balance is KES {balance}.', 'send': 'sms'},
+    def test_before_links_are_on_the_sms_carries_the_message(self):
+        page = self.admin.post(self.url, data={'body': 'Your balance is KES {balance}.'},
                                follow_redirects=True).get_data(as_text=True)
         row = self.saved()
         self.assertEqual(row['delivery_channel'], 'sms')
@@ -64,22 +65,35 @@ class MessageCompose(unittest.TestCase):
         (recipients, text), _ = self.sms.call_args
         self.assertEqual(recipients[0]['phone'], self.tenant['phone'])
         self.assertTrue(text.startswith(self.tenant['property_name'].title() + ': Your balance is KES '))
-        self.assertIn('SMS sent to', page)
+        self.assertIn('got an SMS with the message', page)
 
-    def test_portal_only_sends_no_sms(self):
-        self.admin.post(self.url, data={'body': 'See you Monday.', 'send': 'portal'})
+    def test_with_links_on_the_sms_is_a_sign_in_link_not_the_message(self):
+        with patch.dict(os.environ, {'TENANT_OUTREACH_ENABLED': 'true'}):
+            page = self.admin.post(self.url, data={'body': 'Private matter about your deposit.'},
+                                   follow_redirects=True).get_data(as_text=True)
+        (_, text), _ = self.sms.call_args
+        self.assertIn(f"/t/{self.tenant['short_code']}", text)
+        self.assertIn('new message from management', text)
+        self.assertNotIn('deposit', text)
+        self.assertIn('with a link to read it', page)
+        self.assertIn('Private matter about your deposit.', self.saved()['body'])
+
+    def test_no_phone_posts_in_portal_only(self):
+        with self.connection() as conn:
+            conn.execute("UPDATE tenants SET phone = NULL WHERE id = ?", (self.tenant['id'],))
+        self.admin.post(self.url, data={'body': 'See you Monday.'})
         self.assertEqual(self.saved()['delivery_channel'], 'portal')
         self.sms.assert_not_called()
 
     def test_empty_message_is_refused(self):
         before = self.saved()
-        self.admin.post(self.url, data={'body': '  ', 'send': 'sms'})
+        self.admin.post(self.url, data={'body': '  '})
         self.assertEqual(self.saved(), before)
         self.sms.assert_not_called()
 
     def test_switched_off_is_said(self):
         self.sms.return_value = (0, 1, ['SMS disabled (AT_SMS_ENABLED=false)'])
-        page = self.admin.post(self.url, data={'body': 'Hello', 'send': 'sms'},
+        page = self.admin.post(self.url, data={'body': 'Hello'},
                                follow_redirects=True).get_data(as_text=True)
         self.assertIn('switched off', page)
 

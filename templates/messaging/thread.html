@@ -71,6 +71,7 @@
   .compose-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
   .compose-count { font-size: 12px; color: var(--ink-2); margin-right: auto; font-variant-numeric: tabular-nums; }
   .compose-note { font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .compose-preview { display: block; margin-top: 4px; padding: 6px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-input); color: var(--ink); font-family: inherit; }
   .compose-off { font-size: 13px; background: var(--orange-soft); border: 1px solid var(--orange-border); border-radius: var(--r-input); padding: 8px 10px; margin-bottom: 10px; }
   @media (max-width: 560px) {
     .compose-foot .btn { flex: 1; min-height: 44px; }
@@ -112,7 +113,7 @@
           <div class="body-text">{{ m.body }}</div>
           <div class="ts">
             {{ m.created_at[:16] if m.created_at else '' }}
-            {% if m.direction == 'out' %} · {{ 'Sent by SMS' if m.channel in ('sms', 'both') else 'Portal only' }}{% endif %}
+            {% if m.direction == 'out' %} · {{ 'Portal + SMS' if m.channel in ('sms', 'both') else 'Portal' }}{% endif %}
           </div>
         </div>
       </div>
@@ -145,17 +146,14 @@
                 placeholder="Write to {{ tenant.name.split()[0]|title }}…"></textarea>
       <div class="compose-foot">
         <span class="compose-count" id="compose-count" aria-live="polite"></span>
-        {% if tenant.phone %}
-        <button type="submit" name="send" value="portal" class="btn btn-outline-secondary">Portal only</button>
-        <button type="submit" name="send" value="sms" class="btn btn-primary">Send SMS</button>
-        {% else %}
-        <button type="submit" name="send" value="portal" class="btn btn-primary">Post in portal</button>
-        {% endif %}
+        <button type="submit" class="btn btn-primary">Send</button>
       </div>
       <div class="compose-note">
-        {% if tenant.phone %}"Send SMS" texts {{ tenant.phone }} and keeps a copy in their portal. The SMS starts with "{{ sms_prefix }}".
-        {% else %}No phone number on record for this tenant, so messages go to their portal only.{% endif %}
-        Ctrl + Enter also sends.
+        {% if not tenant.phone %}It goes to {{ tenant.name.split()[0]|title }}'s portal. No phone number on record, so no SMS can tell them.
+        {% elif link_sms %}It goes to their portal, and {{ tenant.phone }} gets an SMS with a link to sign in and read it:
+        <span class="compose-preview">{{ sms_preview }}</span>
+        {% else %}It goes to their portal, and {{ tenant.phone }} gets it by SMS, starting "{{ sms_prefix }}".
+        Sign-in links are not switched on yet, so the SMS carries the message itself.{% endif %}
       </div>
     </form>
   </div>
@@ -169,6 +167,7 @@ const body = document.getElementById('compose-body');
 const subject = document.getElementById('compose-subject');
 const count = document.getElementById('compose-count');
 const prefix = {{ sms_prefix|tojson }};
+const linkSms = {{ 'true' if link_sms else 'false' }};   // the SMS is a link note, not the message
 document.querySelectorAll('.compose-chip').forEach(chip => chip.addEventListener('click', () => {
   body.value = chip.dataset.body || chip.dataset.subject || '';
   subject.value = chip.dataset.subject || '';
@@ -179,7 +178,7 @@ function updateCount() {
   const text = prefix + body.value.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-');
   const gsm = /^[\x20-\x7E\n\r£¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ¡ÄÖÑÜ§¿äöñüà]*$/.test(text);
   const parts = gsm ? (text.length <= 160 ? 1 : Math.ceil(text.length / 153)) : (text.length <= 70 ? 1 : Math.ceil(text.length / 67));
-  count.textContent = body.value ? `${text.length} characters · ${parts} SMS${parts > 1 ? ' parts' : ''}` : '';
+  count.textContent = body.value && !linkSms ? `${text.length} characters · ${parts} SMS${parts > 1 ? ' parts' : ''}` : '';
 }
 function grow() { body.style.height = 'auto'; body.style.height = Math.min(body.scrollHeight + 2, 320) + 'px'; }
 body.addEventListener('input', () => { updateCount(); grow(); });
