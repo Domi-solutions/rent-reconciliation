@@ -183,14 +183,18 @@ body :is(.viewer-header, .ct-header) nav.more-left.more-right {
 }
 /* Phones: the tab row folds into a menu button (partials/nav_toggle.html) labelled with the
    open page; the header is one short line again, so it stays pinned. */
-body .nav-toggle { display: none; }
+body :is(.nav-toggle, .nav-current) { display: none; }
+body :is(.viewer-header, .ct-header) .nav-phone-only { display: none; }
 @media (max-width: 767px) {
   body .nav-toggle {
-    display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 6px 12px; flex-shrink: 0;
-    border: 1px solid rgba(140,199,161,.5); border-radius: var(--r-btn); background: rgba(255,255,255,.06);
-    color: #fff; font: 600 14px var(--font);
+    display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0; flex-shrink: 0;
+    border: 1px solid rgba(140,199,161,.5); border-radius: var(--r-btn); background: rgba(255,255,255,.06); color: #fff;
   }
-  body .nav-toggle svg { width: 20px; height: 20px; }
+  body .nav-toggle svg { width: 22px; height: 22px; }
+  body .nav-current {
+    display: inline-flex; align-items: center; min-height: 42px; padding: 6px 4px 6px 10px; flex-shrink: 0;
+    border: 0; background: none; color: var(--sage); font: 600 14px var(--font); text-align: right;
+  }
   body :is(.viewer-header, .ct-header).nav-open .nav-toggle { background: var(--sage); border-color: var(--sage); color: var(--forest); }
   body :is(.viewer-header, .ct-header) nav { display: none !important; }
   body :is(.viewer-header, .ct-header).nav-open nav {
@@ -200,6 +204,9 @@ body .nav-toggle { display: none; }
   body :is(.viewer-header, .ct-header).nav-open nav a { width: 100%; min-height: 46px; margin-left: 0 !important; font-size: 15px; }
   body :is(.viewer-header, .ct-header) { position: sticky; top: 0; }
   body :is(.viewer-header, .ct-header) .ct-meta:not(a) { display: none; }
+  /* Log out moves into the menu on phones, so the header stays one line. */
+  body :is(.viewer-header, .ct-header) .header-logout { display: none; }
+  body :is(.viewer-header, .ct-header).nav-open .nav-phone-only { display: inline-flex; }
 }
 /* A list row that opens something looks like it: whole row is the link, with a chevron. */
 body a.data-row-link { display: block; color: var(--ink); text-decoration: none; position: relative; padding-right: 40px; }

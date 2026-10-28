@@ -1,6 +1,6 @@
-{# Phone menu button for the tenant, owner and caretaker headers. Hidden on wider screens,
-   where the tab row shows; partials/nav_scroll.html opens and closes the menu. #}
-<button class="nav-toggle" type="button" aria-expanded="false" aria-controls="portal-nav">
+{# Phone menu button (☰), left of the property name in the tenant, owner and caretaker
+   headers. partials/nav_current.html shows the open page on the right and opens the same
+   menu. Both hidden on wider screens, where the tab row shows; script in nav_scroll.html. #}
+<button class="nav-toggle" type="button" aria-expanded="false" aria-controls="portal-nav" aria-label="Menu">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-  <span class="nav-toggle-label">Menu</span>
 </button>

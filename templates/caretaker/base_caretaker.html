@@ -28,18 +28,21 @@
 <header class="ct-header">
   <div style="max-width: 860px; margin: 0 auto; padding: 0 20px;">
     <div class="d-flex justify-content-between align-items-center" style="padding: 10px 0 4px;">
-      <div>
+      <div class="d-flex align-items-center gap-2">
+        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
+        <div>
         {% if property is defined and property %}
         <a class="ct-prop-name home-link" href="{{ url_for('caretaker.dashboard', property_id=property.id) }}">{{ property.name }}</a>
         {% else %}<span class="ct-prop-name">Caretaker Portal</span>{% endif %}
         <span class="ct-badge">Caretaker</span>
+        </div>
       </div>
       <div style="display: flex; align-items: center; gap: 12px;">
         {% if session.get('caretaker_name') %}
         <span class="ct-meta">{{ session['caretaker_name'] }}</span>
         {% endif %}
-        <a href="{{ url_for('caretaker.logout') }}" class="ct-meta">Log out</a>
-        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
+        <a href="{{ url_for('caretaker.logout') }}" class="ct-meta header-logout">Log out</a>
+        {% if property is defined and property %}{% include 'partials/nav_current.html' %}{% endif %}
       </div>
     </div>
 
@@ -89,6 +92,7 @@
         {% endif %}
       </a>
       {% endif %}
+      <a class="ct-nav-tab nav-phone-only" href="{{ url_for('caretaker.logout') }}">Log out</a>
     </nav>
     {% endif %}
   </div>

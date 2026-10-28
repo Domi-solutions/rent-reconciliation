@@ -15,19 +15,22 @@
 <header class="viewer-header">
   <div style="max-width: 860px; margin: 0 auto; padding: 0 20px;">
     <div class="d-flex justify-content-between align-items-center" style="padding: 12px 0 4px;">
-      <div>
+      <div class="d-flex align-items-center gap-2">
+        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
+        <div>
         {% if property is defined and property %}
         <a class="viewer-prop-name home-link" href="{{ url_for('viewer.property_dashboard', property_id=property.id) }}">{{ property.name }}</a>
         {% else %}<div class="viewer-prop-name">Properties</div>{% endif %}
         {% if property is defined and property %}
         <div class="viewer-prop-label">Owner View</div>
         {% endif %}
+        </div>
       </div>
       <div class="d-flex align-items-center gap-3">
         {% if session.get('owner_id') %}
-        <a href="{{ url_for('viewer.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
+        <a class="header-logout" href="{{ url_for('viewer.logout') }}" style="font-size: 13px; color: var(--ink-3); text-decoration: none;">Log out</a>
         {% endif %}
-        {% if property is defined and property %}{% include 'partials/nav_toggle.html' %}{% endif %}
+        {% if property is defined and property %}{% include 'partials/nav_current.html' %}{% endif %}
       </div>
     </div>
 
@@ -51,6 +54,7 @@
          href="{{ url_for('viewer.property_activity', property_id=property.id) }}">Activity</a>
       <a class="viewer-nav-tab {% if active_tab is defined and active_tab == 'wallet' %}active{% endif %}"
          href="{{ url_for('viewer.property_wallet', property_id=property.id) }}">Cash book</a>
+      {% if session.get('owner_id') %}<a class="viewer-nav-tab nav-phone-only" href="{{ url_for('viewer.logout') }}">Log out</a>{% endif %}
     </nav>
     {% endif %}
   </div>
