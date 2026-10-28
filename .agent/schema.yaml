@@ -380,6 +380,10 @@ tables:
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
 
   # payments / payment_transactions / payment_claims .target_charge_id (migrate_add_payment_target): the bill the tenant chose to pay; allocate_payment settles it first.
+  lease_rent_changes:
+    status: live
+    migration: migrate_add_lease_terms
+    notes: "A rent change management confirmed (lease review), effective_period = first month at the new rent. Applied to units.monthly_rent + leases.monthly_rent by generate_charges when that month is billed (applied_at). Same migration adds leases.term_type/end_date/notice_days/rent_increase_pct/rent_increase_every_months/early_exit_terms/end_decision* and lease_documents.tenant_visible."
   tenant_contacts:
     status: live
     migration: migrate_add_tenant_contacts

@@ -39,8 +39,19 @@ def estimate(deposit, still_owed):
             'refund': max(deposit - owed, 0), 'left_owing': max(owed - deposit, 0)}
 
 
-def earliest_with_full_notice(today=None):
-    return (today or date.today()) + timedelta(days=NOTICE_DAYS)
+def lease_terms_for(conn, tenant_id):
+    """Notice days, and the fixed term's end and early-exit terms, from the tenant's lease."""
+    row = conn.execute("""SELECT notice_days, term_type, end_date, early_exit_terms FROM leases
+                           WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 1""", (tenant_id,)).fetchone()
+    if not row:
+        return {'notice_days': NOTICE_DAYS, 'end_date': None, 'early_exit_terms': None}
+    return {'notice_days': row['notice_days'] if row['notice_days'] is not None else NOTICE_DAYS,
+            'end_date': row['end_date'] if row['term_type'] == 'fixed' else None,
+            'early_exit_terms': row['early_exit_terms']}
+
+
+def earliest_with_full_notice(today=None, days=NOTICE_DAYS):
+    return (today or date.today()) + timedelta(days=days)
 
 
 def give_notice(conn, tenant, unit, prop, planned, reason, refund_phone, today=None):
@@ -59,11 +70,15 @@ def give_notice(conn, tenant, unit, prop, planned, reason, refund_phone, today=N
     if current(conn, tenant['id']):
         raise ValueError('You have already given notice. Withdraw it first to give a new date.')
     days = (planned_date - today).days
-    short = days < NOTICE_DAYS
+    lease = lease_terms_for(conn, tenant['id'])
+    short = days < lease['notice_days']
+    early = bool(lease['end_date']) and planned_date.isoformat() < lease['end_date'][:10]
     reason = (reason or '').strip()[:300]
     on_record = normalize_to_e164(tenant.get('phone') or '')
     body = (f"I am giving notice to move out of unit {unit['unit_number']} on {planned_date:%-d %B %Y} "
-            f"({days} days from today{', less than one month' if short else ''}).")
+            f"({days} days from today{', less than the notice my lease asks for' if short else ''}).")
+    if early:
+        body += f"\nThis is before my fixed-term lease ends on {lease['end_date'][:10]}." 
     if reason:
         body += f"\nReason: {reason}"
     if phone:

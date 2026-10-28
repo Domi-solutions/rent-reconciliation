@@ -164,6 +164,15 @@ def seed(conn, today=None):
             'brought_forward': '0'}, 'demo seed')
         tenants[num] = {'id': tid, 'unit_id': uid, 'rent': rent, 'pattern': pattern, 'name': name, 'phone': phone,
                         'start': start}
+        if num == 'B3':                 # a fixed term ending soon: shows on Leases → Renewals
+            conn.execute("""UPDATE leases SET term_type = 'fixed', end_date = ?, early_exit_terms = ?
+                            WHERE id = ?""", ((today + timedelta(days=45)).isoformat(),
+                                               'Rent is due to the end of the notice period; one month of the '
+                                               'deposit is kept if leaving before the end date.', lease_id))
+        if num == 'A4':                 # 8% a year, review in about three weeks: Renewals → rent reviews
+            from src.leases.terms import add_months
+            conn.execute("""UPDATE leases SET rent_increase_pct = 8, rent_increase_every_months = 12, start_date = ?
+                            WHERE id = ?""", (add_months(today + timedelta(days=21), -12).isoformat(), lease_id))
 
     # Charges: rent + service every month, water from the second month (billed in arrears)
     for i, period in enumerate(months):

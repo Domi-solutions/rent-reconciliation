@@ -1,0 +1,39 @@
+{# Lease type and terms — used when recording a lease and when editing its terms (src/leases/terms.py).
+   f: the values to show (the form, or the lease). #}
+<div class="terms-fields">
+  <div class="field"><label>Type of lease</label>
+    <div class="d-flex flex-wrap gap-3">
+      <label class="choice" style="font-weight:500"><input type="radio" name="term_type" value="periodic" {% if (f.term_type or 'periodic') == 'periodic' %}checked{% endif %}> <span>Month to month — runs until notice</span></label>
+      <label class="choice" style="font-weight:500"><input type="radio" name="term_type" value="fixed" {% if f.term_type == 'fixed' %}checked{% endif %}> <span>Fixed term — has an end date</span></label>
+    </div>
+  </div>
+  <div class="row-2">
+    <div class="field terms-fixed"><label>End date</label>
+      <input class="form-control" type="date" name="end_date" value="{{ f.end_date or '' }}"></div>
+    <div class="field"><label>Notice period (days)</label>
+      <input class="form-control" type="number" min="0" max="365" name="notice_days" value="{{ f.notice_days or 30 }}">
+      <div class="hint">Usually 30 — one month.</div></div>
+    <div class="field"><label>Rent increase (% , optional)</label>
+      <input class="form-control" type="number" min="0" max="50" step="0.5" name="rent_increase_pct" value="{{ f.rent_increase_pct if f.rent_increase_pct else '' }}" placeholder="e.g. 7">
+      <div class="hint">Only if the lease says rent goes up.</div></div>
+    <div class="field"><label>Every (months)</label>
+      <input class="form-control" type="number" min="1" max="60" name="rent_increase_every_months" value="{{ f.rent_increase_every_months or 12 }}"></div>
+  </div>
+  <div class="field"><label>If the tenant leaves early (optional)</label>
+    <textarea class="form-control" name="early_exit_terms" rows="2" maxlength="600" placeholder="In plain words, as the lease says — e.g. 'Rent is due to the end of the notice period; the deposit is not refunded if leaving before the end date.'">{{ f.early_exit_terms or '' }}</textarea>
+    <div class="hint">The tenant sees this on their lease and when giving notice.</div></div>
+</div>
+<script>
+(function () {
+  document.querySelectorAll('.terms-fields').forEach(function (box) {
+    var fixed = box.querySelectorAll('.terms-fixed');
+    function show() {
+      var on = box.querySelector('input[name=term_type][value=fixed]').checked;
+      fixed.forEach(function (el) { el.style.display = on ? '' : 'none'; });
+      box.querySelector('input[name=end_date]').required = on;
+    }
+    box.querySelectorAll('input[name=term_type]').forEach(function (r) { r.addEventListener('change', show); });
+    show();
+  });
+})();
+</script>

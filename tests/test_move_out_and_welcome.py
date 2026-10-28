@@ -95,7 +95,7 @@ class MoveOutAndWelcome(unittest.TestCase):
         with self.connection() as conn:
             body = conn.execute("SELECT body FROM conversation_messages WHERE conversation_id = ?",
                                 (self.notice()['conversation_id'],)).fetchone()[0]
-        self.assertIn('less than one month', body)
+        self.assertIn('less than the notice my lease asks for', body)
 
     def test_bad_input_is_explained(self):
         page = self.give(days=0).get_data(as_text=True)

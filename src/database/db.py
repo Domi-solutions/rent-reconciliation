@@ -2213,3 +2213,46 @@ def migrate_add_tenant_contacts():
         if 'session_version' not in {r['name'] for r in conn.execute("PRAGMA table_info(persons)")}:
             conn.execute("ALTER TABLE persons ADD COLUMN session_version INTEGER DEFAULT 0")
         print("Migration complete: tenant contacts ready.")
+
+
+def migrate_add_lease_terms():
+    """Fixed-term leases, rent reviews, and lease documents a tenant may see (src/leases/terms.py). Idempotent.
+
+    leases: term_type periodic (month to month, the default) | fixed; end_date (fixed only);
+      notice_days (default 30); rent_increase_pct + rent_increase_every_months (a yearly increase
+      written in the lease); early_exit_terms (plain words); end_decision renew | end | monthly
+      with end_decided_at/by (what management decided as a fixed term nears its end).
+    lease_rent_changes: a rent change management confirmed, effective from a month; applied to
+      the unit when that month's charges are generated (applied_at). The tenant gets a notice.
+    lease_documents.tenant_visible: management ticks it to let the tenant see that document
+      (never an ID copy).
+    """
+    with get_connection() as conn:
+        cols = {r['name'] for r in conn.execute("PRAGMA table_info(leases)")}
+        for name, ddl in (('term_type', "TEXT DEFAULT 'periodic'"), ('end_date', 'DATE'),
+                          ('notice_days', 'INTEGER DEFAULT 30'), ('rent_increase_pct', 'REAL'),
+                          ('rent_increase_every_months', 'INTEGER DEFAULT 12'), ('early_exit_terms', 'TEXT'),
+                          ('end_decision', 'TEXT'), ('end_decided_at', 'TIMESTAMP'), ('end_decided_by', 'TEXT')):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE leases ADD COLUMN {name} {ddl}")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS lease_rent_changes (
+                id TEXT PRIMARY KEY,
+                lease_id TEXT NOT NULL REFERENCES leases(id),
+                tenant_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                property_id TEXT NOT NULL,
+                old_rent REAL NOT NULL,
+                new_rent REAL NOT NULL,
+                effective_period TEXT NOT NULL,          -- YYYY-MM: the first month billed at the new rent
+                reason TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                applied_at TIMESTAMP,
+                cancelled_at TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_lease_rent_changes ON lease_rent_changes(property_id, effective_period)")
+        if 'tenant_visible' not in {r['name'] for r in conn.execute("PRAGMA table_info(lease_documents)")}:
+            conn.execute("ALTER TABLE lease_documents ADD COLUMN tenant_visible INTEGER DEFAULT 0")
+        print("Migration complete: lease terms ready.")

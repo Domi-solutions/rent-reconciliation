@@ -141,6 +141,7 @@ from src.database.db import (
     migrate_add_payment_target,
     migrate_add_move_out_notices,
     migrate_add_tenant_contacts,
+    migrate_add_lease_terms,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -209,6 +210,7 @@ migrate_add_alert_routing()
 migrate_add_payment_target()
 migrate_add_move_out_notices()
 migrate_add_tenant_contacts()
+migrate_add_lease_terms()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -1092,7 +1094,9 @@ def dashboard():
         from src.messaging.threads import list_for_staff
         awaiting_threads = list_for_staff(conn, property_id, status='awaiting_reply')[:3]
         from src.leases.move_out import open_count as _moving_out_count
+        from src.leases.terms import ending_soon as _ending_soon, reviews_due as _reviews_due
         moving_out_count = _moving_out_count(conn, property_id)
+        renewals_count = len(_ending_soon(conn, property_id)) + len(_reviews_due(conn, property_id))
 
         _dash_org_id = (property_row['organization_id'] if property_row['organization_id'] else None) or session.get('org_id')
         _stmt_filter = "bs.org_id = ?" if _dash_org_id else "bs.property_id = ?"
@@ -1182,6 +1186,7 @@ def dashboard():
             pending=pending,
             awaiting_threads=awaiting_threads,
             moving_out_count=moving_out_count,
+            renewals_count=renewals_count,
             unassigned=unassigned,
             unassigned_stats=unassigned_stats,
             recent=recent,
@@ -4389,6 +4394,9 @@ def generate_charges():
 
             from src.utils.due_dates import charge_due_date
             due_date = charge_due_date(period, property_row['rent_due_day'])
+            # Rent changes management confirmed for this month (lease reviews) apply before billing it.
+            from src.leases.terms import apply_due_rent_changes
+            apply_due_rent_changes(conn, property_row, period)
 
             units = conn.execute("""
                 SELECT * FROM units WHERE property_id = ? AND status = 'occupied'

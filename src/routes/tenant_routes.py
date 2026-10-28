@@ -2,7 +2,7 @@
 
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, render_template, request, redirect, url_for, session, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,7 +14,7 @@ from src.utils.tenant_documents import (account_coverage, build_invoice, build_r
 from src.utils.water_breakdown import water_breakdowns
 from src.messaging import staff_alerts, threads
 from src.reconciliation import claim_owner
-from src.leases import move_out
+from src.leases import move_out, terms as lease_terms
 from src.utils import tenant_contacts
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
@@ -327,6 +327,7 @@ def portal(token):
             return redirect(url_for('tenant.welcome', token=token))     # first visit: how it all works
         notice = move_out.current(conn, tenant['id'])
         latest = threads.latest_for_tenant(conn, tenant['id'])
+        lease_end = move_out.lease_terms_for(conn, tenant['id'])['end_date']
         balance_row = conn.execute("""
             SELECT total_charged, total_paid, balance
             FROM tenant_balances WHERE tenant_id = ?
@@ -379,6 +380,7 @@ def portal(token):
         owed=owed,
         notice=notice,
         latest=latest,
+        lease_end=lease_end,
     )
 
 
@@ -420,6 +422,7 @@ def move_out_page(token):
             except ValueError as e:
                 error = str(e)
         notice = move_out.current(conn, tenant['id'])
+        lease_info = move_out.lease_terms_for(conn, tenant['id'])
         departure = conn.execute("""SELECT * FROM tenant_departures WHERE tenant_id = ?
                                      ORDER BY created_at DESC LIMIT 1""", (tenant['id'],)).fetchone()
     if notice_given:
@@ -428,7 +431,8 @@ def move_out_page(token):
     return render_template('tenant/move_out.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='move_out', notice=notice, departure=departure, error=error,
                            est=move_out.estimate(tenant['deposit_paid'], balance), balance=balance,
-                           reasons=move_out.REASONS, full_notice=move_out.earliest_with_full_notice(),
+                           reasons=move_out.REASONS, lease=lease_info,
+                           full_notice=move_out.earliest_with_full_notice(days=lease_info['notice_days']),
                            tomorrow=(datetime.now().date() + timedelta(days=1)).isoformat(),
                            form=request.form, given=request.args.get('given'))
 
@@ -523,6 +527,44 @@ def settings(token):
                            contacts=contacts, kinds=tenant_contacts.KINDS, limits=tenant_contacts.LIMITS,
                            phone_request=phone_request,
                            demo_code=session.get('demo_phone_code') if is_demo() and phone_request else None)
+
+
+@tenant_bp.route('/<token>/lease')
+def my_lease(token):
+    """Your lease: the terms from the record, and any signed copy management shared."""
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            return render_template('tenant/invalid_token.html')
+        tenant, unit, prop = ctx
+        lease = lease_terms.for_tenant(conn, tenant['id'])
+        record = conn.execute("""SELECT t.move_in_date, t.deposit_paid, u.monthly_rent, u.service_charge
+                                 FROM tenants t JOIN units u ON u.id = t.unit_id WHERE t.id = ?""",
+                              (tenant['id'],)).fetchone()
+    days_left = None
+    if lease and lease['term_type'] == 'fixed' and lease['end_date']:
+        days_left = (date.fromisoformat(lease['end_date'][:10]) - date.today()).days
+    return render_template('tenant/lease.html', token=token, tenant=tenant, unit=unit, property=prop,
+                           active_tab='lease', lease=lease, record=record, days_left=days_left)
+
+
+@tenant_bp.route('/<token>/lease/document/<doc_id>')
+def lease_document(token, doc_id):
+    """A lease document management chose to share with this tenant — never an ID copy."""
+    from src.leases import intake
+    with get_connection() as conn:
+        ctx = _get_tenant_by_token(conn, token)
+        if not ctx:
+            abort(404)
+        tenant, _, _ = ctx
+        doc = conn.execute("""SELECT d.file_name, d.content_type FROM lease_documents d JOIN leases l ON l.id = d.lease_id
+                              WHERE d.id = ? AND l.tenant_id = ? AND d.tenant_visible = 1 AND d.kind != 'id_copy'""",
+                           (doc_id, tenant['id'])).fetchone()
+    if not doc:
+        abort(404)
+    resp = send_from_directory(intake.documents_dir(), doc['file_name'], mimetype=doc['content_type'])
+    resp.headers['Cache-Control'] = 'private, no-store'
+    return resp
 
 
 @tenant_bp.route('/<token>/move-out/withdraw', methods=['POST'])

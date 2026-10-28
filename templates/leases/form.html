@@ -78,6 +78,7 @@
           <input class="form-control" type="number" min="0" step="1" name="deposit_held" value="{{ form.deposit_held or '0' }}">
           <div class="hint">What is actually held now. Used at move-out.</div></div>
       </div>
+      {% with f = form %}{% include 'leases/_terms_fields.html' %}{% endwith %}
     </section>
 
     <section>

@@ -24,7 +24,10 @@
     <div class="page-title">Leases</div>
     <div class="page-meta">{{ counts.signed }} of {{ counts.rentable }} rentable units have a signed lease on record.</div>
   </div>
+  <div class="d-flex flex-wrap gap-2">
+  <a class="btn btn-outline-secondary" href="{{ url_for('leases.renewals') }}">Renewals &amp; rent reviews{% if renewals_due %} <span class="badge bg-warning text-dark ms-1">{{ renewals_due }}</span>{% endif %}</a>
   <a class="btn btn-outline-secondary" href="{{ url_for('leases.moving_out') }}">Moving out{% if moving_out %} <span class="badge bg-warning text-dark ms-1">{{ moving_out }}</span>{% endif %}</a>
+  </div>
 </div>
 
 <div class="lease-stats">

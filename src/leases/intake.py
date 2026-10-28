@@ -254,6 +254,11 @@ def record_lease(conn, property_row, form, actor):
         raise LeaseError('Say what the brought-forward amount is based on (e.g. "acknowledged by tenant '
                          'in writing at signing, copy attached").')
     notes = (form.get('notes') or '').strip() or None
+    from src.leases import terms as lease_terms
+    try:
+        lease_term = lease_terms.parse(form, start)
+    except lease_terms.TermsError as e:
+        raise LeaseError(str(e))
 
     current = conn.execute("SELECT * FROM tenants WHERE unit_id = ? AND status = 'active'",
                            (unit['id'],)).fetchone()
@@ -346,8 +351,16 @@ def record_lease(conn, property_row, form, actor):
           deposit_held, national_id, signed_on.isoformat() if signed_on else None,
           current['id'] if current else None, prior['balance'] if prior else None,
           brought_forward, evidence or None, charge_id, notes, actor))
+    conn.execute("""UPDATE leases SET term_type = ?, end_date = ?, notice_days = ?, rent_increase_pct = ?,
+                    rent_increase_every_months = ?, early_exit_terms = ? WHERE id = ?""",
+                 (lease_term['term_type'], lease_term['end_date'], lease_term['notice_days'],
+                  lease_term['rent_increase_pct'], lease_term['rent_increase_every_months'],
+                  lease_term['early_exit_terms'], lease_id))
 
-    details = (f"Unit {unit['unit_number']} | {name} | from {start.isoformat()} | rent {rent:,.0f}"
+    details = (f"Unit {unit['unit_number']} | {name} | from {start.isoformat()} | "
+               f"{lease_terms.TERM_TYPES[lease_term['term_type']]}"
+               + (f" to {lease_term['end_date']}" if lease_term['end_date'] else '')
+               + f" | rent {rent:,.0f}"
                f" + service {service:,.0f} | {'signed' if signed else 'signed copy pending'}"
                + (f" | replaces record {current['id']} (balance {prior['balance']:,.0f})" if prior else '')
                + f" | brought forward {brought_forward:,.0f}" + (f" — {evidence}" if evidence else ''))

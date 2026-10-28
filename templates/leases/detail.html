@@ -37,6 +37,11 @@
     <h3>Terms</h3>
     <dl class="kv">
       <dt>With effect from</dt><dd>{{ lease.start_date }}</dd>
+      <dt>Type</dt><dd>{{ term_types.get(lease.term_type or 'periodic') }}{% if lease.term_type == 'fixed' and lease.end_date %} · ends <b>{{ lease.end_date }}</b>{% endif %}
+        {% if lease.end_decision %}<span class="hint">· {{ decisions.get(lease.end_decision) }} ({{ (lease.end_decided_at or '')[:10] }})</span>{% endif %}</dd>
+      <dt>Notice period</dt><dd>{{ lease.notice_days or 30 }} days</dd>
+      {% if lease.rent_increase_pct %}<dt>Rent increase</dt><dd>{{ '%g'|format(lease.rent_increase_pct) }}% every {{ lease.rent_increase_every_months or 12 }} months{% if next_review %} · next review {{ next_review }}{% endif %}</dd>{% endif %}
+      {% if lease.early_exit_terms %}<dt>If leaving early</dt><dd>{{ lease.early_exit_terms }}</dd>{% endif %}
       <dt>Monthly rent</dt><dd>KES {{ "{:,.0f}".format(lease.monthly_rent) }}</dd>
       <dt>Service charge</dt><dd>KES {{ "{:,.0f}".format(lease.service_charge) }}</dd>
       <dt>Deposit</dt><dd>KES {{ "{:,.0f}".format(lease.deposit_held) }} held of KES {{ "{:,.0f}".format(lease.deposit_required) }} required</dd>
@@ -45,6 +50,22 @@
       {% if lease.notes %}<dt>Notes</dt><dd>{{ lease.notes }}</dd>{% endif %}
       <dt>Recorded by</dt><dd>{{ lease.created_by }} · {{ lease.created_at[:10] }}</dd>
     </dl>
+    {% if rent_changes %}
+    <h3 class="mt-3">Rent changes</h3>
+    <ul class="docs list-unstyled">
+      {% for c in rent_changes %}
+      <li>KES {{ "{:,.0f}".format(c.old_rent) }} → <b>KES {{ "{:,.0f}".format(c.new_rent) }}</b> from {{ c.effective_period }}
+        <span class="hint">· {% if c.applied_at %}applied {{ c.applied_at[:10] }}{% elif c.cancelled_at %}cancelled{% else %}applies when {{ c.effective_period }} is billed · tenant told{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <details class="mt-2">
+      <summary>Edit lease type and terms</summary>
+      <form method="POST" action="{{ url_for('leases.terms', lease_id=lease.id) }}" class="mt-2">
+        {% with f = lease %}{% include 'leases/_terms_fields.html' %}{% endwith %}
+        <button class="btn btn-primary btn-sm">Save terms</button>
+      </form>
+    </details>
   </section>
 
   <section>
@@ -102,7 +123,16 @@
       <li class="d-flex justify-content-between gap-2">
         <span><strong>{{ kind_labels.get(d.kind, d.kind) }}</strong> · {{ d.original_name or 'file' }}
           <span class="hint">· {{ d.created_at[:10] }}{% if d.size_bytes %} · {{ (d.size_bytes / 1024)|round|int }} KB{% endif %}</span></span>
-        <a href="{{ url_for('leases.document_file', lease_id=lease.id, doc_id=d.id) }}" target="_blank" rel="noopener">View</a>
+        <span class="d-flex gap-2 align-items-center">
+          {% if d.kind != 'id_copy' %}
+          <form method="POST" action="{{ url_for('leases.document_visibility', lease_id=lease.id, doc_id=d.id) }}">
+            <input type="hidden" name="visible" value="{{ 0 if d.tenant_visible else 1 }}">
+            <button class="btn btn-sm {{ 'btn-primary' if d.tenant_visible else 'btn-outline-secondary' }}" title="Whether the tenant sees this on their lease page">
+              {{ 'Tenant can see ✓' if d.tenant_visible else 'Let tenant see' }}</button>
+          </form>
+          {% endif %}
+          <a href="{{ url_for('leases.document_file', lease_id=lease.id, doc_id=d.id) }}" target="_blank" rel="noopener">View</a>
+        </span>
       </li>
       {% endfor %}
     </ul>
@@ -117,7 +147,7 @@
           <input class="form-control" type="file" name="files" multiple required accept="application/pdf,image/*,.heic"></div>
       </div>
       <button class="btn btn-outline-secondary btn-sm mt-2">Attach</button>
-      <div class="hint mt-1">ID copies and leases are visible to admins only.</div>
+      <div class="hint mt-1">Admins only, unless you tick "Let tenant see" on a lease or other document. ID copies are never shown to the tenant.</div>
     </form>
   </section>
 </div>

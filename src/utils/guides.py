@@ -119,6 +119,18 @@ _T = {
             'Picha huhifadhiwa bila mahali simu yako ilipokuwa.',
         ]),
     },
+    'tenant.my_lease': {
+        'en': ('My lease', 'The terms of your tenancy, from the record management keeps.', [
+            'Month to month: you stay as long as you like and give notice to leave. Fixed term: it has an end date.',
+            'If your rent is going to change, it shows here before it does.',
+            'Something does not match your paper lease? Tell management.',
+        ]),
+        'sw': ('Mkataba wangu', 'Masharti ya upangaji wako, kutoka kwa rekodi ya usimamizi.', [
+            'Mwezi kwa mwezi: unakaa kadri unavyotaka na unatoa notisi kuhama. Muda maalum: una tarehe ya mwisho.',
+            'Kodi yako ikibadilika, itaonyeshwa hapa kabla haijabadilika.',
+            'Kitu hakilingani na mkataba wako wa karatasi? Mwambie usimamizi.',
+        ]),
+    },
     'tenant.settings': {
         'en': ('Settings', 'Your details, your PIN and your language.', [
             'Only management can change your details. If something is wrong, tell them.',
@@ -307,6 +319,12 @@ _T = {
             'Tenants with management, the caretaker\'s replies to tenants on repairs, and the caretaker with management.',
             '"Waiting for a reply" means the tenant wrote last and management has not answered yet.',
             'You are reading only — replies are written by management.',
+        ]),
+    },
+    'leases.renewals': {
+        'en': ('Renewals & rent reviews', 'Fixed-term leases ending in the next 60 days, and rent increases the lease allows.', [
+            'Renew (new end date), switch to month to month, or let it end. The tenant sees a notice in their portal.',
+            'A confirmed new rent is billed from the month you choose, when that month\'s charges are generated. The tenant is told now.',
         ]),
     },
     'leases.moving_out': {

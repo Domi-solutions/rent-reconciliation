@@ -73,6 +73,12 @@
   {# ---- Only items that need a person's attention appear here ---- #}
   <div class="ph-section-title">Needs follow-up</div>
 
+  {% if renewals_count %}
+  <div class="ph-alert ph-warn">
+    {{ renewals_count }} lease{{ 's' if renewals_count != 1 }} to decide on — ending soon or due a rent review.
+    <a href="{{ url_for('leases.renewals') }}">Open →</a>
+  </div>
+  {% endif %}
   {% if moving_out_count %}
   <div class="ph-alert ph-warn">
     {{ moving_out_count }} tenant{{ 's have' if moving_out_count != 1 else ' has' }} given notice to move out.

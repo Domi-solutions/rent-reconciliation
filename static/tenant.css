@@ -289,3 +289,9 @@ body .welcome-done { display: flex; align-items: center; justify-content: center
 .contact-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
 body details.settings-more > summary { margin-top: 8px; }
 .demo-note { background: #FFF6D9; border: 1px dashed #E0B640; border-radius: var(--r-input); padding: 8px 10px; font-size: 14px; }
+/* My lease */
+.lease-type { font-size: 16px; margin: 4px 0; }
+.lease-change { margin-top: 12px; padding: 10px 12px; border-left: 4px solid var(--orange); background: var(--orange-soft); border-radius: var(--r-input); }
+.lease-h3 { font-size: 15px; font-weight: 650; margin: 16px 0 4px; }
+.lease-doc { color: var(--ink); text-decoration: none; }
+.lease-doc span:last-child { color: var(--accent); font-weight: 600; }

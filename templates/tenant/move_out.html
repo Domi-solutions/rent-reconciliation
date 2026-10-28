@@ -22,7 +22,7 @@
   <div class="mo-label">Notice given</div>
   <h2>Moving out on {{ notice.planned_date }}</h2>
   <p class="muted">Given on {{ notice.given_on }} · {{ notice.notice_days }} days' notice
-    {% if notice.notice_days < 30 %}<span class="mo-short">· less than one month</span>{% endif %}</p>
+    {% if notice.notice_days < lease.notice_days %}<span class="mo-short">· less than your lease asks for</span>{% endif %}</p>
   <p class="mo-seen">{% if notice.status == 'acknowledged' %}✓ Management has seen your notice.{% else %}Waiting for management to see it.{% endif %}</p>
   {% if notice.refund_phone %}<p>Deposit refund to M-Pesa <b>{{ notice.refund_phone }}</b>.</p>{% endif %}
   <h3>What happens next</h3>
@@ -64,13 +64,17 @@
 
 <section class="doc">
   <h2>Give notice to move out</h2>
-  <p class="muted">Your lease asks for one month's notice — the earliest date with full notice is <b>{{ full_notice.strftime('%-d %B %Y') }}</b>.</p>
+  <p class="muted">Your lease asks for {{ lease.notice_days }} days' notice — the earliest date with full notice is <b>{{ full_notice.strftime('%-d %B %Y') }}</b>.</p>
+  {% if lease.end_date %}
+  <div class="lease-change">Your lease is fixed until <b>{{ lease.end_date }}</b>.
+    {% if lease.early_exit_terms %}If you leave before then: {{ lease.early_exit_terms }}{% else %}Leaving before then may cost you — ask management first.{% endif %}</div>
+  {% endif %}
   {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
   <form method="POST" class="mo-form">
     <label class="form-label fw-semibold" for="planned_date">The day you plan to move out</label>
     <input id="planned_date" type="date" name="planned_date" class="form-control mb-1" required
            min="{{ tomorrow }}" value="{{ form.planned_date or full_notice.isoformat() }}">
-    <p class="mo-hint" id="mo-hint" hidden>That is less than one month away. You can still give notice; management will tell you what it means for your rent and deposit.</p>
+    <p class="mo-hint" id="mo-hint" hidden>That is less notice than your lease asks for. You can still give notice; management will tell you what it means for your rent and deposit.</p>
 
     <label class="form-label fw-semibold mt-3" for="reason">Why are you moving? <span class="muted">(optional)</span></label>
     <select id="reason" name="reason" class="form-select mb-2">

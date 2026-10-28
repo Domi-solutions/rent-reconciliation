@@ -5,7 +5,7 @@ from datetime import date
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
 
 from src.database.db import get_connection
-from src.leases import intake, move_out
+from src.leases import intake, move_out, terms as lease_terms
 from src.utils import staff
 
 lease_bp = Blueprint('leases', __name__, url_prefix='/leases')
@@ -37,8 +37,9 @@ def board():
             return redirect(url_for('property_list'))
         rows, counts = intake.unit_board(conn, prop['id'])
         moving_out = move_out.open_count(conn, prop['id'])
+        renewals_due = len(lease_terms.ending_soon(conn, prop['id'])) + len(lease_terms.reviews_due(conn, prop['id']))
     return render_template('leases/board.html', property=prop, rows=rows, counts=counts,
-                           phase=request.args.get('phase', ''), moving_out=moving_out)
+                           phase=request.args.get('phase', ''), moving_out=moving_out, renewals_due=renewals_due)
 
 
 @lease_bp.route('/moving-out', methods=['GET', 'POST'])
@@ -139,9 +140,74 @@ def detail(lease_id):
         prior = intake.prior_account(conn, lease['prior_tenant_id']) if lease['prior_tenant_id'] else None
         balance = conn.execute("SELECT balance FROM tenant_balances WHERE tenant_id = ?",
                                (lease['tenant_id'],)).fetchone()
+        rent_changes = conn.execute("SELECT * FROM lease_rent_changes WHERE lease_id = ? ORDER BY created_at",
+                                    (lease_id,)).fetchall()
     return render_template('leases/detail.html', property=prop, lease=lease, documents=documents,
                            prior=prior, balance=balance['balance'] if balance else 0,
-                           kinds=intake.DOCUMENT_KINDS, today=date.today().isoformat())
+                           kinds=intake.DOCUMENT_KINDS, today=date.today().isoformat(),
+                           term_types=lease_terms.TERM_TYPES, decisions=lease_terms.DECISIONS,
+                           next_review=lease_terms.next_review(lease), rent_changes=rent_changes)
+
+
+@lease_bp.route('/<lease_id>/terms', methods=['POST'])
+def terms(lease_id):
+    with get_connection() as conn:
+        prop, lease = _lease_or_404(conn, lease_id)
+        try:
+            start = date.fromisoformat(lease['start_date'][:10]) if lease['start_date'] else None
+            lease_terms.save(conn, lease, lease_terms.parse(request.form, start), staff.actor(), prop)
+        except lease_terms.TermsError as e:
+            flash(str(e), 'error')
+            return redirect(url_for('leases.detail', lease_id=lease_id))
+    flash('Lease terms saved.', 'success')
+    return redirect(url_for('leases.detail', lease_id=lease_id))
+
+
+@lease_bp.route('/<lease_id>/documents/<doc_id>/visibility', methods=['POST'])
+def document_visibility(lease_id, doc_id):
+    """Let the tenant see a lease document (never an ID copy), or hide it again."""
+    visible = 1 if request.form.get('visible') == '1' else 0
+    with get_connection() as conn:
+        _, lease = _lease_or_404(conn, lease_id)
+        doc = conn.execute("SELECT kind FROM lease_documents WHERE id = ? AND lease_id = ?", (doc_id, lease_id)).fetchone()
+        if doc and doc['kind'] != 'id_copy':
+            conn.execute("UPDATE lease_documents SET tenant_visible = ? WHERE id = ?", (visible, doc_id))
+            conn.execute("INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                         ('lease_document_shared' if visible else 'lease_document_hidden', 'lease', lease_id,
+                          f"Unit {lease['unit_number']} | document {doc_id}", staff.actor()))
+    return redirect(url_for('leases.detail', lease_id=lease_id))
+
+
+@lease_bp.route('/renewals', methods=['GET', 'POST'])
+def renewals():
+    """Fixed-term leases ending soon, and rent reviews due (src/leases/terms.py)."""
+    with get_connection() as conn:
+        prop = get_current_property(conn)
+        if not prop:
+            return redirect(url_for('property_list'))
+        if request.method == 'POST':
+            lease = intake.get_lease(conn, request.form.get('lease_id', ''), prop['id'])
+            try:
+                if not lease:
+                    raise lease_terms.TermsError('Lease not found.')
+                if request.form.get('action') == 'decide':
+                    lease_terms.decide_ending(conn, lease, request.form.get('decision'), staff.actor(),
+                                              request.form.get('new_end'))
+                    flash('Saved. The tenant sees a notice about their lease.', 'success')
+                elif request.form.get('action') == 'rent':
+                    lease['unit_rent'] = conn.execute("SELECT monthly_rent FROM units WHERE id = ?",
+                                                      (lease['unit_id'],)).fetchone()[0]
+                    lease_terms.schedule_rent_change(conn, lease, prop, request.form.get('new_rent'),
+                                                     request.form.get('effective_period'), staff.actor(),
+                                                     request.form.get('reason'))
+                    flash('New rent confirmed. The tenant sees a notice now; it is billed from that month.', 'success')
+            except lease_terms.TermsError as e:
+                flash(str(e), 'error')
+            return redirect(url_for('leases.renewals'))
+        ending = lease_terms.ending_soon(conn, prop['id'])
+        reviews = lease_terms.reviews_due(conn, prop['id'])
+    return render_template('leases/renewals.html', property=prop, ending=ending, reviews=reviews,
+                           decisions=lease_terms.DECISIONS)
 
 
 @lease_bp.route('/<lease_id>/signed', methods=['POST'])

@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Leases: fixed terms, rent reviews, tenant's lease page (Claude, 2026-10-28)
+
+- A lease is month to month (default) or fixed-term (end date, notice days, optional yearly % increase, early-exit terms in plain words). Leases → Renewals & rent reviews: renew / switch to month to month / let it end; confirm a new rent from a month (tenant notified now, billed from that month by Generate charges). Tenant "My lease" page (menu) + any document management shares (never ID copies); move-out uses the lease's notice days and shows early-exit terms. Demo: B3 fixed term ending in 45 days, A4 8% yearly review in ~3 weeks. 5 tests.
+
 ### Tenant Settings (Claude, 2026-10-28)
 
 - Menu: Moving out and Settings are their own items. Settings: details, PIN, language, numbers I pay from, emergency contact, second phone, phone change (LINCKS chose: SMS code to the new number + management approves; old number texted; history kept), sign out everywhere. 5 tests.

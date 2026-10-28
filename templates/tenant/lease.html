@@ -1,0 +1,50 @@
+{% extends "tenant/base_tenant.html" %}
+{% block title %}My lease — Unit {{ unit.unit_number }}{% endblock %}
+{% block content %}
+{# Built from the record (src/leases/terms.for_tenant); the signed copy only if management shared it. #}
+{% set rent = (lease.unit_rent if lease else record.monthly_rent) or 0 %}
+{% set service = (lease.unit_service if lease else record.service_charge) or 0 %}
+<section class="doc">
+  <h2>My lease</h2>
+  {% if lease and lease.term_type == 'fixed' and lease.end_date %}
+  <p class="lease-type">Fixed term — from <b>{{ lease.start_date }}</b> to <b>{{ lease.end_date }}</b>.</p>
+  <p class="muted">{% if days_left is not none and days_left >= 0 %}{{ days_left }} days left.{% elif days_left is not none %}The end date has passed.{% endif %}
+    {% if lease.end_decision == 'end' %}It will not be renewed.{% elif lease.end_decision == 'monthly' %}After it ends it continues month to month.{% endif %}</p>
+  {% else %}
+  <p class="lease-type">Month to month — you stay as long as you like and give {{ (lease.notice_days if lease else 30) or 30 }} days' notice when you want to leave.</p>
+  {% endif %}
+
+  <table class="mo-table mt-2">
+    <tr><td>Started</td><td class="num">{{ (lease.start_date if lease else record.move_in_date) or 'Not recorded' }}</td></tr>
+    <tr><td>Rent each month</td><td class="num">KES {{ rent|money_amount }}</td></tr>
+    {% if service %}<tr><td>Service charge each month</td><td class="num">KES {{ service|money_amount }}</td></tr>{% endif %}
+    <tr><td>Deposit</td><td class="num">{% if (lease.deposit_held if lease else record.deposit_paid) %}KES {{ (lease.deposit_held if lease else record.deposit_paid)|money_amount }}{% else %}None recorded{% endif %}</td></tr>
+    <tr><td>Notice to move out</td><td class="num">{{ (lease.notice_days if lease else 30) or 30 }} days</td></tr>
+  </table>
+
+  {% if lease and lease.upcoming_change %}
+  <p class="lease-change">From <b>{{ lease.upcoming_change.effective_period }}</b> your rent is <b>KES {{ lease.upcoming_change.new_rent|money_amount }}</b> a month.</p>
+  {% elif lease and lease.rent_increase_pct %}
+  <p class="muted mt-2">Your lease allows rent to go up {{ '%g'|format(lease.rent_increase_pct) }}% every {{ lease.rent_increase_every_months or 12 }} months{% if lease.next_review %} — next review on {{ lease.next_review }}{% endif %}. You get a notice here before any change.</p>
+  {% endif %}
+
+  {% if lease and lease.early_exit_terms %}
+  <h3 class="lease-h3">If you leave early</h3>
+  <p>{{ lease.early_exit_terms }}</p>
+  {% endif %}
+</section>
+
+<section class="doc">
+  <h2>Signed copy</h2>
+  {% if lease and lease.documents %}
+  {% for d in lease.documents %}
+  <a class="contact-row lease-doc" href="{{ url_for('tenant.lease_document', token=token, doc_id=d.id) }}" target="_blank" rel="noopener">
+    <span><b>{{ 'Signed lease' if d.kind == 'lease' else 'Document' }}</b> · {{ d.original_name or 'file' }}</span><span>Open ›</span>
+  </a>
+  {% endfor %}
+  {% else %}
+  <p class="muted">No copy is shared here yet. <a href="{{ url_for('tenant.message_new', token=token, topic='other') }}">Ask management</a> for one.</p>
+  {% endif %}
+</section>
+<p class="muted">Something here does not match your lease? <a href="{{ url_for('tenant.message_new', token=token, topic='other') }}">Tell management</a>.</p>
+{% endblock %}

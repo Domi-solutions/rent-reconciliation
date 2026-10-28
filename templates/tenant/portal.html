@@ -75,6 +75,7 @@
 </section>
 
 <nav class="overview-links" aria-label="More">
+  <a href="{{ url_for('tenant.my_lease', token=token) }}">My lease{% if lease_end %} <small class="muted">· ends {{ lease_end }}</small>{% endif %} <span aria-hidden="true">›</span></a>
   <a href="{{ url_for('tenant.move_out_page', token=token) }}">Moving out &amp; your deposit <span aria-hidden="true">›</span></a>
   <a href="{{ url_for('tenant.welcome', token=token) }}">How to use Domi <span aria-hidden="true">›</span></a>
 </nav>
