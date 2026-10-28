@@ -85,6 +85,8 @@
     <span style="color: #dc2626; font-size: 12px;">
       {% if c.flag_reason == 'stale_30_days' %}
         Unmatched after 30 days — no bank statement covers this reference.
+      {% elif c.flag_reason in claim_held_text %}
+        Held: {{ claim_held_text[c.flag_reason] }}
       {% else %}
         Reference not found in the {{ c.mpesa_period or 'relevant' }} bank statement.
       {% endif %}

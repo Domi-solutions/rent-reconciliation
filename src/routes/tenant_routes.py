@@ -12,6 +12,7 @@ from src.utils.tenant_documents import (account_coverage, build_invoice, build_r
                                          period_label, unpaid_bills)
 from src.utils.water_breakdown import water_breakdowns
 from src.messaging import threads
+from src.reconciliation import claim_owner
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
 from src.utils.tenant_auth import (
@@ -461,7 +462,7 @@ def payments(token):
         # Unverified claims (pending + flagged) — skip refs already in verified payments
         verified_refs = {p['mpesa_ref'] for p in payment_rows if p['mpesa_ref']}
         claim_rows = conn.execute("""
-            SELECT mpesa_ref, claimed_amount, status, created_at
+            SELECT mpesa_ref, claimed_amount, status, flag_reason, created_at
             FROM payment_claims
             WHERE tenant_id = ? AND status IN ('pending', 'flagged')
             ORDER BY created_at DESC
@@ -477,6 +478,7 @@ def payments(token):
                 'sender_name': '-',
                 'allocations': [],
                 'status': c['status'],
+                'flag_reason': c['flag_reason'],
             })
 
         # Sort combined list by date descending
@@ -489,6 +491,7 @@ def payments(token):
         unit=unit,
         property=prop,
         payments_with_allocations=payments_with_allocations,
+        held_text=claim_owner.TENANT_TEXT,
     )
 
 
@@ -689,7 +692,7 @@ def pay(token):
         owed = unpaid_bills(ledger, balance)
 
         claims_raw = conn.execute("""
-            SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.created_at,
+            SELECT pc.id, pc.mpesa_ref, pc.claimed_amount, pc.status, pc.flag_reason, pc.created_at,
                    p.amount AS verified_amount, p.id AS payment_id
             FROM payment_claims pc
             LEFT JOIN payments p ON p.claim_id = pc.id
@@ -720,6 +723,7 @@ def pay(token):
 
     success = request.args.get('success')
     error = request.args.get('error')
+    notice = request.args.get('notice')
     from src.payments import daraja
     how = None
     if prop.get('pay_paybill') and prop.get('pay_account'):
@@ -742,6 +746,8 @@ def pay(token):
         caretaker=caretaker,
         success=success,
         error=error,
+        notice=notice,
+        held_text=claim_owner.TENANT_TEXT,
     )
 
 
@@ -772,11 +778,17 @@ def report_payment(token):
         except (TypeError, ValueError):
             amount = None
 
-        # Already received through the property's own paybill: nothing to check.
+        # Already received through the property's own paybill: confirmed if it is this
+        # tenant's; on someone else's account it is held for management (claim_owner).
         from src.payments.mpesa import paid_through_mpesa
-        if paid_through_mpesa(conn, reference):
-            return redirect(url_for('tenant.pay', token=token,
-                                    success=f'Payment {reference} is already confirmed — see your statement.'))
+        _held = None
+        _booked = paid_through_mpesa(conn, reference)
+        if _booked:
+            _owner = conn.execute("SELECT tenant_id FROM payments WHERE id = ?", (_booked['payment_id'],)).fetchone()
+            if _owner and _owner['tenant_id'] == tenant['id']:
+                return redirect(url_for('tenant.pay', token=token,
+                                        success=f'Payment {reference} is already confirmed — see your statement.'))
+            _held = claim_owner.ON_OTHER_ACCOUNT
 
         # Duplicate check
         existing = conn.execute(
@@ -812,6 +824,7 @@ def report_payment(token):
         # At-submission bank check — same logic as caretaker flow
         _org_id = prop['organization_id'] if prop.get('organization_id') else None
         property_id = prop['id']
+        _claim = {'id': claim_id, 'mpesa_ref': reference, 'property_id': property_id}
 
         if mpesa_period:
             _mp_y, _mp_m = int(mpesa_period[:4]), int(mpesa_period[5:7])
@@ -849,7 +862,9 @@ def report_payment(token):
 
         _notify = None  # ('verified'|'flagged', sms_body) — sent after commit
 
-        if _has_bank_data:
+        if _held:
+            claim_owner.hold(conn, _claim, _held, org_id=_org_id)
+        elif _has_bank_data:
             if _org_id:
                 _bank_txn = conn.execute("""
                     SELECT bt.* FROM bank_transactions bt
@@ -865,10 +880,18 @@ def report_payment(token):
                 """, (property_id, reference)).fetchone()
 
             if _bank_txn:
+                # Book it to this tenant only if it is recognisably theirs (claim_owner).
                 _existing_pay = conn.execute(
-                    "SELECT id, claim_id FROM payments WHERE bank_txn_id = ?",
+                    "SELECT id, claim_id, tenant_id FROM payments WHERE bank_txn_id = ?",
                     (_bank_txn['id'],)
                 ).fetchone()
+                if _existing_pay and _existing_pay['tenant_id'] != tenant['id']:
+                    _held = claim_owner.ON_OTHER_ACCOUNT
+                elif not _existing_pay and not claim_owner.sender_is_tenant(conn, _bank_txn, tenant):
+                    _held = claim_owner.SENDER_NOT_TENANT
+            if _bank_txn and _held:
+                claim_owner.hold(conn, _claim, _held, org_id=_org_id)
+            elif _bank_txn:
                 if _existing_pay:
                     if not _existing_pay['claim_id']:
                         conn.execute("UPDATE payments SET claim_id = ? WHERE id = ?",
@@ -937,6 +960,9 @@ def report_payment(token):
     if _notify and _notify[0] == 'verified':
         return redirect(url_for('tenant.pay', token=token,
                                 success=f'Payment {reference} confirmed and allocated to your charges.'))
+    if _held:
+        return redirect(url_for('tenant.pay', token=token,
+                                notice=f'Code {reference} received. {claim_owner.TENANT_TEXT[_held]}'))
     return redirect(url_for('tenant.pay', token=token,
                             success=f'Payment reference {reference} recorded. We will verify it against bank records within 1–5 days.'))
 

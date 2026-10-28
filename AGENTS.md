@@ -29,6 +29,10 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 **Who:** Claude — finished Codex's plain-language money labels across the tenant portal (Codex's handoff kept below).
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
 
+### Pasted M-Pesa codes can't be used to take a neighbour's payment (Claude, 2026-10-28)
+
+- Gap found by LINCKS's question about the Pay page: a tenant pasting someone else's M-Pesa code (seen on their phone) was credited with it if the bank line was still unassigned, and a code already on another account showed "Confirmed ✓". Now `claim_owner.sender_is_tenant()` must pass (name / phone / past sender) or the claim is held for management with a reason the tenant and staff both see. See CLAUDE.md Database rules. 3 tests; they fail without the fix.
+
 ### "Still owed" opens into its bills (Claude, 2026-10-28)
 
 - Tapping **Still owed** (tenant overview, statement, Pay) lists the exact unpaid bills, oldest first, ending in a **Make a payment** button (Pay page `#pay-now`: the M-Pesa form, or the paybill steps when STK is off): which bill, KES left on it, due date, **Late** once past due, and how much is already paid. Built by `tenant_documents.unpaid_bills(rows, balance)` from the statement rows; rendered by `templates/tenant/partials/owed_breakdown.html`; styles in `static/tenant.css`. If a confirmed payment is not yet set against a bill, the list shows it as a separate line so the total still matches. Tests: `tests/test_unpaid_bills.py`.

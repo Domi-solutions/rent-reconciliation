@@ -62,6 +62,8 @@
     {% if c.mpesa_date %} · M-Pesa date: {{ c.mpesa_date }}{% endif %}
     {% if c.flag_reason == 'stale_30_days' %}
       · <span style="color: #dc2626;">Unmatched after 30 days</span>
+    {% elif c.flag_reason in claim_held_text %}
+      · <span style="color: #dc2626;">Held: {{ claim_held_text[c.flag_reason] }}</span>
     {% else %}
       · <span style="color: #dc2626;">Not found in {{ c.mpesa_period or 'bank' }} statement</span>
     {% endif %}

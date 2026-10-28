@@ -237,6 +237,8 @@ from src.utils.tenant_documents import charge_label as _charge_label, period_lab
 app.jinja_env.filters['charge_label'] = _charge_label
 app.jinja_env.filters['period_label'] = _period_label
 app.jinja_env.filters['money_amount'] = _money_amount
+from src.reconciliation.claim_owner import STAFF_TEXT as _CLAIM_HELD_TEXT
+app.jinja_env.globals['claim_held_text'] = _CLAIM_HELD_TEXT
 app.register_blueprint(mpesa_admin_bp)
 
 
@@ -3041,6 +3043,19 @@ def reparse_statement(statement_id):
         return redirect(url_for('manage_statements'))
 
 
+def _held_for_owner(conn, claim, bank_txn, org_id):
+    """A tenant's own report is booked only if the bank sender is recognisably theirs
+    (src/reconciliation/claim_owner.py); otherwise it is held for management."""
+    from src.reconciliation import claim_owner
+    if claim['source'] != 'tenant' or not claim['tenant_id']:
+        return False
+    tenant = conn.execute("SELECT id, name, phone FROM tenants WHERE id = ?", (claim['tenant_id'],)).fetchone()
+    if tenant and claim_owner.sender_is_tenant(conn, bank_txn, tenant):
+        return False
+    claim_owner.hold(conn, claim, claim_owner.SENDER_NOT_TENANT, org_id=org_id)
+    return True
+
+
 @app.route('/verify/<statement_id>')
 def verify_payments(statement_id):
     """Auto-verify pending claims against this statement. Claims are matched across all org properties."""
@@ -3101,6 +3116,8 @@ def verify_payments(statement_id):
             bank_txn = bank_by_ref[ref]
             existing_payment = conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (bank_txn['id'],)).fetchone()
             if existing_payment:
+                continue
+            if _held_for_owner(conn, claim, bank_txn, verify_org_id):
                 continue
 
             payment_id = generate_id('PAY')
@@ -3217,6 +3234,8 @@ def verify_payments(statement_id):
                 continue
             bank_txn = bank_by_ref[ref]
             if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (bank_txn['id'],)).fetchone():
+                continue
+            if _held_for_owner(conn, claim, bank_txn, verify_org_id):
                 continue
 
             payment_id = generate_id('PAY')

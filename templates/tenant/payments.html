@@ -31,7 +31,7 @@
     </div>
     {% elif item.status == 'flagged' %}
     <div class="data-row" style="font-size:0.8rem;color:#856404;">
-      Under review — please contact your caretaker.
+      {{ held_text.get(item.flag_reason) or 'Under review — please contact your caretaker.' }}
     </div>
     {% endif %}
 
