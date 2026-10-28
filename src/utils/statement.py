@@ -3,6 +3,7 @@ Shared tenant statement builder and quick-verify helper.
 Used by admin, caretaker, and owner viewer routes.
 """
 import re
+from src.utils.water_breakdown import water_breakdowns
 
 
 def quick_verify_ref(conn, text, unit_id, org_id):
@@ -211,6 +212,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
                      'brought_forward': 'Balance brought forward'}
 
     rows = []
+    water = water_breakdowns(conn, tenant_id, property_id)
     for c in charges:
         allocated = float(c['allocated'] or 0)
         amount    = float(c['amount'])
@@ -244,6 +246,7 @@ def get_tenant_statement(conn, tenant_id, property_id):
             'sender':      None,
             'status':      status,
             'notes':       None,
+            'water_breakdown': water.get(c['id']),
         })
 
     for p in payments:

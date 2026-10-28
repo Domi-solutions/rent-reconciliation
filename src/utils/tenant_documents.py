@@ -7,6 +7,8 @@ Everything is scoped to the tenant (tenant_id), never to the unit.
 """
 
 import calendar
+import re
+from datetime import datetime
 
 from src.utils.statement import get_tenant_statement
 
@@ -17,6 +19,11 @@ CHARGE_LABELS = {'rent': 'Rent', 'service': 'Service charge', 'water': 'Water',
 def charge_label(charge_type):
     """Display name for a charge type — also the `charge_label` template filter."""
     return CHARGE_LABELS.get(charge_type or '', (charge_type or '').replace('_', ' ').capitalize())
+
+
+def money_amount(value):
+    """Keep cents when present, without adding .00 to every whole-shilling amount."""
+    return f'{float(value):,.2f}'.rstrip('0').rstrip('.')
 
 
 def period_label(period):
@@ -33,6 +40,26 @@ def invoice_periods(rows):
     """Months that have charges, newest first."""
     return sorted({r['period'] for r in rows if r['row_type'] == 'charge' and r['period'] != 'ARREARS'},
                   reverse=True)
+
+
+def account_coverage(conn, tenant_id):
+    """Dates describe the records included, without claiming missing months are complete."""
+    raw = conn.execute('SELECT DISTINCT period FROM rent_charges WHERE tenant_id = ?',
+                       (tenant_id,)).fetchall()
+    periods = sorted(r['period'] for r in raw if r['period'] and
+                     re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', r['period']))
+    last_paid = conn.execute('SELECT MAX(payment_date) FROM payments WHERE tenant_id = ?',
+                             (tenant_id,)).fetchone()[0]
+    try:
+        payment_date = datetime.strptime((last_paid or '')[:10], '%Y-%m-%d').strftime('%-d %B %Y')
+    except ValueError:
+        payment_date = None
+    return {
+        'first_period': period_label(periods[0]) if periods else None,
+        'last_period': period_label(periods[-1]) if periods else None,
+        'has_brought_forward': any(r['period'] == 'ARREARS' for r in raw),
+        'last_payment_date': payment_date,
+    }
 
 
 def build_invoice(conn, tenant_id, property_id, period):
@@ -62,7 +89,8 @@ def build_invoice(conn, tenant_id, property_id, period):
         'due_date': min((r['row_date'] or '') for r in charges)[:10],
         'brought_forward': brought_forward,
         'charges': [{'label': CHARGE_LABELS.get(r['charge_type'], r['charge_type'].title()), 'amount': r['debit'],
-                     'paid': r['allocated'], 'remaining': r['remaining']}
+                     'paid': r['allocated'], 'remaining': r['remaining'],
+                     'charge_type': r['charge_type'], 'water_breakdown': r.get('water_breakdown')}
                     for r in sorted(charges, key=lambda r: order.get(r['charge_type'], 9))],
         'month_total': month_total,
         'payments': paid_in_month,

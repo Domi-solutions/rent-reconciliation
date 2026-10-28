@@ -1,4 +1,5 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
 {% block title %}Charges — {{ property.name }}{% endblock %}
 {% set active_tab = 'charges' %}
 {% block content %}
@@ -13,12 +14,12 @@
       <div class="surface-card-header d-flex justify-content-between align-items-center"
            role="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ loop.index }}">
         <div>
-          <div class="data-row-unit">{{ period }}</div>
-          <div class="data-row-meta">KES {{ "{:,.0f}".format(period_total) }} charged</div>
+          <div class="data-row-unit">{{ period|period_label }} <span aria-hidden="true">⌄</span></div>
+          <div class="data-row-meta">KES {{ (period_total)|money_amount }} charged</div>
         </div>
         <div>
           {% if period_outstanding > 0 %}
-          <span class="status-arrears">KES {{ "{:,.0f}".format(period_outstanding) }} outstanding</span>
+          <span class="status-arrears">KES {{ (period_outstanding)|money_amount }} outstanding</span>
           {% else %}
           <span class="status-paid">Settled</span>
           {% endif %}
@@ -27,7 +28,7 @@
       <div id="collapse-{{ loop.index }}" class="collapse">
         <div class="data-row">
           <p class="data-row-meta mb-2">{{ property.name }} — Unit {{ unit.unit_number }} — {{ tenant.name }}</p>
-          <table class="table table-sm mb-2 viewer-table">
+          <div class="tenant-ledger"><table class="table table-sm mb-2 viewer-table">
             <thead>
               <tr>
                 <th>Type</th>
@@ -41,9 +42,9 @@
               {% for c in items %}
               <tr>
                 <td>{{ c.charge_type|charge_label }}</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(c.amount) }}</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(c.paid) }}</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(c.outstanding) }}</td>
+                <td class="text-end">KES {{ (c.amount)|money_amount }}</td>
+                <td class="text-end">KES {{ (c.paid)|money_amount }}</td>
+                <td class="text-end">KES {{ (c.outstanding)|money_amount }}</td>
                 <td>{{ c.due_date or '-' }}</td>
               </tr>
               {% endfor %}
@@ -51,13 +52,17 @@
             <tfoot class="fw-bold">
               <tr>
                 <td>Total</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(period_total) }}</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(period_paid) }}</td>
-                <td class="text-end">KES {{ "{:,.0f}".format(period_outstanding) }}</td>
+                <td class="text-end">KES {{ (period_total)|money_amount }}</td>
+                <td class="text-end">KES {{ (period_paid)|money_amount }}</td>
+                <td class="text-end">KES {{ (period_outstanding)|money_amount }}</td>
                 <td></td>
               </tr>
             </tfoot>
-          </table>
+          </table></div>
+          {% for c in items if c.charge_type == 'water' %}
+          <h3 style="font-size:14px;margin:16px 0 6px">Water — how this charge is calculated</h3>
+          {{ water_breakdown(c.water_breakdown) }}
+          {% endfor %}
         </div>
       </div>
     </div>

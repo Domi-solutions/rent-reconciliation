@@ -660,20 +660,21 @@ tables:
   water_uploads:
     status: live
     migration: migrate_add_water_readings
-    note: "One row per batch of meter readings. reading_period = month readings were taken (YYYY-MM). charge_period = month charges apply to (always reading_period + 1 month). rate is snapshotted from properties.water_rate at upload time."
+    note: "Batch of meter readings or amount-only Excel upload. Caretaker defaults charge_period to reading_period + 1; Excel uses the billing month for both. Rate is snapshotted on water_readings, not this table."
     columns:
       id: {type: TEXT, pk: true}
       property_id: {type: TEXT, fk: properties.id, required: true}
       reading_period: {type: TEXT, required: true, note: "YYYY-MM when readings were taken (e.g. 2026-05)"}
-      charge_period: {type: TEXT, required: true, note: "YYYY-MM when charges are billed (always reading_period + 1)"}
+      charge_period: {type: TEXT, required: true, note: "YYYY-MM when charges are billed; caretaker default is reading_period + 1, Excel uses its supplied billing month"}
       unit_count: {type: INTEGER}
       total_amount: {type: REAL}
-      rate: {type: REAL, note: "KES/unit consumed; snapshotted from properties.water_rate at upload time"}
-      source: {type: TEXT, values: [admin_excel, caretaker_form]}
+      source: {type: TEXT, values: [admin_excel, caretaker_web, demo_seed]}
       submitted_by: {type: TEXT}
       submitted_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
-    constraints:
-      - UNIQUE(property_id, charge_period) — prevents duplicate uploads per charge period
+    indexes:
+      - idx_wu_property ON (property_id)
+      - idx_wu_charge_period ON (charge_period)
+    # Caretaker duplicate check is in the route; these indexes are not UNIQUE.
 
   water_readings:
     status: live
@@ -686,7 +687,7 @@ tables:
       previous_reading: {type: REAL, required: true}
       current_reading: {type: REAL, required: true}
       units_consumed: {type: REAL, note: "current_reading − previous_reading"}
-      rate: {type: REAL, note: "KES per unit; copied from water_uploads.rate"}
+      rate: {type: REAL, note: "KES per unit; snapshotted from properties.water_rate when recorded"}
       amount: {type: REAL, note: "units_consumed × rate; written to rent_charges as charge_type='water'"}
       created_at: {type: TIMESTAMP, default: CURRENT_TIMESTAMP}
     indexes:

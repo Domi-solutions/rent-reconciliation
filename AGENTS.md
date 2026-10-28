@@ -26,8 +26,18 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — reverted the latest blueprint-inspired UI refinement at LINCKS's request; prior operational handoff retained below.
-**Date:** 2026-10-27 · **Deployment:** local preview only; no deployment.
+**Who:** Codex — tenant notices, dated balance coverage and water breakdowns; SMS non-delivery diagnosed.
+**Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
+
+### Tenant feedback addressed this session
+
+- Kept the restored visual direction and existing review fixes (`7270f53`) on branch `ui-review-fixes`. Added tenant-only `static/tenant.css`: prominent labelled notice cards, green accent, preview text and read links above the overview balance; full notices retain anchors on Messages. Only the 30 rendered notices are marked read, rather than every historical notice.
+- Balance overview and statement now name the first/latest recorded charge months and latest recorded payment date via `account_coverage()`. Whole-shilling amounts stay compact; cents are retained when present. Pending payment wording no longer exposes internal matching mechanics.
+- `src/utils/water_breakdown.py` reads tenant/property/unit/billing-period-scoped meter evidence. Statement, invoice and Charges show previous/new readings, usage, snapshotted rate and calculation. Missing, ambiguous or inconsistent readings are explicitly unavailable; no values inferred from a bill/current tariff. Balances/allocations unchanged.
+- Added fictional meter evidence to the Kijani demo seed (KES 100/unit) and enriched the existing `/tmp/domi-ui-review.db` without resetting accounts or changing billed amounts. Before-sample backup: `/tmp/domi-ui-before-meter-examples.db`. Never use this demo helper on real properties.
+- SMS: LINCKS confirmed the SMS never arrived. Local outbox proves `AT_SMS_ENABLED=false` simulated the attempt; local .env has Africa's Talking sandbox credentials and no TextSMS credentials. No real SMS/provider call was made. Demo code page now says delivery is unavailable when appropriate, preserves failed status during resend throttling, and clears stale codes when changing phone identity. Code verification/PIN setup passes offline integration tests. **Actual handset delivery remains pending live provider configuration; do not claim it is fixed.**
+- Validation: 63 unittest tests pass (8 new tenant tests); 156 Jinja templates compile, 90 rendered GET smoke checks pass. Browser verified tenant overview/notices, statement and invoice, including 390px layout and correct calculation. Server restarted with the same demo DB, SMS/outreach/scheduler off.
+- Next: LINCKS reviews this focused tenant pass; configure a live SMS provider before a handset-delivery test. No deployment authorised.
 
 ### Latest user decision and restored UI
 
@@ -36,7 +46,7 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ### Restored cross-page UI baseline
 
-- LINCKS authorised extending the Units trial across this checkout, then user review and Claude feedback via the hub. Checkout is `/Users/lincksmorara/Desktop/Projects/rent-reconciliation`, branch `main` (the primary checkout, not a newly created managed worktree).
+- LINCKS authorised extending the Units trial across this checkout, then user review and Claude feedback via the hub. Checkout is `/Users/lincksmorara/Desktop/Projects/rent-reconciliation`, current branch `ui-review-fixes` (the primary checkout, not a newly created managed worktree).
 - `theme.css` promotes system typography, 500 body weight, restrained corners and quieter shadows while preserving forest/sage/emerald/paper and semantic status colours. Secondary ink/borders have stronger contrast. Removed Google font dependency.
 - New `interface.css` is loaded last by all 20 document roots: admin, tenant, caretaker, owner/viewer, platform, auth, demo and error pages. Local hardcoded shapes/typography were aligned; icons share `partials/icons.html`. Units-specific layout stays in `units.css` (`units-screen`).
 - Clearer actions: underlined content links, bounded controls, focus rings, linked expense/message subjects instead of invisible clickable rows, explicit outbox expansion button, accessible help-language controls. Existing forms/routes preserved.

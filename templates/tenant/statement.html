@@ -1,13 +1,15 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
 {% block title %}Statement — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
 <div class="doc">
+  {% include 'tenant/partials/balance_coverage.html' %}
   <div class="muted">Balance on this account</div>
-  {% if balance > 0 %}<div class="big owed">KES {{ "{:,.0f}".format(balance) }} owed</div>
-  {% elif balance < 0 %}<div class="big credit">KES {{ "{:,.0f}".format(-balance) }} in credit</div>
+  {% if balance > 0 %}<div class="big owed">KES {{ (balance)|money_amount }} owed</div>
+  {% elif balance < 0 %}<div class="big credit">KES {{ (-balance)|money_amount }} in credit</div>
   {% else %}<div class="big credit">Fully paid</div>{% endif %}
   {% if pending %}
-  <div class="muted" style="margin-top:6px">KES {{ "{:,.0f}".format(pending|sum(attribute='claimed_amount')) }} reported as paid, not yet matched to a bank record — not included above.</div>
+  <div class="muted" style="margin-top:6px">KES {{ (pending|sum(attribute='claimed_amount'))|money_amount }} reported as paid, awaiting confirmation — not deducted above.</div>
   {% endif %}
 </div>
 
@@ -26,7 +28,7 @@
   </div>
   <div class="muted" style="margin-bottom:8px">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }} · newest first</div>
   {% if rows %}
-  <table>
+  <div class="tenant-ledger tenant-statement-ledger"><table>
     {% for r in rows %}
     <tr>
       <td style="width:84px" class="muted">{% if r.is_arrears %}B/F{% else %}{{ (r.row_date or '')[:10] }}{% endif %}</td>
@@ -38,15 +40,18 @@
           Balance brought forward
         {% else %}
           {% if r.charge_type == 'brought_forward' %}Balance brought forward{% else %}{{ r.charge_type|charge_label }} — {{ period_label(r.period) }}{% endif %}
-          <div class="muted">due {{ (r.row_date or '')[:10] }}</div>
+          <div class="muted statement-due">due {{ (r.row_date or '')[:10] }}</div>
         {% endif %}
         <a class="no-print" style="font-size:12px" href="{{ url_for('tenant.message_new', token=token, topic='money', ref=('payment:' ~ r.payment_id) if r.row_type == 'payment' else ('charge:' ~ r.charge_id)) }}">Ask about this</a>
       </td>
-      <td class="num">{% if r.row_type == 'payment' %}<span class="credit">−{{ "{:,.0f}".format(r.credit) }}</span>{% else %}{{ "{:,.0f}".format(r.debit) }}{% endif %}</td>
-      <td class="num muted">{{ "{:,.0f}".format(r.running_balance) }}</td>
+      <td class="num">{% if r.row_type == 'payment' %}<span class="credit">−{{ (r.credit)|money_amount }}</span>{% else %}{{ (r.debit)|money_amount }}{% endif %}</td>
+      <td class="num muted">{{ (r.running_balance)|money_amount }}</td>
     </tr>
+    {% if r.row_type == 'charge' and r.charge_type == 'water' %}
+    <tr class="water-detail-row"><td colspan="4">{{ water_breakdown(r.water_breakdown) }}</td></tr>
+    {% endif %}
     {% endfor %}
-  </table>
+  </table></div>
   <div class="muted" style="margin-top:8px">Columns: date · item · amount · balance after. Charges are listed on their due date. Tap a payment for its receipt.</div>
   {% else %}
   <div class="muted">No charges or payments recorded yet.</div>

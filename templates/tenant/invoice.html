@@ -1,4 +1,5 @@
 {% extends "tenant/base_tenant.html" %}
+{% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
 {% block title %}Invoice {{ inv.label }} — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
 <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -10,16 +11,19 @@
   <h2>Invoice — {{ inv.label }}</h2>
   <div class="muted" style="margin-bottom:14px">Unit {{ unit.unit_number }} · {{ tenant.name|title }}{% if inv.due_date %} · due {{ inv.due_date }}{% endif %}</div>
   <table>
-    <tr><td>Balance brought forward</td><td class="num">{{ "{:,.0f}".format(inv.brought_forward) }}</td></tr>
+    <tr><td>Balance brought forward</td><td class="num">{{ (inv.brought_forward)|money_amount }}</td></tr>
     {% for c in inv.charges %}
-    <tr><td>{{ c.label }} — {{ inv.label }}</td><td class="num">{{ "{:,.0f}".format(c.amount) }}</td></tr>
+    <tr><td>{{ c.label }} — {{ inv.label }}</td><td class="num">{{ (c.amount)|money_amount }}</td></tr>
+    {% if c.charge_type == 'water' %}
+    <tr class="water-detail-row"><td colspan="2">{{ water_breakdown(c.water_breakdown) }}</td></tr>
+    {% endif %}
     {% endfor %}
     {% for p in inv.payments %}
     <tr><td><a href="{{ url_for('tenant.receipt', token=token, payment_id=p.payment_id) }}">Payment {{ (p.row_date or '')[:10] }}</a>{% if p.ref %} <span class="muted">· {{ p.ref }}</span>{% endif %}</td>
-        <td class="num credit">−{{ "{:,.0f}".format(p.credit) }}</td></tr>
+        <td class="num credit">−{{ (p.credit)|money_amount }}</td></tr>
     {% endfor %}
     <tr class="total"><td>{% if inv.balance > 0 %}Balance owed{% elif inv.balance < 0 %}In credit{% else %}Balance{% endif %}</td>
-        <td class="num">{{ "{:,.0f}".format(inv.balance|abs) }}</td></tr>
+        <td class="num">{{ (inv.balance|abs)|money_amount }}</td></tr>
   </table>
   <div class="muted" style="margin-top:12px">Amounts in KES. Payments listed are those received during {{ inv.label }}; each links to its receipt.</div>
 </div>

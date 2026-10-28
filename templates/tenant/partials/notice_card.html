@@ -1,0 +1,17 @@
+{% from 'partials/icons.html' import icon %}
+{% macro notice_card(m, token, preview=false) -%}
+{% if preview %}<a class="tenant-notice{% if not m.read_at %} is-unread{% endif %}" href="{{ url_for('tenant.messages', token=token) }}#notice-{{ m.id }}">
+{% else %}<article class="tenant-notice{% if not m.read_at %} is-unread{% endif %}" id="notice-{{ m.id }}">{% endif %}
+  <div class="tenant-notice-heading">
+    <span class="tenant-notice-label">{{ icon('file') }} Notice from management</span>
+    <span class="tenant-notice-date">{{ (m.created_at or '')[:10] }}{% if not m.read_at %} · <span class="tenant-unread">Unread</span>{% endif %}</span>
+  </div>
+  <h3>{{ m.subject }}</h3>
+  {% if preview %}
+  <div class="tenant-notice-preview">{{ m.body|truncate(140) }}</div>
+  <span class="tenant-notice-action">Read notice →</span>
+  {% else %}
+  <div class="tenant-notice-body">{{ m.body }}</div>
+  {% endif %}
+{% if preview %}</a>{% else %}</article>{% endif %}
+{%- endmacro %}

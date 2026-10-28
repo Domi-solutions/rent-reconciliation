@@ -233,8 +233,10 @@ app.register_blueprint(team_bp)
 app.register_blueprint(lease_bp)
 app.register_blueprint(money_bp)
 
-from src.utils.tenant_documents import charge_label as _charge_label
+from src.utils.tenant_documents import charge_label as _charge_label, period_label as _period_label, money_amount as _money_amount
 app.jinja_env.filters['charge_label'] = _charge_label
+app.jinja_env.filters['period_label'] = _period_label
+app.jinja_env.filters['money_amount'] = _money_amount
 app.register_blueprint(mpesa_admin_bp)
 
 

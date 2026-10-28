@@ -1,8 +1,10 @@
 {% extends "tenant/base_tenant.html" %}
 {% from 'partials/icons.html' import icon %}
+{% from 'tenant/partials/notice_card.html' import notice_card %}
 
 {% block title %}Messages — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
+{% if notices %}<a class="tenant-notice tenant-notice-jump" href="#notices"><span class="tenant-notice-label">{{ icon('file') }} {{ notices|length }} notice{{ 's' if notices|length != 1 }} from management</span><span class="tenant-notice-action">Read notices ↓</span></a>{% endif %}
 <div class="doc">
   <h2>Write to management</h2>
   <div class="muted" style="margin-bottom:12px">Every message is kept with its date. Nothing can be edited or deleted — by you or by management.</div>
@@ -32,16 +34,9 @@
 </div>
 
 {% if notices %}
-<div class="doc">
-  <h2>Notices</h2>
-  <table>
-    {% for m in notices %}
-    <tr id="notice-{{ m.id }}"><td>
-      <b>{{ m.subject }}</b> <span class="muted">· {{ (m.created_at or '')[:10] }}</span>
-      <div style="font-size:13px;white-space:pre-wrap;margin-top:4px">{{ m.body }}</div>
-    </td></tr>
-    {% endfor %}
-  </table>
-</div>
+<section class="tenant-notices" id="notices" aria-labelledby="notices-heading">
+  <div class="tenant-section-heading"><h2 id="notices-heading">Notices from management</h2></div>
+  {% for m in notices %}{{ notice_card(m, token) }}{% endfor %}
+</section>
 {% endif %}
 {% endblock %}

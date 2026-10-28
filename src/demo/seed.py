@@ -64,6 +64,50 @@ def _ref(i):
     return 'TJ' + format(0x5A1B3C + i * 7919, 'X')[-8:].rjust(8, 'K')
 
 
+def seed_water_readings(conn, property_id):
+    """Fictional meter evidence for demo charges; never run against a real building.
+
+    Also usable once on an older local Kijani demo without resetting its logins.
+    The demo tariff is KES 100/unit, giving readable, exact sample calculations.
+    """
+    from src.utils.runtime import is_demo
+    prop = conn.execute("SELECT p.name, o.slug FROM properties p JOIN organizations o "
+                        "ON o.id = p.organization_id WHERE p.id = ?", (property_id,)).fetchone()
+    if not is_demo() or not prop or prop['name'] != PROPERTY_NAME or prop['slug'] != 'wakili-demo':
+        raise ValueError('Sample meter readings are only for the Kijani demo')
+    conn.execute('UPDATE properties SET water_rate = 100 WHERE id = ?', (property_id,))
+    charges = conn.execute("SELECT unit_id, period, amount FROM rent_charges "
+                           "WHERE property_id = ? AND charge_type = 'water' ORDER BY period, unit_id",
+                           (property_id,)).fetchall()
+    uploads, previous = {}, {}
+    for c in charges:
+        period = c['period']
+        if period not in uploads:
+            existing = conn.execute('SELECT id FROM water_uploads WHERE property_id = ? AND charge_period = ?',
+                                    (property_id, period)).fetchone()
+            if existing:
+                uploads[period] = None
+            else:
+                upload = generate_id('WU')
+                reading_period = _months_back(date.fromisoformat(period + '-01'), 2)[0]
+                conn.execute("INSERT INTO water_uploads (id, property_id, reading_period, charge_period, source, submitted_by) "
+                             "VALUES (?, ?, ?, ?, 'demo_seed', 'Demo sample')",
+                             (upload, property_id, reading_period, period))
+                uploads[period] = upload
+        upload = uploads[period]
+        if not upload:
+            continue
+        prev = previous.get(c['unit_id'], 100.0)
+        consumed = float(c['amount']) / 100
+        curr = round(prev + consumed, 6)
+        conn.execute("INSERT INTO water_readings (id, upload_id, unit_id, previous_reading, current_reading, units_consumed, rate, amount) "
+                     "VALUES (?, ?, ?, ?, ?, ?, 100, ?)",
+                     (generate_id('WR'), upload, c['unit_id'], prev, curr, consumed, c['amount']))
+        previous[c['unit_id']] = curr
+        conn.execute('UPDATE water_uploads SET unit_count = unit_count + 1, total_amount = total_amount + ? WHERE id = ?',
+                     (c['amount'], upload))
+
+
 def seed(conn, today=None):
     from src.leases import intake
     from src.messaging import staff_chat, threads
@@ -131,6 +175,8 @@ def seed(conn, today=None):
                     (('water', WATER[num]),) if i > 0 else ()):
                 conn.execute("""INSERT INTO rent_charges (id, property_id, unit_id, period, charge_type, amount, due_date)
                                 VALUES (?, ?, ?, ?, ?, ?, ?)""", (generate_id('CHG'), pid, t['unit_id'], period, ctype, amount, due))
+
+    seed_water_readings(conn, pid)
 
     # Payments, by pattern (M-Pesa, booked like the paybill would book them)
     n = 0

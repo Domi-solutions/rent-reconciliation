@@ -1,0 +1,11 @@
+<div class="balance-coverage">
+  {% if coverage.last_period %}
+  <div><strong>Charges recorded through {{ coverage.last_period }}</strong></div>
+  <div class="data-row-meta">{% if coverage.first_period != coverage.last_period %}From {{ coverage.first_period }}{% else %}For {{ coverage.last_period }}{% endif %}{% if coverage.has_brought_forward %}, plus a balance brought forward{% endif %}.</div>
+  {% elif coverage.has_brought_forward %}
+  <div class="data-row-meta">Balance brought forward only. No monthly charges recorded yet.</div>
+  {% else %}
+  <div class="data-row-meta">No charges recorded yet.</div>
+  {% endif %}
+  <div class="data-row-meta">{% if coverage.last_payment_date %}Includes payments recorded up to {{ coverage.last_payment_date }}.{% else %}No payments recorded yet.{% endif %}</div>
+</div>

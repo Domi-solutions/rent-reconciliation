@@ -1,0 +1,41 @@
+/* Tenant-specific details: retain the approved shared UI and palette. */
+.tenant-notices { margin-bottom: 24px; }
+.tenant-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.tenant-section-heading h2 { font-size: 18px; margin: 0; font-weight: 650; }
+.tenant-notice { display: block; border: 1px solid var(--border-strong); border-left: 4px solid var(--accent); border-radius: var(--r-card); background: var(--mint-2); padding: 16px 18px; margin-bottom: 10px; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+a.tenant-notice:hover { border-color: var(--accent); background: var(--mint); color: var(--ink); }
+.tenant-notice:target { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tenant-notice.is-unread { background: var(--mint); border-left-color: var(--forest); }
+.tenant-notice-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.tenant-notice-label { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; color: var(--forest); }
+.tenant-notice-date { font-size: 12px; color: var(--ink-2); }
+.tenant-notice h3 { font-size: 16px; font-weight: 650; line-height: 1.4; margin: 0 0 7px; }
+.tenant-notice-body { font-size: 14px; line-height: 1.65; white-space: pre-wrap; }
+.tenant-notice-preview { font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.tenant-notice-action { display: block; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--forest); text-decoration: underline; text-underline-offset: 3px; }
+.tenant-unread { background: var(--forest); color: white; border-radius: var(--r-badge); padding: 3px 8px; font-size: 12px; font-weight: 600; }
+.balance-coverage { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.6; }
+.water-breakdown { margin: 10px 0; font-size: 13px; font-weight: 500; color: var(--ink); }
+.water-period { color: var(--ink-2); font-size: 12px; line-height: 1.5; margin-bottom: 10px; }
+.water-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 12px; }
+.water-readings dt { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-bottom: 4px; }
+.water-readings dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 0; }
+.water-calculation { background: var(--mint-2); border: 1px solid var(--border); border-radius: var(--r-input); padding: 10px 12px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.water-calculation strong { color: var(--forest); }
+.water-missing { margin: 0; color: var(--ink-2); line-height: 1.55; border-left: 2px solid var(--border-strong); padding-left: 10px; }
+.water-detail-row td { padding-top: 0 !important; border-top: 0 !important; }
+.tenant-ledger { overflow-x: auto; }
+.tenant-ledger table { min-width: 540px; }
+.tenant-statement-ledger table { min-width: 0; }
+.tenant-statement-ledger td:first-child:not([colspan]), .statement-due { white-space: nowrap; font-size: 12px; }
+@media (max-width: 480px) {
+  .tenant-notice { padding: 14px; }
+  .water-readings { gap: 8px; }
+  .water-readings dd { font-size: 14px; }
+}
+@media print {
+  .water-calculation { background: none; }
+  .tenant-ledger { overflow: visible; }
+  .tenant-ledger table { min-width: 0; }
+  .water-breakdown, .tenant-notice { break-inside: avoid; }
+}

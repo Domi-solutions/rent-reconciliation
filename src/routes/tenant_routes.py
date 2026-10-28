@@ -8,7 +8,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from src.database.db import get_connection, generate_id
 from src.payments.daraja import stk_push
 from src.utils.statement import get_tenant_statement
-from src.utils.tenant_documents import build_invoice, build_receipt, invoice_periods, period_label
+from src.utils.tenant_documents import account_coverage, build_invoice, build_receipt, invoice_periods, period_label
+from src.utils.water_breakdown import water_breakdowns
 from src.messaging import threads
 from src.messaging.delivery import send_sms_async
 from src.utils.phone import normalize_to_e164 as _normalize_phone, normalize_to_daraja
@@ -160,14 +161,20 @@ def verify():
             claim_first_time(conn, phone)
         tenancies = tenancies_for_phone(conn, phone)
         session['tenant_verify_person'] = None
+        if is_demo() and (not tenancies or session.get('demo_sms_person') not in
+                          {t['person_id'] for t in tenancies if t['person_id']}):
+            # A code from a different phone's earlier attempt must never appear here.
+            session.pop('demo_sms_code', None)
+            session.pop('demo_sms_status', None)
         if tenancies:
             person_id = person_for_phone(conn, phone, tenancies)
             session['tenant_verify_person'] = person_id
             code = issue_otp(conn, person_id)
             if code and is_demo():
                 session['demo_sms_code'] = code          # also shown on screen in the demo
-            elif not code and is_demo():
-                session['demo_sms_status'] = 'recent'    # one code a minute: the last one still works
+                session['demo_sms_person'] = person_id
+            elif not code and is_demo() and session.get('demo_sms_status') == 'sent':
+                session['demo_sms_status'] = 'recent'    # do not turn a failed delivery into "sent"
             if code:
                 code_sms = (f"Your {(tenancies[0]['property_name'] or '').title()} tenant code is {code}. "
                             f"It expires in 10 minutes. Do not share it.")
@@ -305,6 +312,7 @@ def portal(token):
         total_charged = float(balance_row['total_charged']) if balance_row else 0
         total_paid = float(balance_row['total_paid']) if balance_row else 0
         verified_balance = float(balance_row['balance']) if balance_row else 0
+        coverage = account_coverage(conn, tenant['id'])
 
         # Sum pending claims not yet verified — subtract from balance for tenant view only
         pending_claims_total = conn.execute("""
@@ -343,6 +351,7 @@ def portal(token):
         pending_total=pending_claims_total,
         recent_messages=recent_messages,
         caretaker=caretaker,
+        coverage=coverage,
     )
 
 
@@ -362,6 +371,7 @@ def charges(token):
             WHERE rc.tenant_id = ?
             ORDER BY rc.period DESC, rc.charge_type
         """, (tenant['id'],)).fetchall()
+        water = water_breakdowns(conn, tenant['id'], prop['id'])
 
         raw_by_period = {}
         for r in charge_rows:
@@ -376,6 +386,7 @@ def charges(token):
                 'paid': paid,
                 'outstanding': amt - paid,
                 'due_date': r['due_date'],
+                'water_breakdown': water.get(r['id']),
             })
 
         charges_by_period = {}
@@ -486,10 +497,12 @@ def statement(token):
             return render_template('tenant/invalid_token.html')
         tenant, unit, prop = ctx
         _, rows, open_claims = get_tenant_statement(conn, tenant['id'], prop['id'])
+        coverage = account_coverage(conn, tenant['id'])
     balance = rows[-1]['running_balance'] if rows else 0.0
     return render_template('tenant/statement.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='statement', rows=list(reversed(rows)), balance=balance,
                            periods=invoice_periods(rows), period_label=period_label,
+                           coverage=coverage,
                            pending=[c for c in open_claims if c['status'] == 'pending'])
 
 
@@ -539,9 +552,9 @@ def messages(token):
             FROM messages WHERE tenant_id = ?
             ORDER BY created_at DESC LIMIT 30
         """, (tenant['id'],)).fetchall()
-        conn.execute(
-            "UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND read_at IS NULL",
-            (tenant['id'],),
+        conn.executemany(
+            "UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ? AND read_at IS NULL",
+            [(tenant['id'], m['id']) for m in notices],
         )
     return render_template('tenant/messages.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='messages', conversations=conversations, notices=notices,
