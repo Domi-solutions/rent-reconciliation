@@ -57,15 +57,20 @@ class PayThisBill(unittest.TestCase):
         self.env.stop()
 
     def pay(self, amount, charge_id=None):
+        """Pay through the (demo) M-Pesa prompt; the new payment's allocations, in order."""
+        with self.connection() as conn:
+            before = {r[0] for r in conn.execute("SELECT id FROM payments WHERE tenant_id = ?", (self.tenant['id'],))}
         data = {'amount': str(amount), 'phone': '0700000108'}
         if charge_id:
             data['charge_id'] = charge_id
         r = self.client.post(f'/tenant/{self.token}/pay/stk', data=data)
         self.assertTrue(r.get_json()['success'], r.get_json())
         with self.connection() as conn:
-            return [tuple(a) for a in conn.execute("""
-                SELECT pa.charge_id, pa.amount FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id
-                WHERE p.tenant_id = ? ORDER BY p.created_at DESC, pa.rowid""", (self.tenant['id'],))]
+            new = [r[0] for r in conn.execute("SELECT id FROM payments WHERE tenant_id = ?", (self.tenant['id'],))
+                   if r[0] not in before]
+            self.assertEqual(len(new), 1)
+            return [tuple(a) for a in conn.execute(
+                "SELECT charge_id, amount FROM payment_allocations WHERE payment_id = ? ORDER BY rowid", (new[0],))]
 
     def test_chosen_bill_is_paid_first(self):
         newest_water = [c for c in self.open if c['charge_type'] == 'water'][-1]
