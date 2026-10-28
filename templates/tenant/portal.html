@@ -1,5 +1,6 @@
 {% extends "tenant/base_tenant.html" %}
 {% from 'tenant/partials/notice_card.html' import notice_card %}
+{% from 'partials/ticks.html' import ticks %}
 {% from 'tenant/partials/owed_breakdown.html' import owed_breakdown %}
 {% block title %}Overview — {{ property.name }}{% endblock %}
 {% set active_tab = 'portal' %}
@@ -63,7 +64,7 @@
     </span>
     <span class="ov-msg-preview">
       {% if c.unread %}<span class="ov-dot" aria-hidden="true"></span>{% endif %}
-      <span class="ov-msg-who">{% if c.last_from == 'tenant' %}You{% elif c.last_from == 'caretaker' %}Caretaker{% elif c.last_from == 'system' %}Update{% else %}Management{% endif %}:</span>
+      {% if c.last_seen is not none %}{{ ticks({'seen': c.last_seen}) }}{% endif %}<span class="ov-msg-who">{% if c.last_from == 'tenant' %}You{% elif c.last_from == 'caretaker' %}Caretaker{% elif c.last_from == 'system' %}Update{% else %}Management{% endif %}:</span>
       {{ c.last_body|truncate(90) }}
       {% if c.unread %}<span class="visually-hidden">(new)</span>{% endif %}
     </span>

@@ -209,11 +209,14 @@ def latest_for_tenant(conn, tenant_id, limit=3):
     rows = list_for_tenant(conn, tenant_id)[:limit]
     for c in rows:
         last = conn.execute("""
-            SELECT sender_type, body FROM conversation_messages WHERE conversation_id = ?
+            SELECT sender_type, body, created_at FROM conversation_messages WHERE conversation_id = ?
             ORDER BY created_at DESC, rowid DESC LIMIT 1
         """, (c['id'],)).fetchone()
         c['last_from'] = last['sender_type'] if last else None
         c['last_body'] = last['body'] if last else ''
+        # Ticks on the tenant's own last message, as in the conversation (see thread()).
+        c['last_seen'] = (bool(c['staff_read_at'] and c['staff_read_at'] > last['created_at'])
+                          if last and last['sender_type'] == 'tenant' else None)
     return rows
 
 

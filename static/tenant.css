@@ -283,3 +283,4 @@ body .welcome-done { display: flex; align-items: center; justify-content: center
 .ov-msg.is-unread .ov-msg-date { color: var(--accent); font-weight: 700; }
 .ov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 .ov-msg-empty { color: var(--ink-2); font-size: 14px; }
+.ov-msg-preview .ticks { margin: 0 4px 0 0; vertical-align: -2px; }
