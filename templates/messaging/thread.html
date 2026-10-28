@@ -63,7 +63,19 @@
     border: 1px solid #e9ecef; border-top: none;
     border-radius: 0 0 8px 8px; background: #fff; padding: 16px;
   }
-  .compose-box .template-row { margin-bottom: 10px; }
+  .compose-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .compose-quick-label { font-size: 12px; color: var(--ink-2); width: 100%; }
+  body .compose-chip { min-height: 32px; padding: 4px 12px; font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong);
+    border-radius: 999px; background: var(--surface); color: var(--forest); }
+  body .compose-chip:hover { border-color: var(--accent); background: var(--mint-2); }
+  .compose-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .compose-count { font-size: 12px; color: var(--ink-2); margin-right: auto; font-variant-numeric: tabular-nums; }
+  .compose-note { font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .compose-off { font-size: 13px; background: var(--orange-soft); border: 1px solid var(--orange-border); border-radius: var(--r-input); padding: 8px 10px; margin-bottom: 10px; }
+  @media (max-width: 560px) {
+    .compose-foot .btn { flex: 1; min-height: 44px; }
+    .compose-count { width: 100%; }
+  }
 </style>
 {% endblock %}
 
@@ -94,13 +106,13 @@
       {% for m in messages %}
       <div class="bubble-row {{ m.direction }}">
         <div class="bubble">
-          {% if m.direction == 'out' and m.subject %}
+          {% if m.direction == 'out' and m.subject and m.subject != 'Message from management' %}
           <div class="subject">{{ m.subject }}</div>
           {% endif %}
           <div class="body-text">{{ m.body }}</div>
           <div class="ts">
             {{ m.created_at[:16] if m.created_at else '' }}
-            {% if m.direction == 'out' %} · {{ m.channel or 'portal' }}{% endif %}
+            {% if m.direction == 'out' %} · {{ 'Sent by SMS' if m.channel in ('sms', 'both') else 'Portal only' }}{% endif %}
           </div>
         </div>
       </div>
@@ -113,34 +125,37 @@
     {% endif %}
   </div>
 
-  {# ── Compose ── #}
+  {# ── Compose: type, then one tap. Quick messages fill the box; nothing else to choose. ── #}
   <div class="compose-box chat-composer">
-    <form method="post">
-      <div class="template-row">
-        <select class="form-select form-select-sm" id="tpl-select" style="max-width:260px;">
-          <option value="">— Template (optional) —</option>
-          {% for t in templates %}
-          <option value="{{ t.id }}" data-subject="{{ t.subject }}" data-body="{{ t.body }}">
-            {{ t.template_key }}
-          </option>
-          {% endfor %}
-        </select>
+    <form method="post" id="compose-form">
+      {% if not sms_on %}
+      <div class="compose-off">SMS sending is switched off on this system. Messages are saved in the tenant's portal; no SMS goes out.</div>
+      {% endif %}
+      {% if templates %}
+      <div class="compose-quick">
+        <span class="compose-quick-label">Quick messages — tap to fill, then edit if you like</span>
+        {% for t in templates %}
+        <button type="button" class="compose-chip" data-subject="{{ t.subject }}" data-body="{{ t.body }}">{{ t.label }}</button>
+        {% endfor %}
       </div>
-      <div class="mb-2">
-        <input type="text" class="form-control form-control-sm" name="subject"
-               id="compose-subject" placeholder="Subject" required>
+      {% endif %}
+      <input type="hidden" name="subject" id="compose-subject">
+      <label class="visually-hidden" for="compose-body">Message to {{ tenant.name }}</label>
+      <textarea class="message-input form-control" name="body" id="compose-body" rows="3" required
+                placeholder="Write to {{ tenant.name.split()[0]|title }}…"></textarea>
+      <div class="compose-foot">
+        <span class="compose-count" id="compose-count" aria-live="polite"></span>
+        {% if tenant.phone %}
+        <button type="submit" name="send" value="portal" class="btn btn-outline-secondary">Portal only</button>
+        <button type="submit" name="send" value="sms" class="btn btn-primary">Send SMS</button>
+        {% else %}
+        <button type="submit" name="send" value="portal" class="btn btn-primary">Post in portal</button>
+        {% endif %}
       </div>
-      <div class="mb-2">
-        <label class="form-label" for="compose-body">Your message</label>
-        <textarea class="message-input form-control form-control-sm" name="body" id="compose-body"
-                  rows="3" placeholder="Message…"></textarea>
-      </div>
-      <div class="d-flex gap-2 align-items-center">
-        <select class="form-select form-select-sm" name="channel" style="max-width:150px;">
-          <option value="portal">In-app portal</option>
-          <option value="sms">SMS</option>
-        </select>
-        <button type="submit" class="btn btn-sm btn-primary">Send</button>
+      <div class="compose-note">
+        {% if tenant.phone %}"Send SMS" texts {{ tenant.phone }} and keeps a copy in their portal. The SMS starts with "{{ sms_prefix }}".
+        {% else %}No phone number on record for this tenant, so messages go to their portal only.{% endif %}
+        Ctrl + Enter also sends.
       </div>
     </form>
   </div>
@@ -149,12 +164,30 @@
 
 {% block extra_js %}
 <script>
-// Template fill
-document.getElementById('tpl-select').addEventListener('change', function() {
-  const opt = this.options[this.selectedIndex];
-  if (opt.value) {
-    document.getElementById('compose-subject').value = opt.dataset.subject || '';
-    document.getElementById('compose-body').value    = opt.dataset.body    || '';
+// Quick messages fill the box (and the portal subject); the count shows SMS length.
+const body = document.getElementById('compose-body');
+const subject = document.getElementById('compose-subject');
+const count = document.getElementById('compose-count');
+const prefix = {{ sms_prefix|tojson }};
+document.querySelectorAll('.compose-chip').forEach(chip => chip.addEventListener('click', () => {
+  body.value = chip.dataset.body || chip.dataset.subject || '';
+  subject.value = chip.dataset.subject || '';
+  body.focus(); updateCount(); grow();
+}));
+function updateCount() {
+  if (!count) return;
+  const text = prefix + body.value.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-');
+  const gsm = /^[\x20-\x7E\n\r£¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ¡ÄÖÑÜ§¿äöñüà]*$/.test(text);
+  const parts = gsm ? (text.length <= 160 ? 1 : Math.ceil(text.length / 153)) : (text.length <= 70 ? 1 : Math.ceil(text.length / 67));
+  count.textContent = body.value ? `${text.length} characters · ${parts} SMS${parts > 1 ? ' parts' : ''}` : '';
+}
+function grow() { body.style.height = 'auto'; body.style.height = Math.min(body.scrollHeight + 2, 320) + 'px'; }
+body.addEventListener('input', () => { updateCount(); grow(); });
+body.addEventListener('keydown', e => {           // Ctrl/Cmd + Enter sends
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    const primary = document.querySelector('#compose-form .btn-primary');
+    if (body.value.trim() && primary) primary.click();
   }
 });
 

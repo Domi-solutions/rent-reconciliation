@@ -179,31 +179,46 @@ def thread(tenant_id):
             return redirect(url_for('messaging.dashboard'))
 
         if request.method == 'POST':
-            subject = request.form.get('subject', '').strip()
+            # One box, one tap: "Send SMS" texts it and keeps it in the tenant's portal;
+            # "Portal only" just posts it. A subject is optional (a quick message fills it).
             body = request.form.get('body', '').strip()
-            channel = request.form.get('channel', 'portal')
-            if subject:
-                variables = _build_variables(conn, tenant, prop)
-                subj = _substitute(subject, variables)
-                b = _substitute(body, variables)
-                msg_id = generate_id('MSG')
-                conn.execute("""
-                    INSERT INTO messages
-                        (id, property_id, tenant_id, subject, body, template_body,
-                         message_type, delivery_channel, delivery_status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
-                """, (msg_id, pid, tenant_id, subj, b, body, channel))
-                if channel == 'sms' and tenant['phone']:
-                    from src.messaging.delivery import send_sms_async
-                    sms_text = f"{subj}\n\n{b}" if b else subj
-                    send_sms_async([{'phone': tenant['phone']}], sms_text)
-                conn.execute(
-                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)"
-                    " VALUES (?, ?, ?, ?, ?)",
-                    ('message_sent', 'tenant', tenant_id,
-                     f"Subject: {subject[:50]} | Channel: {channel}", staff.actor()),
-                )
-            return redirect(url_for('messaging.thread', tenant_id=tenant_id))
+            subject = request.form.get('subject', '').strip() or 'Message from management'
+            send_sms_too = request.form.get('send', 'sms') == 'sms' and bool(tenant['phone'])
+            if not body:
+                flash('Write a message first.', 'error')
+                return redirect(url_for('messaging.thread', tenant_id=tenant_id))
+            variables = _build_variables(conn, tenant, prop)
+            subj, b = _substitute(subject, variables), _substitute(body, variables)
+            channel = 'sms' if send_sms_too else 'portal'
+            conn.execute("""
+                INSERT INTO messages
+                    (id, property_id, tenant_id, subject, body, template_body,
+                     message_type, delivery_channel, delivery_status)
+                VALUES (?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
+            """, (generate_id('MSG'), pid, tenant_id, subj, b, body, channel))
+            conn.execute(
+                "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                ('message_sent', 'tenant', tenant_id,
+                 f"Subject: {subj[:50]} | Channel: {channel}", staff.actor()),
+            )
+            sms_text = b if b.lower().startswith(prop['name'].lower()) else f"{prop['name'].title()}: {b}"
+    if request.method == 'POST':
+        if not send_sms_too:
+            flash('Posted in the tenant\'s portal.' if tenant['phone'] else
+                  'No phone number on record, so it was posted in the tenant\'s portal only.', 'success')
+        else:                                    # after the message is saved, so the record never waits on the SMS
+            from src.messaging.delivery import send_sms
+            sent, _, errors = send_sms([{'phone': tenant['phone']}], sms_text)
+            if sent:
+                flash(f"SMS sent to {tenant['phone']} and saved in their portal.", 'success')
+            elif errors and 'disabled' in str(errors[0]):
+                flash('Saved in the tenant\'s portal. SMS sending is switched off on this system, so no SMS went out.', 'warning')
+            else:
+                flash(f"Saved in the tenant's portal, but the SMS did not go out: {errors[0] if errors else 'unknown error'}", 'error')
+        return redirect(url_for('messaging.thread', tenant_id=tenant_id))
+
+    with get_connection() as conn:
 
         # Outbound messages (admin → tenant)
         outbound = conn.execute("""
@@ -238,12 +253,29 @@ def thread(tenant_id):
             WHERE (property_id = ? OR property_id IS NULL) AND enabled = 1
             ORDER BY property_id DESC NULLS LAST
         """, (pid,)).fetchall()
+        # Quick messages show this tenant's real figures, so what is in the box is what goes out.
+        # Skipped: the blank broadcast starter, and water notices ({month}/{amount} are only
+        # known at water upload).
+        variables = _build_variables(conn, tenant, prop)
+        names = {'rent_due_10d': 'Rent due in 10 days', 'rent_due_5d': 'Rent due in 5 days',
+                 'rent_due_reminder': 'Rent reminder', 'rent_due_today': 'Rent due today'}
+        templates = [{'label': names.get(t['template_key'], t['template_key'].replace('_', ' ').capitalize()),
+                      'subject': _substitute(t['subject'], variables),
+                      'body': _substitute(t['body'], variables)}
+                     for t in templates
+                     if t['template_key'] != 'custom_broadcast'
+                     and '{month}' not in (t['body'] or '') + (t['subject'] or '')
+                     and '{amount}' not in (t['body'] or '')]
 
+    from src.messaging import delivery
+    sms_on = delivery.configured() and os.environ.get('AT_SMS_ENABLED', 'true').lower() != 'false'
     return render_template('messaging/thread.html',
         property=prop,
         tenant=tenant,
         messages=messages,
         templates=templates,
+        sms_on=sms_on,
+        sms_prefix=prop['name'].title() + ': ',
     )
 
 
