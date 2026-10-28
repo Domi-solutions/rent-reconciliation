@@ -56,13 +56,13 @@ _T = {
     'tenant.statement': {
         'en': ('Statement', 'Every charge and every payment on your account, newest first.', [
             'The balance column is what was owed after each line.',
-            'Don\'t recognise a line? Tap "Ask about this" — management sees exactly which line you mean.',
-            'Monthly invoices are linked at the top. Print saves the page as a PDF.',
+            'Tap a row for meter readings, payment details or "Ask about this".',
+            'Monthly invoices are under "Account details & monthly invoices". Print includes all entry details.',
         ]),
         'sw': ('Taarifa ya akaunti', 'Kila gharama na kila malipo kwenye akaunti yako, ya karibuni kwanza.', [
             'Safu ya salio ni kiasi kilichodaiwa baada ya kila mstari.',
-            'Hutambui mstari? Bonyeza "Ask about this" — usimamizi utaona ni mstari upi.',
-            'Ankara za kila mwezi ziko juu. "Print" huhifadhi ukurasa kama PDF.',
+            'Gusa mstari kuona maelezo ya maji, malipo au "Ask about this".',
+            'Ankara ziko chini ya "Account details & monthly invoices". "Print" inajumuisha maelezo yote.',
         ]),
     },
     'tenant.charges': {

@@ -26,8 +26,24 @@ Domi is a **property fintech platform** for Kenya. Tenants pay rent via M-Pesa S
 
 ## Last Session
 
-**Who:** Codex — simplified tenant balance wording after LINCKS approved the plain-language explanation.
+**Who:** Codex — saved compact statement and initial plain-language money labels for Claude handoff.
 **Date:** 2026-10-28 · **Deployment:** local preview only; no deployment.
+
+### Handoff to Claude — user requested stopping here
+
+- LINCKS asked to save and continue with Claude. No further feature work should be assumed complete beyond this saved state. Checkout: `/Users/lincksmorara/Desktop/Projects/rent-reconciliation`, branch `ui-review-fixes`.
+- Latest request: remove finance jargon. **Still owed** in red, **Extra paid** in green, **Nothing owed** at zero. Text labels remain beside colours. This is implemented in the compact statement, tenant overview and account coverage partial. Internal numeric fields/CSS class `credit` remain unchanged.
+- **Remaining for Claude:** apply the same terms/colours to tenant invoices, receipts, Pay and tenancies dashboard; these still contain older credit/balance labels. Update remaining tenant help wording as needed. Do not alter ledger arithmetic, allocation or recorded amounts. Native print dialog was not exercised; review the print expansion/restore handler.
+- Compact rows and water/payment disclosure were browser-verified before the final label change, including keyboard operation, invoice/receipt access and 390px overflow. Tenant integration tests and rendered-page checks are recorded below. No real SMS sent; no deployment.
+- Local preview is still running at http://127.0.0.1:5051 using `/tmp/domi-ui-review.db`; scheduler, SMS and outreach off. SMS remains blocked by local disabled/sandbox configuration, not a claimed fixed handset flow.
+
+### Compact statement this session
+
+- LINCKS requested date, bill/payment name, account movement and balance after at first glance, with the rest tap-to-expand. `tenant/statement.html` now uses native details/summary rows: bills add (+), payments subtract (−), extra paid labelled explicitly; money still owed is red, extra paid green and zero says Nothing owed. Readings, due dates, paid/remaining amounts, payment references/allocations, receipts and Ask about this are inside each row.
+- Account coverage and monthly invoices share a collapsed control. The statement help box starts closed via an opt-in flag in the shared guide partial; other pages keep existing defaults. Updated English/Kiswahili statement guidance.
+- Print expands all entry details for printing and restores the previous open/closed state afterwards. Amounts, ledger order and allocations remain unchanged.
+- Validation: existing 8 tenant integration tests pass; browser checks confirm water hidden initially, tap-to-open water, keyboard payment expansion, receipt/allocation and invoice access, and no horizontal page overflow at 390px. All 156 templates compile and 90 page-render smoke checks pass.
+- Local-only, same demo database/SMS-off configuration. Next: Claude continues the plain-language money labels with LINCKS. No deployment authorised.
 
 ### Latest wording approval
 

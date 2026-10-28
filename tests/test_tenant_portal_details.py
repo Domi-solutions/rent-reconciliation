@@ -126,7 +126,7 @@ class TenantPortalDetails(unittest.TestCase):
             for i in range(35):
                 conn.execute("INSERT INTO messages (id,property_id,tenant_id,subject,body,message_type,created_at) VALUES (?,?,?,'Water shutoff','<script>unsafe</script>','broadcast',?)", (f'notice-{i}',self.tenant['property_id'],self.tenant['id'],f'2026-10-{i%28+1:02d} 12:{i:02d}:00'))
         html = self.client.get(self.path).get_data(as_text=True)
-        self.assertLess(html.index('Notices from management'), html.index('Balance summary'))
+        self.assertLess(html.index('Notices from management'), html.index('Bills &amp; payments'))
         self.assertIn('Read notice', html)
         html = self.client.get(self.path + '/messages').get_data(as_text=True)
         self.assertIn('tenant-notice is-unread', html)

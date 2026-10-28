@@ -2,59 +2,96 @@
 {% from 'tenant/partials/water_breakdown.html' import water_breakdown %}
 {% block title %}Statement — Unit {{ unit.unit_number }}{% endblock %}
 {% block content %}
-<div class="doc">
-  {% include 'tenant/partials/balance_coverage.html' %}
-  <div class="muted">Balance on this account</div>
-  {% if balance > 0 %}<div class="big owed">KES {{ (balance)|money_amount }} owed</div>
-  {% elif balance < 0 %}<div class="big credit">KES {{ (-balance)|money_amount }} in credit</div>
-  {% else %}<div class="big credit">Fully paid</div>{% endif %}
-  {% if pending %}
-  <div class="muted" style="margin-top:6px">KES {{ (pending|sum(attribute='claimed_amount'))|money_amount }} reported as paid, awaiting confirmation — not deducted above.</div>
-  {% endif %}
-</div>
-
-{% if periods %}
-<div class="doc no-print">
-  <h2>Monthly invoices</h2>
-  <div class="muted" style="margin-bottom:10px">Tap a month to see and print its invoice.</div>
-  {% for p in periods %}<a class="chip" href="{{ url_for('tenant.invoice', token=token, period=p) }}">{{ period_label(p) }}</a>{% endfor %}
-</div>
-{% endif %}
-
-<div class="doc">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+<section class="doc statement-document">
+  <header class="statement-heading">
     <h2>Statement</h2>
     <button class="print-btn no-print" onclick="window.print()">Print</button>
-  </div>
-  <div class="muted" style="margin-bottom:8px">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }} · newest first</div>
-  {% if rows %}
-  <div class="tenant-ledger tenant-statement-ledger"><table>
-    {% for r in rows %}
-    <tr>
-      <td style="width:84px" class="muted">{% if r.is_arrears %}B/F{% else %}{{ (r.row_date or '')[:10] }}{% endif %}</td>
-      <td>
-        {% if r.row_type == 'payment' %}
-          <a href="{{ url_for('tenant.receipt', token=token, payment_id=r.payment_id) }}"><b>Payment</b></a>
-          {% if r.ref %}<div class="muted">{{ r.ref }}</div>{% endif %}
-        {% elif r.is_arrears %}
-          Balance brought forward
-        {% else %}
-          {% if r.charge_type == 'brought_forward' %}Balance brought forward{% else %}{{ r.charge_type|charge_label }} — {{ period_label(r.period) }}{% endif %}
-          <div class="muted statement-due">due {{ (r.row_date or '')[:10] }}</div>
-        {% endif %}
-        <a class="no-print" style="font-size:12px" href="{{ url_for('tenant.message_new', token=token, topic='money', ref=('payment:' ~ r.payment_id) if r.row_type == 'payment' else ('charge:' ~ r.charge_id)) }}">Ask about this</a>
-      </td>
-      <td class="num">{% if r.row_type == 'payment' %}<span class="credit">−{{ (r.credit)|money_amount }}</span>{% else %}{{ (r.debit)|money_amount }}{% endif %}</td>
-      <td class="num muted">{{ (r.running_balance)|money_amount }}</td>
-    </tr>
-    {% if r.row_type == 'charge' and r.charge_type == 'water' %}
-    <tr class="water-detail-row"><td colspan="4">{{ water_breakdown(r.water_breakdown) }}</td></tr>
-    {% endif %}
-    {% endfor %}
-  </table></div>
-  <div class="muted" style="margin-top:8px">Columns: date · item · amount · balance after. Charges are listed on their due date. Tap a payment for its receipt.</div>
-  {% else %}
-  <div class="muted">No charges or payments recorded yet.</div>
+  </header>
+  <div class="statement-print-identity">{{ property.name|title }} · Unit {{ unit.unit_number }} · {{ tenant.name|title }}</div>
+  <div class="muted">Your account now</div>
+  {% if balance > 0 %}<div class="big owed">Still owed: KES {{ balance|money_amount }}</div>
+  {% elif balance < 0 %}<div class="big credit">Extra paid: KES {{ (-balance)|money_amount }}</div>
+  {% else %}<div class="big credit">Nothing owed</div>{% endif %}
+  {% if pending %}
+  <div class="muted mt-2">KES {{ (pending|sum(attribute='claimed_amount'))|money_amount }} reported as paid, awaiting confirmation — not deducted above.</div>
   {% endif %}
-</div>
+
+  <details class="statement-documents no-print">
+    <summary>Account details &amp; monthly invoices <span aria-hidden="true">⌄</span></summary>
+    <div class="statement-account-details">
+      {% include 'tenant/partials/balance_coverage.html' %}
+      {% if periods %}
+      <div class="muted mb-2">Choose a month to view its invoice.</div>
+      {% for p in periods %}<a class="chip" href="{{ url_for('tenant.invoice', token=token, period=p) }}">{{ period_label(p) }}</a>{% endfor %}
+      {% endif %}
+    </div>
+  </details>
+
+  {% if rows %}
+  <p class="muted statement-intro">Newest first · Amounts in KES · Tap a row for details</p>
+  <div class="statement-columns" aria-hidden="true">
+    <span>Date</span><span>Bill or payment</span><span>Added / paid</span><span>After this entry</span><span></span>
+  </div>
+  <ol class="statement-ledger" aria-label="Bills and payments, newest first">
+    {% for r in rows %}
+    <li>
+      <details class="statement-entry">
+        <summary class="statement-row">
+          <span class="statement-date">{{ (r.row_date or '')[:10] or 'Date not recorded' }}</span>
+          <span class="statement-name">{% if r.row_type == 'payment' %}Payment{% elif r.is_arrears or r.charge_type == 'brought_forward' %}Earlier unpaid bills{% else %}{{ r.charge_type|charge_label }}{% endif %}</span>
+          <span class="statement-change{% if r.row_type == 'payment' %} credit{% endif %}">{% if r.row_type == 'payment' %}<span class="visually-hidden">Payment, subtract </span>−{{ r.credit|money_amount }}{% else %}<span class="visually-hidden">Bill, add </span>+{{ r.debit|money_amount }}{% endif %}</span>
+          <span class="statement-after {% if r.running_balance > 0 %}owed{% else %}credit{% endif %}"><span class="statement-after-label">{% if r.running_balance > 0 %}Still owed{% elif r.running_balance < 0 %}Extra paid{% else %}Nothing owed{% endif %} </span><span>{{ (r.running_balance|abs)|money_amount }}</span></span>
+          <span class="statement-toggle no-print" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg></span>
+        </summary>
+        <div class="statement-detail">
+          <dl class="statement-facts">
+            {% if r.row_type == 'payment' %}
+            <div><dt>Payment method</dt><dd>{{ r.description }}</dd></div>
+            {% if r.ref %}<div><dt>Reference</dt><dd>{{ r.ref }}</dd></div>{% endif %}
+            {% if r.sender %}<div><dt>Sender</dt><dd>{{ r.sender }}</dd></div>{% endif %}
+            {% else %}
+            {% if not r.is_arrears %}<div><dt>Bill for</dt><dd>{{ period_label(r.period) }}</dd></div>{% endif %}
+            <div><dt>{% if r.is_arrears %}Recorded date{% else %}Due date{% endif %}</dt><dd>{{ (r.row_date or '')[:10] or 'Not recorded' }}</dd></div>
+            <div><dt>Paid towards this bill</dt><dd>KES {{ r.allocated|money_amount }}</dd></div>
+            <div><dt>Still due on this bill</dt><dd>KES {{ r.remaining|money_amount }}</dd></div>
+            {% endif %}
+          </dl>
+          {% if r.row_type == 'charge' and r.charge_type == 'water' %}
+            {{ water_breakdown(r.water_breakdown) }}
+          {% elif r.row_type == 'payment' and r.allocations %}
+          <h3 class="statement-detail-title">This payment covered</h3>
+          <ul class="statement-allocations">
+            {% for a in r.allocations %}<li><span>{{ a.charge_type|charge_label }} — {{ period_label(a.period) }}</span><span>KES {{ a.amount|money_amount }}</span></li>{% endfor %}
+          </ul>
+          {% endif %}
+          <div class="statement-detail-actions no-print">
+            {% if r.row_type == 'payment' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tenant.receipt', token=token, payment_id=r.payment_id) }}">View receipt →</a>{% endif %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tenant.message_new', token=token, topic='money', ref=('payment:' ~ r.payment_id) if r.row_type == 'payment' else ('charge:' ~ r.charge_id)) }}">Ask about this</a>
+          </div>
+        </div>
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="muted mt-3">No bills or payments recorded yet.</div>
+  {% endif %}
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+(() => {
+  let closedBeforePrint = null;
+  window.addEventListener('beforeprint', () => {
+    if (closedBeforePrint !== null) return;
+    closedBeforePrint = Array.from(document.querySelectorAll('.statement-entry:not([open])'));
+    closedBeforePrint.forEach(entry => { entry.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    if (closedBeforePrint === null) return;
+    closedBeforePrint.forEach(entry => { entry.open = false; });
+    closedBeforePrint = null;
+  });
+})();
+</script>
 {% endblock %}

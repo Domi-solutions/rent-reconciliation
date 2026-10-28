@@ -1,5 +1,6 @@
 {# "What is this page" box. Text lives in src/utils/guides.py, keyed by endpoint. #}
 {% if guide %}
+{% set guide_start_closed = guide_start_closed|default(false) %}
 <style>
   .guide { background:var(--mint); border:1px solid rgba(46,139,98,.18); border-radius:var(--r-card); padding:12px 14px; margin:0 0 16px; font-size:14px; color:var(--forest); position:relative; }
   .guide b.t { display:block; font-size:15px; margin-bottom:2px; padding-right:28px; }
@@ -11,7 +12,7 @@
   .guide-reopen { border:1px solid rgba(46,139,98,.25); background:var(--mint); color:var(--accent); border-radius:var(--r-btn); font-size:12px; padding:3px 10px; margin:0 0 12px; cursor:pointer; }
   @media print { .guide, .guide-reopen { display:none !important; } }
 </style>
-<div class="guide" id="guide" role="note">
+<div class="guide" id="guide" role="note"{% if guide_start_closed %} hidden{% endif %}>
   <button class="x" type="button" aria-label="Close" onclick="domiGuide(false)">×</button>
   <b class="t">{{ guide.title }}</b>
   <div>{{ guide.intro }}</div>
@@ -20,7 +21,7 @@
   <div class="lang"><button type="button" class="{{ 'on' if guide.lang == 'en' }}" onclick="domiLang('en')">English</button> · <button type="button" class="{{ 'on' if guide.lang == 'sw' }}" onclick="domiLang('sw')">Kiswahili</button></div>
   {% endif %}
 </div>
-<button class="guide-reopen" id="guide-reopen" type="button" hidden onclick="domiGuide(true)">? {{ 'Msaada' if guide.lang == 'sw' else 'Help for this page' }}</button>
+<button class="guide-reopen" id="guide-reopen" type="button"{% if not guide_start_closed %} hidden{% endif %} onclick="domiGuide(true)">? {{ 'Msaada' if guide.lang == 'sw' else 'Help for this page' }}</button>
 <script>
   (function () {
     var key = 'domi-guide:{{ guide.key }}';
@@ -32,8 +33,8 @@
     window.domiLang = function (lang) {
       var u = new URL(location.href); u.searchParams.set('lang', lang); location.href = u.toString();
     };
-    var closed = false;
-    try { closed = localStorage.getItem(key) === '1'; } catch (e) {}
+    var closed = {{ guide_start_closed|tojson }};
+    try { closed = closed || localStorage.getItem(key) === '1'; } catch (e) {}
     if (closed) { domiGuide(false); }
   })();
 </script>

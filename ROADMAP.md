@@ -304,6 +304,8 @@ An AI-written weekly real estate newsletter targeting landlords, building owners
 - [x] Bug fixed: `property_notifications` query was missing `sent_by`, `template_body`, `channel`, `recipient_count` columns — now selects all required fields
 
 ### Mobile & UX
+- [x] Compact tenant statement: date/name, signed amount and amount owed/extra paid visible; water/payment details and invoice links expand on demand (2026-10-28; local only).
+- [ ] Finish plain-language money labels across tenant invoices/receipts/Pay/tenancies dashboard: Still owed (red), Extra paid (green), Nothing owed. Statement/overview already updated; Claude handoff requested by LINCKS.
 - [x] Tenant notice emphasis, named balance coverage months/latest payment, and evidence-based meter breakdowns on statement/invoice/Charges (2026-10-28; local review only). SMS non-delivery diagnosed: local switch off + sandbox provider; handset delivery still needs live provider setup.
 - [x] Shared UI refresh across admin, tenant, caretaker, owner, auth and platform shells: system typography with stronger reading weight, restrained corners, visible click/edit controls, consistent SVG icons and clearer conversation bubbles/composers. Units retains search/status filtering and its narrow-screen register (2026-10-27; local review only, not deployed).
 - [x] Admin sidebar: backdrop overlay on mobile, closes on tap-outside
