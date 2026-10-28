@@ -2,6 +2,13 @@
 {% block title %}Enter code{% endblock %}
 {% block content %}
   <h1>Enter the code</h1>
+  {% if demo_mode and session.get('demo_no_tenant') %}
+  <div style="background:#FFF6D9;border:1px dashed #E0B640;border-radius:var(--r-card);padding:12px 14px;margin-bottom:16px;font-size:14px;">
+    <b>Demo:</b> no demo tenant has {{ masked }} right now, so no code was made.
+    <a href="{{ url_for('tenant.verify') }}">Go back</a> and use your own number — or reset the demo on the
+    <a href="/demo">demo start page</a> to bring the made-up numbers (like 0700000103) back.
+  </div>
+  {% endif %}
   {% if demo_mode and session.get('demo_sms_code') and session.get('demo_sms_status') not in ('sent', 'recent') %}
   <p class="lead">SMS delivery is unavailable for this demo attempt. Use the demo code below, then choose a 4-digit PIN for next time.</p>
   {% else %}

@@ -157,12 +157,17 @@ def verify():
             return render_template("tenant/verify.html", entry=entry,
                                    masked=mask_phone(entry['phone']) if entry else None)
         phone = entry['phone'] if entry else (request.form.get("phone") or "").strip()
+        if not entry and not _normalize_phone(phone):
+            # Only the format is checked here, so this says nothing about who rents where.
+            return render_template("tenant/verify.html", entry=None, phone=phone,
+                                   error="That is not a full phone number. Use the 10 digits, e.g. 0712 345 678.")
         if is_demo():
             # Demo: your own number becomes the new tenant's, so the code really reaches you.
             from src.demo.phones import claim_first_time
             claim_first_time(conn, phone)
         tenancies = tenancies_for_phone(conn, phone)
         session['tenant_verify_person'] = None
+        session['demo_no_tenant'] = bool(is_demo() and not tenancies)
         if is_demo() and (not tenancies or session.get('demo_sms_person') not in
                           {t['person_id'] for t in tenancies if t['person_id']}):
             # A code from a different phone's earlier attempt must never appear here.

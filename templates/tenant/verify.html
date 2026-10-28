@@ -9,10 +9,11 @@
   {% else %}
     <h1>Get a code</h1>
     <p class="lead">Enter the phone number your landlord has for you. We will send a 6-digit code by SMS, then you choose a 4-digit PIN.</p>
+    {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
     <form method="POST" autocomplete="off">
       <div class="mb-4">
         <label class="form-label fw-semibold">Phone number</label>
-        <input type="tel" class="form-control form-control-lg" name="phone" placeholder="07xx xxx xxx" inputmode="tel" required autofocus>
+        <input type="tel" class="form-control form-control-lg" name="phone" placeholder="07xx xxx xxx" inputmode="tel" value="{{ phone or '' }}" required autofocus>
       </div>
       <button type="submit" class="btn btn-dark btn-go">Send code</button>
     </form>
