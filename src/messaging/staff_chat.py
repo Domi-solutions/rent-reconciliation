@@ -22,19 +22,15 @@ def post(conn, property_id, caretaker_id, sender_type, sender_name, body, kind='
     """Add a message (and up to threads.MAX_PHOTOS photos). Returns (message_id, saved, rejected)."""
     body = (body or '').strip()
     kind = 'report' if kind == 'report' else 'message'
+    stored, rejected = threads.prepare_photos(photos)  # before the first write: no lock held meanwhile
     msg_id = generate_id('SMSG')
     conn.execute("""
         INSERT INTO staff_messages (id, property_id, caretaker_id, sender_type, sender_name,
                                     sender_account_id, kind, body)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (msg_id, property_id, caretaker_id, sender_type, sender_name, account_id, kind, body))
-    saved = rejected = 0
-    for upload in [p for p in photos if p and p.filename][:threads.MAX_PHOTOS]:
-        stored = threads._store_photo(upload)
-        if not stored:
-            rejected += 1
-            continue
-        name, w, h, size = stored
+    saved = 0
+    for name, w, h, size in stored:
         conn.execute("""INSERT INTO staff_message_photos (id, message_id, file_name, width, height, size_bytes)
                         VALUES (?, ?, ?, ?, ?, ?)""", (generate_id('SPHO'), msg_id, name, w, h, size))
         saved += 1

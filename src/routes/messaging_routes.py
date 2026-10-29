@@ -311,6 +311,7 @@ def thread(tenant_id):
 @messaging_bp.route('/broadcast', methods=['GET', 'POST'])
 def broadcast():
     """Send broadcast: select recipients, pick template, preview, send."""
+    broadcast_done = None
     with get_connection() as conn:
         prop = get_current_property(conn)
         if not prop:
@@ -406,38 +407,36 @@ def broadcast():
             except Exception:
                 pass
 
-            if channel == 'both':
-                from src.messaging.delivery import send_sms
-                _prefix = prop['name'].title() + ': '
-                # Send per-tenant so each gets their own substituted body
-                sent, failed, errors = 0, 0, []
-                for t in selected_tenants:
-                    if not t['phone']:
-                        failed += 1
-                        continue
-                    v = _build_variables(conn, t, prop)
-                    sms_text = _substitute(f"{subject}\n{body}", v)
-                    if not sms_text.lower().startswith(prop['name'].lower()):
-                        sms_text = _prefix + sms_text       # every SMS says which property it is about
-                    from src.messaging.outreach import portal_footer
-                    sms_text = portal_footer(sms_text, os.environ.get('APP_BASE_URL') or request.host_url, t['short_code'])
-                    s, f, e = send_sms([{'phone': t['phone']}], sms_text)
-                    sent += s
-                    failed += f
-                    errors += e
-                posted = f'Posted to {len(selected_tenants)} tenant portal(s). '
-                if errors and all('disabled' in str(e) for e in errors) and not sent:
-                    flash(posted + 'SMS sending is switched off on this system, so no SMS went out.', 'warning')
-                elif failed == 0:
-                    flash(posted + f'SMS sent to {sent} tenant(s).', 'success')
-                elif sent > 0:
-                    flash(posted + f'SMS sent to {sent}; {failed} not sent (no or invalid phone number, '
-                                   'or the SMS provider refused).', 'warning')
-                else:
-                    flash(posted + f'No SMS went out: {errors[0] if errors else "unknown error"}', 'error')
-            else:
-                flash(f'Broadcast posted to {len(recipient_ids)} tenant portal(s).', 'success')
-            return redirect(url_for('messaging.dashboard'))
+            # The texts go out after the save, from a background thread: the page never waits on
+            # the SMS provider, and the database is never held while a text is in flight.
+            from src.messaging.outreach import portal_footer
+            _prefix = prop['name'].title() + ': '
+            texts, no_phone = [], 0
+            for t in selected_tenants:
+                if not t['phone']:
+                    no_phone += 1
+                    continue
+                v = _build_variables(conn, t, prop)
+                sms_text = _substitute(f"{subject}\n{body}", v)
+                if not sms_text.lower().startswith(prop['name'].lower()):
+                    sms_text = _prefix + sms_text       # every SMS says which property it is about
+                sms_text = portal_footer(sms_text, os.environ.get('APP_BASE_URL') or request.host_url, t['short_code'])
+                texts.append(([{'phone': t['phone']}], sms_text, pid))
+            broadcast_done = (len(selected_tenants), texts, no_phone)
+
+    if broadcast_done:
+        from src.messaging import delivery
+        posted, texts, no_phone = broadcast_done
+        sms_on = delivery.configured() and os.environ.get('AT_SMS_ENABLED', 'true').lower() != 'false'
+        delivery.send_many_async(texts)
+        message = f'Posted to {posted} tenant portal(s). '
+        if not sms_on:
+            message += 'SMS sending is switched off on this system, so no SMS went out.'
+        else:
+            message += f'Texts are going out now to {len(texts)} tenant(s)'
+            message += f'; {no_phone} have no phone number.' if no_phone else '.'
+        flash(message, 'success' if sms_on else 'warning')
+        return redirect(url_for('messaging.dashboard'))
 
     return render_template(
         'messaging/broadcast.html',
@@ -757,7 +756,7 @@ def inbox_photo(photo_id):
         """, (photo_id, prop['id'] if prop else None)).fetchone()
     if not row:
         abort(404)
-    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(row['file_name'])
 
 
 # ── Sign-in invitations ──────────────────────────────────────────────────────
@@ -903,4 +902,4 @@ def caretaker_chat_photo(photo_id):
         p, m = staff_chat.photo(conn, photo_id)
         if not prop or not p or m['property_id'] != prop['id']:
             abort(404)
-    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(p['file_name'])

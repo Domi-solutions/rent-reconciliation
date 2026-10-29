@@ -35,6 +35,8 @@ class MessageCompose(unittest.TestCase):
         })
         self.env.start()
         self.sms = patch('src.messaging.delivery.send_sms', return_value=(1, 0, [])).start()
+        # Broadcast texts go out from a background thread; run them inline here.
+        patch('src.messaging.delivery.send_many_async', side_effect=lambda items: [self.sms(*i) for i in items]).start()
         from app import app
         from src.database.db import get_connection
         self.connection = get_connection
@@ -90,7 +92,7 @@ class MessageCompose(unittest.TestCase):
             self.admin.post('/messages/broadcast', data={'tenant_ids': [self.tenant['id']],
                                                          'subject': 'Water off on Saturday',
                                                          'body': 'From 9am to 1pm.'})
-        (_, text), _ = self.sms.call_args
+        text = self.sms.call_args.args[1]
         self.assertIn('Water off on Saturday\nFrom 9am to 1pm.', text)
         self.assertTrue(text.endswith(f"/t/{self.tenant['short_code']}"))
         self.assertEqual(self.saved()['delivery_channel'], 'sms')
@@ -98,7 +100,7 @@ class MessageCompose(unittest.TestCase):
     def test_broadcast_before_links_are_on_has_no_link(self):
         self.admin.post('/messages/broadcast', data={'tenant_ids': [self.tenant['id']],
                                                      'subject': 'Notice', 'body': 'Hello.'})
-        (_, text), _ = self.sms.call_args
+        text = self.sms.call_args.args[1]
         self.assertNotIn('/t/', text)
 
     def test_no_phone_posts_in_portal_only(self):

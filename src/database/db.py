@@ -17,12 +17,19 @@ def get_db_path():
     )
 
 
+_WAL_SET = set()          # database files already switched to WAL (it stays on in the file)
+
+
 @contextmanager
 def get_connection():
     """Get database connection with foreign keys enabled. Commits on success, rolls back on error."""
-    conn = sqlite3.connect(get_db_path(), timeout=10)
+    path = get_db_path()
+    conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
+    if path not in _WAL_SET:
+        conn.execute("PRAGMA journal_mode = WAL")
+        _WAL_SET.add(path)
+    conn.execute("PRAGMA synchronous = NORMAL")     # safe with WAL; cheaper commits
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
@@ -2339,3 +2346,66 @@ def migrate_add_payment_ref():
                                         WHERE bs.org_id IS {org_of_new} OR bs.property_id = NEW.property_id);
             END""")
         print("Migration complete: one payment per M-Pesa code.")
+
+
+def migrate_speed_indexes():
+    """Indexes for the pages people open most, and balance views that add up one tenant at a
+    time instead of the whole database (one building's numbers no longer depend on how many
+    other buildings there are). Idempotent; views are recreated on every start, after
+    migrate_add_ledger_tenant_id defines them."""
+    with get_connection() as conn:
+        tables = {r['name'] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        cols = lambda t: {r['name'] for r in conn.execute(f"PRAGMA table_info({t})")}
+        wanted = [
+            ('idx_tenants_unit_status', 'tenants', '(unit_id, status)'),
+            ('idx_tenants_property_status', 'tenants', '(property_id, status)'),
+            ('idx_tenants_person', 'tenants', '(person_id)'),
+            ('idx_tenants_phone', 'tenants', '(phone)'),
+            ('idx_rent_charges_tenant_amount', 'rent_charges', '(tenant_id, amount)'),
+            ('idx_rent_charges_property_period', 'rent_charges', '(property_id, period)'),
+            ('idx_payments_tenant_amount', 'payments', '(tenant_id, amount)'),
+            ('idx_payments_tenant_date', 'payments', '(tenant_id, payment_date)'),
+            ('idx_payments_property_date', 'payments', '(property_id, payment_date)'),
+            ('idx_alloc_charge_amount', 'payment_allocations', '(charge_id, amount)'),
+            ('idx_claims_property_status', 'payment_claims', '(property_id, status)'),
+            ('idx_convphoto_conv', 'conversation_photos', '(conversation_id)'),
+            ('idx_staffphoto_msg', 'staff_message_photos', '(message_id)'),
+            ('idx_audit_action_time', 'audit_log', '(action, timestamp)'),
+        ]
+        for name, table, columns in wanted:
+            needed = {c.strip() for c in columns.strip('()').split(',')}
+            if table in tables and needed <= cols(table):
+                conn.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {table}{columns}")
+        if 'tenant_id' in cols('rent_charges') and 'tenant_id' in cols('payments'):
+            conn.execute("DROP VIEW IF EXISTS unit_balances")
+            conn.execute("DROP VIEW IF EXISTS tenant_balances")
+            conn.execute("""
+                CREATE VIEW tenant_balances AS
+                SELECT tenant_id, property_id, unit_id, status, total_charged, total_paid,
+                       total_charged - total_paid AS balance
+                FROM (
+                    SELECT t.id AS tenant_id, t.property_id, t.unit_id, t.status,
+                           (SELECT COALESCE(SUM(rc.amount), 0) FROM rent_charges rc WHERE rc.tenant_id = t.id) AS total_charged,
+                           (SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.tenant_id = t.id) AS total_paid
+                    FROM tenants t
+                )
+            """)
+            conn.execute("""
+                CREATE VIEW unit_balances AS
+                SELECT
+                    u.id AS unit_id,
+                    u.property_id,
+                    u.unit_number,
+                    u.monthly_rent,
+                    t.id AS tenant_id,
+                    t.name AS tenant_name,
+                    t.phone AS tenant_phone,
+                    COALESCE(tb.total_charged, 0) AS total_charged,
+                    COALESCE(tb.total_paid, 0) AS total_paid,
+                    COALESCE(tb.balance, 0) AS balance
+                FROM units u
+                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
+            """)
+        conn.execute("PRAGMA optimize")
+        print("Migration complete: speed indexes and per-tenant balance views ready.")

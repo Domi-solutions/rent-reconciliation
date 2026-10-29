@@ -28,7 +28,7 @@
   <div class="bubble {{ 'us' if m.sender_type == 'admin' else 'them' }} {{ 'report' if m.kind == 'report' }}">
     {% if m.kind == 'report' %}<div class="tag">Report</div>{% endif %}
     <div class="body">{{ m.body }}</div>
-    {% for p in m.photos %}<div class="photos"><a href="{{ url_for('messaging.caretaker_chat_photo', photo_id=p.id) }}" target="_blank"><img src="{{ url_for('messaging.caretaker_chat_photo', photo_id=p.id) }}" alt="photo"></a></div>{% endfor %}
+    {% for p in m.photos %}<div class="photos"><a href="{{ url_for('messaging.caretaker_chat_photo', photo_id=p.id) }}" target="_blank"><img src="{{ url_for('messaging.caretaker_chat_photo', photo_id=p.id, size='s') }}" alt="photo" loading="lazy" decoding="async"{% if p.width %} width="{{ p.width }}" height="{{ p.height }}"{% endif %}></a></div>{% endfor %}
     <div class="meta">{{ m.account_name or m.sender_name if m.sender_type == 'admin' else m.sender_name }} · {{ (m.created_at or '')[:16] }}{% if m.sender_type == 'admin' %} {{ ticks(m) }}{% endif %}</div>
   </div>
   {% else %}

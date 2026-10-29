@@ -787,10 +787,10 @@ def messages(token):
             FROM messages WHERE tenant_id = ?
             ORDER BY created_at DESC LIMIT 30
         """, (tenant['id'],)).fetchall()
-        conn.executemany(
-            "UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND id = ? AND read_at IS NULL",
-            [(tenant['id'], m['id']) for m in notices],
-        )
+        _unread = [m['id'] for m in notices if not m['read_at']]
+        if _unread:                                   # one write, and none when everything is already read
+            conn.execute(f"UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND read_at IS NULL "
+                         f"AND id IN ({','.join('?' * len(_unread))})", (tenant['id'], *_unread))
     return render_template('tenant/messages.html', token=token, tenant=tenant, unit=unit, property=prop,
                            active_tab='messages', conversations=conversations, notices=notices,
                            earlier_repairs=earlier_repairs,
@@ -876,7 +876,7 @@ def conversation_photo(token, conv_id, photo_id):
         """, (photo_id, conv_id, tenant['id'])).fetchone()
     if not row:
         abort(404)
-    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(row['file_name'])
 
 
 @tenant_bp.route('/<token>/maintenance')

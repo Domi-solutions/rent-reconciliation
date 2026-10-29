@@ -318,7 +318,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_ref`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_speed_indexes`.
 
 ---
 
@@ -506,7 +506,15 @@ Tables: `payment_transactions` (raw callbacks; `external_reference` UNIQUE dedup
 4. Delivery is abstracted — `src/agent/router.py` is the only place that knows about channels
 5. LLM provider is abstracted — `src/agent/llm.py` is the only file that imports the Anthropic SDK
 
-Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by default. Single gunicorn worker required for SQLite write safety.
+Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by default. Single gunicorn worker required for SQLite write safety (and the embedded scheduler); it runs `gthread` with 8 threads and a 120 s timeout (Dockerfile) so one slow request doesn't block everyone.
+
+**Speed rules (2026-10-29 audit):**
+- Never send SMS (or make any provider call) while a `get_connection()` write is open: collect `(recipients, text, property_id)` and call `delivery.send_many_async(items)` after the save (broadcasts, reminders, caretaker messages do).
+- Photos: `threads.prepare_photos()` decodes/shrinks BEFORE the first write; each photo is stored full (≤1600 px) plus a small copy (`<name>_s.jpg`, ≤520 px); serve with `threads.send_photo(file_name)` (`?size=s` = small; cached a year, immutable). Chat `<img>` use `size='s'`, `loading="lazy"`, width/height. `static/photo_upload.js` shrinks photos on the phone before upload.
+- `src/utils/web_speed.py`: `url_for('static', …)` adds `?v=<static files version>` → cached a year; untagged files (CSS `@import`s) revalidate; text responses >1 KB are gzip-compressed.
+- `migrate_speed_indexes`: indexes for hot paths and `tenant_balances`/`unit_balances` defined with per-tenant correlated sums (never `MATERIALIZE` the whole database). A query about one property must not aggregate other properties' rows (`follow_up.behind_list` shows the pattern).
+- `get_connection()` sets WAL once per database file and `synchronous=NORMAL`. The admin context processor (badge counts) is skipped for tenant/caretaker/owner/platform pages.
+- Scale triggers: Postgres when more than one machine / zero-downtime deploys are needed, "database is locked" shows in logs, or sustained >30–50 req/s. Still to do: paginate `/review`, `/units`, `/activity`; move PDF/vision parsing off the request.
 
 ---
 

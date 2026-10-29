@@ -35,6 +35,8 @@ MAX_PHOTOS = 3
 STAFF_LABEL = 'Management'
 MAX_PHOTO_BYTES = 12 * 1024 * 1024     # what a phone camera produces; stored copies are much smaller
 STORED_MAX_SIDE = 1600
+SMALL_MAX_SIDE = 520                    # the copy shown in a chat bubble; the full one opens on tap
+PHOTO_CACHE_SECONDS = 365 * 24 * 3600   # photos never change (append-only, random names)
 
 
 def photos_dir():
@@ -61,7 +63,58 @@ def _store_photo(upload):
     name = f'{uuid.uuid4().hex}.jpg'
     path = os.path.join(photos_dir(), name)
     img.save(path, 'JPEG', quality=80, optimize=True)
-    return name, img.width, img.height, os.path.getsize(path)
+    width, height = img.width, img.height
+    img.thumbnail((SMALL_MAX_SIDE, SMALL_MAX_SIDE))
+    img.save(_small_path(name), 'JPEG', quality=78, optimize=True)
+    return name, width, height, os.path.getsize(path)
+
+
+def _small_path(name):
+    return os.path.join(photos_dir(), name[:-4] + '_s.jpg')
+
+
+def prepare_photos(photos):
+    """Decode and shrink uploaded photos BEFORE anything is written, so the database is never
+    held while a photo is processed. → (stored list, rejected count); pass the result to
+    add_message / staff_chat.post / start_conversation in place of the uploads."""
+    if isinstance(photos, Prepared):
+        return photos
+    stored, rejected = [], 0
+    for upload in [p for p in photos or () if p and getattr(p, 'filename', None)][:MAX_PHOTOS]:
+        result = _store_photo(upload)
+        if result:
+            stored.append(result)
+        else:
+            rejected += 1
+    return Prepared(stored, rejected)
+
+
+class Prepared(tuple):
+    """(stored, rejected) from prepare_photos."""
+    def __new__(cls, stored, rejected):
+        return super().__new__(cls, (stored, rejected))
+
+
+def send_photo(file_name):
+    """Serve a stored photo: the small copy when the URL asks ?size=s (made on first request for
+    photos stored before small copies existed), else the full one. Cached by the browser for a
+    year — the caller has already checked the viewer may see it."""
+    from flask import request, send_from_directory
+    name = file_name
+    if request.args.get('size') == 's':
+        small = _small_path(file_name)
+        if not os.path.exists(small):
+            try:
+                with Image.open(os.path.join(photos_dir(), file_name)) as img:
+                    img.thumbnail((SMALL_MAX_SIDE, SMALL_MAX_SIDE))
+                    img.convert('RGB').save(small, 'JPEG', quality=78, optimize=True)
+            except (OSError, ValueError):
+                small = None
+        if small:
+            name = os.path.basename(small)
+    resp = send_from_directory(photos_dir(), name, mimetype='image/jpeg', max_age=PHOTO_CACHE_SECONDS)
+    resp.headers['Cache-Control'] = f'private, max-age={PHOTO_CACHE_SECONDS}, immutable'
+    return resp
 
 
 def add_message(conn, conversation_id, sender_type, sender_name, body, photos=(), account_id=None):
@@ -69,18 +122,14 @@ def add_message(conn, conversation_id, sender_type, sender_name, body, photos=()
 
     sender_name is what the tenant sees (STAFF_LABEL for admins);
     account_id (ADM-… or CTKR-…) records which person wrote it."""
+    stored, rejected = prepare_photos(photos)          # before the first write: no lock held meanwhile
     msg_id = generate_id('CMSG')
     conn.execute("""
         INSERT INTO conversation_messages (id, conversation_id, sender_type, sender_name, body, sender_account_id)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (msg_id, conversation_id, sender_type, sender_name, body.strip(), account_id))
-    saved = rejected = 0
-    for upload in [p for p in photos if p and p.filename][:MAX_PHOTOS]:
-        stored = _store_photo(upload)
-        if not stored:
-            rejected += 1
-            continue
-        name, w, h, size = stored
+    saved = 0
+    for name, w, h, size in stored:
         conn.execute("""
             INSERT INTO conversation_photos (id, conversation_id, message_id, file_name, width, height, bytes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -116,6 +165,7 @@ def start_conversation(conn, tenant, unit, prop, topic, subject, body, photos=()
     maintenance issue linked to it. Returns (conversation_id, photos_saved, photos_rejected)."""
     if topic not in TOPICS:
         topic = 'other'
+    photos = prepare_photos(photos)                    # before the first write: no lock held meanwhile
     conv_id = generate_id('CONV')
     issue_id = None
     if topic == 'repair':

@@ -25,6 +25,7 @@ def generate_due_reminders(conn, property_id):
     today = date.today().isoformat()
     prop_row = conn.execute("SELECT name FROM properties WHERE id = ?", (property_id,)).fetchone()
     property_name = prop_row['name'] if prop_row else property_id   # every SMS says which property it is about
+    texts = []           # sent from a background thread at the end, never while the caller holds the database
 
     settings = conn.execute("""
         SELECT rs.id, rs.template_key, rs.days_before_due
@@ -114,15 +115,11 @@ def generate_due_reminders(conn, property_id):
             """, (msg_id, property_id, t['tenant_id'], batch_id, subject, body))
 
             if t['phone']:
-                try:
-                    from src.messaging.delivery import send_sms
-                    app_base = os.environ.get('APP_BASE_URL', '').rstrip('/')
-                    from src.messaging.outreach import portal_footer
-                    sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
-                    sms_text = portal_footer(sms_text, app_base, t['short_code'])
-                    send_sms([{'phone': t['phone']}], sms_text)
-                except Exception:
-                    pass
+                from src.messaging.outreach import portal_footer
+                sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
+                texts.append(([{'phone': t['phone']}],
+                              portal_footer(sms_text, os.environ.get('APP_BASE_URL', '').rstrip('/'), t['short_code']),
+                              property_id))
 
     # --- Process reminder_schedules (flexible system) ---
 
@@ -205,15 +202,11 @@ def generate_due_reminders(conn, property_id):
             """, (msg_id, property_id, t['tenant_id'], batch_id, subj, body))
 
             if t['phone']:
-                try:
-                    from src.messaging.delivery import send_sms
-                    app_base = os.environ.get('APP_BASE_URL', '').rstrip('/')
-                    from src.messaging.outreach import portal_footer
-                    sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
-                    sms_text = portal_footer(sms_text, app_base, t['short_code'])
-                    send_sms([{'phone': t['phone']}], sms_text)
-                except Exception:
-                    pass
+                from src.messaging.outreach import portal_footer
+                sms_text = body if body.lower().startswith(property_name.lower()) else f"{property_name.title()}: {body}"
+                texts.append(([{'phone': t['phone']}],
+                              portal_footer(sms_text, os.environ.get('APP_BASE_URL', '').rstrip('/'), t['short_code']),
+                              property_id))
             sent_count += 1
 
         if sent_count > 0:
@@ -231,3 +224,6 @@ def generate_due_reminders(conn, property_id):
                 notify_property_owners(conn, property_id, owner_msg, sent_by='System')
             except Exception:
                 pass
+
+    from src.messaging.delivery import send_many_async
+    send_many_async(texts)

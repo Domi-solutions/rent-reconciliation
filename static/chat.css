@@ -69,3 +69,6 @@ body .thread-avatar { background: var(--forest); }
 body .ticks { display: inline-flex; align-items: center; vertical-align: -3px; margin-left: 4px; color: var(--ink-3); }
 body .ticks svg { width: 18px; height: 12px; }
 body .ticks.seen { color: var(--blue); }
+
+/* Chat photos carry width/height attributes (space kept while they load lazily); keep their shape. */
+.photos img { height: auto; }

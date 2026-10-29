@@ -1282,7 +1282,7 @@ def conversation_photo(property_id, photo_id):
                             WHERE ph.id = ? AND c.property_id = ?""", (photo_id, property_id)).fetchone()
     if not p:
         abort(404)
-    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(p['file_name'])
 
 
 @viewer_bp.route('/<property_id>/caretaker-photo/<photo_id>')
@@ -1294,4 +1294,4 @@ def caretaker_chat_photo(property_id, photo_id):
         p, m = staff_chat.photo(conn, photo_id)
     if not p or m['property_id'] != property_id:
         abort(404)
-    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(p['file_name'])

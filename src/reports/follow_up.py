@@ -47,20 +47,24 @@ def behind_list(conn, property_id, min_months=FOLLOW_UP_MONTHS, today=None, incl
         JOIN units u ON u.id = t.unit_id
         LEFT JOIN tenant_balances tb ON tb.tenant_id = t.id
         LEFT JOIN (
-            SELECT rc.tenant_id,
-                   SUM(rc.amount - COALESCE(al.allocated, 0)) AS overdue,
-                   MIN(CASE WHEN rc.amount - COALESCE(al.allocated, 0) > 0.5
-                            THEN CASE WHEN rc.period = 'ARREARS' THEN '0000-00' ELSE rc.period END END) AS oldest
-            FROM rent_charges rc
-            LEFT JOIN (SELECT charge_id, SUM(amount) AS allocated FROM payment_allocations
-                       GROUP BY charge_id) al ON al.charge_id = rc.id
-            WHERE rc.property_id = :pid AND rc.tenant_id IS NOT NULL
-              AND (rc.period = 'ARREARS' OR COALESCE(rc.due_date, rc.period || '-28') <= :today)
-            GROUP BY rc.tenant_id
+            -- this property's charges only, each with what is still unpaid on it
+            SELECT tenant_id, SUM(remaining) AS overdue,
+                   MIN(CASE WHEN remaining > 0.5
+                            THEN CASE WHEN period = 'ARREARS' THEN '0000-00' ELSE period END END) AS oldest
+            FROM (
+                SELECT rc.tenant_id, rc.period,
+                       rc.amount - COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
+                                             WHERE pa.charge_id = rc.id), 0) AS remaining
+                FROM rent_charges rc
+                WHERE rc.property_id = :pid AND rc.tenant_id IS NOT NULL
+                  AND (rc.period = 'ARREARS' OR COALESCE(rc.due_date, rc.period || '-28') <= :today)
+            )
+            GROUP BY tenant_id
         ) od ON od.tenant_id = t.id
         LEFT JOIN (
             SELECT p.tenant_id, p.payment_date, p.amount FROM payments p
-            WHERE p.id = (SELECT p2.id FROM payments p2 WHERE p2.tenant_id = p.tenant_id
+            WHERE p.property_id = :pid
+              AND p.id = (SELECT p2.id FROM payments p2 WHERE p2.tenant_id = p.tenant_id
                           ORDER BY p2.payment_date DESC, p2.created_at DESC LIMIT 1)
         ) lp ON lp.tenant_id = t.id
         LEFT JOIN (

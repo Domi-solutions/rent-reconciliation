@@ -70,6 +70,8 @@ if os.environ.get('ADMIN_PASSWORD') and app.secret_key == 'dev-secret-change-in-
     )
 app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'data/statements')
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024  # 64MB
+from src.utils import web_speed
+web_speed.install(app)          # styles cached on the phone (?v=), pages gzip-compressed
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 init_database()
@@ -145,6 +147,7 @@ from src.database.db import (
     migrate_add_admin_welcome,
     migrate_add_property_sender,
     migrate_add_payment_ref,
+    migrate_speed_indexes,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -217,6 +220,7 @@ migrate_add_lease_terms()
 migrate_add_admin_welcome()
 migrate_add_property_sender()
 migrate_add_payment_ref()
+migrate_speed_indexes()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -611,9 +615,14 @@ def get_current_property(conn):
     return None
 
 
+_PORTAL_BLUEPRINTS = {'tenant', 'caretaker', 'viewer', 'owner', 'platform', 'payment', 'inbound'}
+
+
 @app.context_processor
 def inject_property_context():
     """Make current property and counts available to all admin templates."""
+    if request.blueprint in _PORTAL_BLUEPRINTS:
+        return {}        # tenant, caretaker, owner and platform pages show none of these counts
     try:
         with get_connection() as conn:
             prop = get_current_property(conn)
@@ -1125,7 +1134,8 @@ def dashboard():
         """, (property_id,)).fetchall()
 
         from src.messaging.threads import list_for_staff
-        awaiting_threads = list_for_staff(conn, property_id, status='awaiting_reply')[:3]
+        _all_threads = list_for_staff(conn, property_id)          # once; both lists below come from it
+        awaiting_threads = [c for c in _all_threads if c['status'] == 'awaiting_reply'][:3]
         from src.leases.move_out import open_count as _moving_out_count
         from src.leases.terms import ending_soon as _ending_soon, reviews_due as _reviews_due
         moving_out_count = _moving_out_count(conn, property_id)
@@ -1135,15 +1145,7 @@ def dashboard():
         _stmt_filter = "bs.org_id = ?" if _dash_org_id else "bs.property_id = ?"
         _stmt_param = _dash_org_id if _dash_org_id else property_id
 
-        unassigned = conn.execute(f"""
-            SELECT bt.*
-            FROM bank_transactions bt
-            JOIN bank_statements bs ON bt.statement_id = bs.id
-            WHERE {_stmt_filter}
-            AND bt.txn_type = 'PAYBILL_CREDIT'
-            AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
-            ORDER BY bt.txn_date DESC
-        """, (_stmt_param,)).fetchall()
+        unassigned = []        # the overview shows only the count (unassigned_stats); the list is on Payments
 
         unassigned_stats = conn.execute(f"""
             SELECT
@@ -1156,7 +1158,7 @@ def dashboard():
             WHERE {_stmt_filter}
             AND bt.txn_type = 'PAYBILL_CREDIT'
             AND (bt.ignored IS NULL OR bt.ignored = 0)
-            AND bt.id NOT IN (SELECT bank_txn_id FROM payments WHERE bank_txn_id IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.bank_txn_id = bt.id)
         """, (_stmt_param,)).fetchone()
 
         recent = conn.execute("""
@@ -1208,7 +1210,7 @@ def dashboard():
         from src.reports.follow_up import behind_list
         behind = behind_list(conn, property_id, min_months=0, include_departed=False)
         # Latest conversations, newest first, like a phone's message list (unanswered in bold).
-        latest_threads = sorted(list_for_staff(conn, property_id), key=lambda r: r['last_message_at'] or '',
+        latest_threads = sorted(_all_threads, key=lambda r: r['last_message_at'] or '',
                                 reverse=True)[:3]
 
         return render_template(

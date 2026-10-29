@@ -225,6 +225,27 @@ def send_sms(recipients, message, property_id=None):
     return success, len(numbers) - success + len(skipped), errors
 
 
+def send_many_async(items):
+    """Send many texts in one background thread, one after another — for broadcasts and reminders.
+
+    items: list of (recipients, message) or (recipients, message, property_id). The request (or
+    job) returns at once and never holds the database while a provider call is in flight; each
+    send is logged to platform_outbox as usual."""
+    items = [tuple(i) for i in items if i]
+    if not items:
+        return None
+
+    def run():
+        for item in items:
+            try:
+                send_sms(*item)
+            except Exception:
+                pass                     # one bad number never stops the rest
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return t
+
+
 def send_sms_async(recipients, message, property_id=None):
     """Fire-and-forget SMS — returns immediately, sends in a daemon thread.
 

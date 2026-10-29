@@ -277,9 +277,11 @@ def dashboard(property_id):
             ORDER BY p.payment_date DESC
         """, (property_id,)).fetchall()
 
-        unassigned = _unassigned_credits(conn, property_id)
+        # Matching payments is management's unless the caretaker's money tools are on: don't work
+        # out (org-wide, slow) what the page won't show.
+        unassigned = _unassigned_credits(conn, property_id) if money_tools_on() else []
         unassigned_total = sum(float(u['amount'] or 0) for u in unassigned)
-        assignable_tenants = _assignable_tenants(conn, property_id)
+        assignable_tenants = _assignable_tenants(conn, property_id) if money_tools_on() else []
         this_month = _date.today().strftime('%Y-%m')
         water_done = conn.execute("SELECT submitted_at FROM water_uploads WHERE property_id = ? AND reading_period = ?",
                                   (property_id, this_month)).fetchone()
@@ -390,7 +392,7 @@ def messages(property_id):
             abort(404)
 
         tenants = conn.execute("""
-            SELECT t.id, t.name, t.phone, t.access_token, t.unit_id, u.unit_number,
+            SELECT t.id, t.name, t.phone, t.access_token, t.short_code, t.unit_id, u.unit_number,
                    u.monthly_rent, u.service_charge,
                    COALESCE(ub.balance, 0) as balance
             FROM tenants t
@@ -479,7 +481,7 @@ def send_message(property_id):
         next_due_date = (due_row['due_date'] if due_row else None) or ''
 
         tenants = conn.execute("""
-            SELECT t.id, t.name, t.phone, t.access_token, t.unit_id, u.unit_number,
+            SELECT t.id, t.name, t.phone, t.access_token, t.short_code, t.unit_id, u.unit_number,
                    u.monthly_rent, u.service_charge,
                    COALESCE(ub.balance, 0) as balance,
                    COALESCE(ub.total_paid, 0) as total_paid
@@ -509,6 +511,7 @@ def send_message(property_id):
 
         # Build personalised message per tenant and store
         personalised = []
+        pings = []
         for t in recipients:
             variables = {
                 'tenant_name': t['name'] or '',
@@ -531,15 +534,14 @@ def send_message(property_id):
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'broadcast', ?, 'delivered')
             """, (msg_id, property_id, t['id'], batch_id, subject, body, body_template, delivery_channel))
 
-            if delivery_channel == 'portal' and t['phone'] and t['access_token']:
-                try:
-                    from src.messaging.delivery import send_sms
-                    _base = request.host_url.rstrip('/')
-                    _link = f"{_base}/tenant/{t['access_token']}"
-                    _ping = f"Hi {t['name']}, you have a new message. View: {_link}"
-                    send_sms([{'phone': t['phone']}], _ping)
-                except Exception:
-                    pass
+            # Portal only: a short note with the sign-in link — only once links are switched on
+            # (a link is a sign-in invitation; src/messaging/outreach.py). Sent after the save.
+            if delivery_channel == 'portal' and t['phone'] and t['short_code']:
+                from src.messaging.outreach import portal_footer
+                _note = f"{prop['name'].title()}: you have a new message from the caretaker."
+                _ping = portal_footer(_note, os.environ.get('APP_BASE_URL') or request.host_url, t['short_code'])
+                if _ping != _note:
+                    pings.append(([{'phone': t['phone']}], _ping, property_id))
 
         conn.execute(
             "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
@@ -569,23 +571,15 @@ def send_message(property_id):
         except Exception:
             pass
 
+    # Texts go out from a background thread after the save — the caretaker never waits on the provider.
+    from src.messaging.delivery import send_many_async
     if channel == 'sms':
-        from src.messaging.delivery import send_sms
-        sent_count = failed_count = 0
-        first_error = None
-        for p in personalised:
-            s, f, errors = send_sms([{'phone': p['tenant']['phone']}], p['body'])
-            sent_count += s
-            failed_count += f
-            if errors and not first_error:
-                first_error = errors[0]
-        if failed_count == 0:
-            flash(f"SMS sent to {sent_count} tenant{'s' if sent_count != 1 else ''}.", 'success')
-        elif sent_count > 0:
-            flash(f"SMS sent to {sent_count} tenant{'s' if sent_count != 1 else ''}; {failed_count} failed.", 'success')
-        else:
-            flash(f"SMS delivery failed: {first_error or 'unknown error'}", 'error')
+        texts = [([{'phone': p['tenant']['phone']}], p['body'], property_id) for p in personalised
+                 if p['tenant']['phone']]
+        send_many_async(texts)
+        flash(f"Message saved. Texts are going out now to {len(texts)} tenant{'s' if len(texts) != 1 else ''}.", 'success')
     else:
+        send_many_async(pings)
         flash(f"Message sent to {len(recipients)} tenant{'s' if len(recipients) != 1 else ''}.", 'success')
 
     return redirect(url_for('caretaker.messages', property_id=property_id))
@@ -1391,7 +1385,7 @@ def repair_photo(property_id, photo_id):
         """, (photo_id, property_id)).fetchone()
     if not row:
         abort(404)
-    return send_from_directory(threads.photos_dir(), row['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(row['file_name'])
 
 
 @caretaker_bp.route('/<property_id>/flagged-claims')
@@ -1642,7 +1636,7 @@ def management_chat_photo(property_id, photo_id):
         p, m = staff_chat.photo(conn, photo_id)
     if not p or m['caretaker_id'] != session.get('caretaker_id') or m['property_id'] != property_id:
         abort(404)
-    return send_from_directory(threads.photos_dir(), p['file_name'], mimetype='image/jpeg')
+    return threads.send_photo(p['file_name'])
 
 
 # ── Expenses (caretaker submits; management approves and pays back) ─────────
