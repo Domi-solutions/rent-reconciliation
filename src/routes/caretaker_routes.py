@@ -714,12 +714,40 @@ def log_payment(property_id):
                  f'Ref: {reference} | Unit: {unit_number} | Amount: {amt_str} | source: caretaker', 'caretaker'),
             )
 
+            # Already recorded (M-Pesa prompt/paybill, a bank line, or staff)? One code, one payment:
+            # the claim is answered from that payment (src/reconciliation/evidence.py).
+            from src.reconciliation import evidence
+            _org_id = prop['organization_id'] if prop['organization_id'] else None
+            _recorded = evidence.booked(conn, reference, _org_id)
+            _actor = session.get('caretaker_name', 'Caretaker')
+            if (_recorded and _departed_tenant_id and _recorded['unit_id'] == unit_id
+                    and _recorded['tenant_id'] != _departed_tenant_id):
+                # Recorded to whoever lives in the house now; the caretaker says it was the departed
+                # tenant's money — move it to their account.
+                conn.execute("UPDATE payments SET tenant_id = ? WHERE id = ?", (_departed_tenant_id, _recorded['id']))
+                from src.reconciliation.tenant_ledger import reallocate_unit
+                reallocate_unit(conn, unit_id)
+                conn.execute(
+                    "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                    ('payment_tenant_changed', 'payment', _recorded['id'],
+                     f'Ref: {reference} | Unit: {unit_number} | moved to departed tenant {_departed_tenant_id} by {_actor}',
+                     _actor))
+                _recorded = evidence.booked(conn, reference, _org_id)
+            _claim_row = conn.execute("SELECT * FROM payment_claims WHERE id = ?", (claim_id,)).fetchone()
+            _outcome, _recorded = evidence.resolve_claim(conn, _claim_row, _org_id, actor=_actor) if _recorded else (None, None)
+            if _outcome == 'attached':
+                flash(f'{reference} is already recorded: {evidence.describe(_recorded)}. Nothing more to do.', 'success')
+                return redirect(url_for('caretaker.payment_activity', property_id=property_id))
+            if _outcome == 'held':
+                flash(f'{reference} is already recorded for someone else: {evidence.describe(_recorded)}. '
+                      'Management will check whose payment it is.', 'warning')
+                return redirect(url_for('caretaker.payment_activity', property_id=property_id))
+
             # At-submission bank check: cross-reference against any bank data already uploaded.
             # Three outcomes: auto-verify (ref found), flag (ref absent), or leave pending (no data yet).
             _claim_flagged = False
             _claim_verified = False
             if reference:
-                _org_id = prop['organization_id'] if prop['organization_id'] else None
 
                 if mpesa_period:
                     # Compute date range (avoids strftime on indexed txn_date column)

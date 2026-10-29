@@ -185,7 +185,8 @@ tables:
       property_id: {type: TEXT, fk: properties.id, required: true}
       unit_id: {type: TEXT, fk: units.id, required: true}
       claim_id: {type: TEXT, fk: payment_claims.id}
-      bank_txn_id: {type: TEXT, fk: bank_transactions.id, note: "NULL for Daraja/Pesapal payments"}
+      bank_txn_id: {type: TEXT, fk: bank_transactions.id, note: "NULL for Daraja/Pesapal payments until the bank statement line for the same code arrives (evidence.settle_statement links it)"}
+      mpesa_ref: {type: TEXT, note: "the M-Pesa code (upper-case), stamped by trigger; one payment per code per organisation (trg_payments_one_per_ref) — migrate_add_payment_ref"}
       statement_id: {type: TEXT, fk: bank_statements.id, note: "NULL for Daraja/Pesapal payments"}
       amount: {type: DECIMAL(10,2), required: true}
       payment_date: {type: DATE, required: true}

@@ -144,6 +144,7 @@ from src.database.db import (
     migrate_add_lease_terms,
     migrate_add_admin_welcome,
     migrate_add_property_sender,
+    migrate_add_payment_ref,
 )
 migrate_add_charge_type()
 migrate_add_apartment_size()
@@ -215,6 +216,7 @@ migrate_add_tenant_contacts()
 migrate_add_lease_terms()
 migrate_add_admin_welcome()
 migrate_add_property_sender()
+migrate_add_payment_ref()
 
 # Demo site: an empty database is filled with the made-up Kijani Court data on first start.
 from src.utils.runtime import is_demo as _is_demo
@@ -322,6 +324,17 @@ def handle_unhandled_exception(exc):
     from werkzeug.exceptions import HTTPException
     if isinstance(exc, HTTPException):
         return exc  # Let 404, 403, etc. pass through normally
+
+    # A second payment for an M-Pesa code already booked (trigger trg_payments_one_per_ref):
+    # nothing was saved — say so plainly instead of an error page (src/reconciliation/evidence.py).
+    from src.reconciliation.evidence import DUPLICATE
+    if isinstance(exc, sqlite3.IntegrityError) and DUPLICATE in str(exc):
+        message = ('Nothing was saved: this M-Pesa code is already recorded as a payment. '
+                   'Search the code under Lookup to see where.')
+        if request.is_json or request.accept_mimetypes.best == 'application/json':
+            return jsonify({'success': False, 'error': message}), 409
+        flash(message, 'warning')
+        return redirect(request.referrer or url_for('dashboard'))
 
     import traceback as _tb
     tb_text = _tb.format_exc()
@@ -2686,12 +2699,17 @@ def report_payment():
                 flash(f'Reference {reference} has already been reported.', 'warning')
                 return redirect(url_for('report_payment'))
 
+            # The M-Pesa date says which statement period to check it against (without it, any
+            # statement could wrongly call it "not found").
+            _ts = parsed.get('timestamp')
+            _real_ts = _ts and not any('Timestamp not found' in w for w in parsed.get('parse_warnings') or [])
             claim_id = generate_id('CLM')
             conn.execute("""
                 INSERT INTO payment_claims
-                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (claim_id, property_row['id'], reference, unit_id, amount, message, 'web'))
+                (id, property_id, mpesa_ref, unit_id, claimed_amount, raw_message, source, mpesa_date, mpesa_period)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (claim_id, property_row['id'], reference, unit_id, amount, message, 'web',
+                  _ts.date().isoformat() if _real_ts else None, _ts.strftime('%Y-%m') if _real_ts else None))
             unit_row = conn.execute("SELECT unit_number FROM units WHERE id = ?", (unit_id,)).fetchone()
             unit_number = unit_row['unit_number'] if unit_row else unit_id
             amt_str = f'{amount:.2f}' if amount is not None else '-'
@@ -2699,7 +2717,19 @@ def report_payment():
                 "INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
                 ('claim_created', 'claim', claim_id, f'Ref: {reference} | Unit: {unit_number} | Amount: {amt_str}', staff.actor()),
             )
-            flash(f'Payment claim recorded! Reference: {reference}', 'success')
+            # Already recorded (M-Pesa, a bank line, or staff)? Answer it from that payment.
+            from src.reconciliation import evidence
+            _claim_row = conn.execute("SELECT * FROM payment_claims WHERE id = ?", (claim_id,)).fetchone()
+            _outcome, _recorded = evidence.resolve_claim(conn, _claim_row, property_row['organization_id'],
+                                                         actor=staff.actor())
+            if _outcome == 'attached':
+                flash(f'{reference} is already recorded: {evidence.describe(_recorded)}. Nothing more to do.', 'success')
+            elif _outcome == 'held':
+                flash(f'{reference} is already recorded for someone else: {evidence.describe(_recorded)}. '
+                      'It is held under Payments › Flagged claims so you can decide whose it is.', 'warning')
+            else:
+                flash(f'Payment claim recorded! Reference: {reference}. It is checked when the next bank '
+                      'statement is uploaded.', 'success')
             return redirect(url_for('dashboard'))
 
         return render_template('report_payment.html', property=property_row, units=units)
@@ -3178,9 +3208,15 @@ def verify_payments(statement_id):
             WHERE statement_id = ? AND txn_type = 'PAYBILL_CREDIT'
         """, (statement_id,)).fetchall()
 
-        bank_by_ref = {row['mpesa_ref']: row for row in bank_txns if row['mpesa_ref']}
+        # One code, one payment: lines M-Pesa (or an earlier copy of this statement) already
+        # recorded stop asking to be matched; pasted codes are answered from whatever recorded them.
+        from src.reconciliation import evidence
+        _linked, _set_aside = evidence.settle_statement(conn, statement_id, verify_org_id)
+        bank_by_ref = {evidence.norm(row['mpesa_ref']): row for row in bank_txns if row['mpesa_ref']}
         verified_count = 0
         verified_claim_ids = set()
+        already_recorded = 0
+        seen_claim_ids = set()            # claims whose code is in this statement or already recorded: never "not found"
 
         _caretakers_for_alert = conn.execute(
             "SELECT phone FROM caretakers WHERE property_id = ? AND phone IS NOT NULL AND TRIM(phone) != ''",
@@ -3188,9 +3224,15 @@ def verify_payments(statement_id):
         ).fetchall()
 
         for claim in pending_claims:
-            ref = claim['mpesa_ref']
+            ref = evidence.norm(claim['mpesa_ref'])
+            outcome, _ = evidence.resolve_claim(conn, claim, verify_org_id)
+            if outcome:
+                seen_claim_ids.add(claim['id'])
+                already_recorded += outcome == 'attached'
+                continue
             if ref not in bank_by_ref:
                 continue
+            seen_claim_ids.add(claim['id'])
             bank_txn = bank_by_ref[ref]
             existing_payment = conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (bank_txn['id'],)).fetchone()
             if existing_payment:
@@ -3307,8 +3349,17 @@ def verify_payments(statement_id):
 
         cleared_count = 0
         for claim in _flagged_claims:
-            ref = claim['mpesa_ref']
-            if not ref or ref not in bank_by_ref:
+            ref = evidence.norm(claim['mpesa_ref'])
+            outcome, _ = evidence.resolve_claim(conn, claim, verify_org_id)
+            if outcome == 'attached':
+                _remaining = conn.execute("SELECT COUNT(*) FROM payment_claims WHERE unit_id = ? AND status = 'flagged' AND id != ?",
+                                          (claim['unit_id'], claim['id'])).fetchone()[0]
+                if not _remaining:
+                    conn.execute("UPDATE tenants SET flagged = 0 WHERE unit_id = ? AND status = 'active'", (claim['unit_id'],))
+                cleared_count += 1
+                already_recorded += 1
+                continue
+            if outcome or not ref or ref not in bank_by_ref:
                 continue
             bank_txn = bank_by_ref[ref]
             if conn.execute("SELECT id FROM payments WHERE bank_txn_id = ?", (bank_txn['id'],)).fetchone():
@@ -3415,7 +3466,7 @@ def verify_payments(statement_id):
 
         flagged_count = 0
         for claim in pending_claims:
-            if claim['id'] in verified_claim_ids:
+            if claim['id'] in verified_claim_ids or claim['id'] in seen_claim_ids:
                 continue
             if not claim['mpesa_ref']:
                 continue
@@ -3510,6 +3561,12 @@ def verify_payments(statement_id):
             _msg += f' {cleared_count} previously flagged claim(s) cleared — ref found in this statement.'
         if flagged_count:
             _msg += f' {flagged_count} unmatched claim(s) flagged — see arrears for details.'
+        if _linked or _set_aside or already_recorded:
+            _msg += (f' {_linked + _set_aside} line(s) on this statement were already recorded'
+                     f'{" (M-Pesa or an earlier copy)" if _linked or _set_aside else ""} — nothing to match there.'
+                     if _linked or _set_aside else '')
+            if already_recorded:
+                _msg += f' {already_recorded} reported code(s) matched payments already recorded.'
 
         # Detect frozen reports whose period overlaps with this statement's transactions
         if verify_org_id:

@@ -1001,14 +1001,13 @@ def report_payment(token):
         except (TypeError, ValueError):
             amount = None
 
-        # Already received through the property's own paybill: confirmed if it is this
-        # tenant's; on someone else's account it is held for management (claim_owner).
-        from src.payments.mpesa import paid_through_mpesa
+        # Already recorded (M-Pesa, a bank line, or staff — src/reconciliation/evidence.py): confirmed
+        # if it is this tenant's; on someone else's account it is held for management (claim_owner).
+        from src.reconciliation.evidence import booked
         _held = None
-        _booked = paid_through_mpesa(conn, reference)
+        _booked = booked(conn, reference, prop['organization_id'] if prop.get('organization_id') else None)
         if _booked:
-            _owner = conn.execute("SELECT tenant_id FROM payments WHERE id = ?", (_booked['payment_id'],)).fetchone()
-            if _owner and _owner['tenant_id'] == tenant['id']:
+            if _booked['tenant_id'] == tenant['id']:
                 return redirect(url_for('tenant.pay', token=token,
                                         success=f'Payment {reference} is already confirmed — see your statement.'))
             _held = claim_owner.ON_OTHER_ACCOUNT

@@ -43,8 +43,9 @@ class PayThisBill(unittest.TestCase):
                                             "WHERE u.unit_number='B2' AND t.status='active'").fetchone())
             self.open = [dict(r) for r in conn.execute("""
                 SELECT rc.id, rc.charge_type, rc.period, rc.amount FROM rent_charges rc
-                WHERE rc.tenant_id = ? AND NOT EXISTS (SELECT 1 FROM payment_allocations pa WHERE pa.charge_id = rc.id)
-                ORDER BY rc.created_at, rc.rowid""", (self.tenant['id'],))]
+                WHERE rc.tenant_id = ? AND rc.amount > COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
+                                                                 WHERE pa.charge_id = rc.id), 0) + 0.005
+                ORDER BY rc.created_at, rc.rowid""", (self.tenant['id'],))]   # anything still owed, oldest first
             self.other_charge = conn.execute("""SELECT rc.id FROM rent_charges rc JOIN units u ON u.id = rc.unit_id
                                                 WHERE u.unit_number = 'A4' LIMIT 1""").fetchone()[0]
         self.token = self.tenant['access_token']
@@ -89,9 +90,7 @@ class PayThisBill(unittest.TestCase):
 
     def test_someone_elses_bill_is_ignored(self):
         allocations = self.pay(500, self.other_charge)
-        with self.connection() as conn:
-            dbg = [tuple(r) for r in conn.execute("SELECT rc.id, rc.created_at, rc.rowid, rc.period, rc.charge_type, (SELECT SUM(amount) FROM payment_allocations pa WHERE pa.charge_id=rc.id) FROM rent_charges rc WHERE rc.id IN (?, ?)", (allocations[0][0], self.open[0]['id']))]
-        self.assertEqual(allocations[0], (self.open[0]['id'], 500), dbg)
+        self.assertEqual(allocations[0], (self.open[0]['id'], 500))
 
     def test_pay_page_shows_the_chosen_bill(self):
         newest_water = [c for c in self.open if c['charge_type'] == 'water'][-1]

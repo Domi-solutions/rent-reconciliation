@@ -172,10 +172,16 @@ def allocate_payment(conn, payment_id, unit_id, amount):
     the target on the claim it came from), that bill is settled first — the payer
     decides what a payment is for — and anything left goes oldest first.
     """
-    payment = conn.execute("""
-        SELECT p.tenant_id, COALESCE(p.target_charge_id, pc.target_charge_id) AS target_charge_id
-        FROM payments p LEFT JOIN payment_claims pc ON pc.id = p.claim_id WHERE p.id = ?
-    """, (payment_id,)).fetchone()
+    try:
+        payment = conn.execute("""
+            SELECT p.tenant_id, COALESCE(p.target_charge_id, pc.target_charge_id) AS target_charge_id
+            FROM payments p LEFT JOIN payment_claims pc ON pc.id = p.claim_id WHERE p.id = ?
+        """, (payment_id,)).fetchone()
+    except sqlite3.OperationalError:
+        # An early startup migration allocates before migrate_add_payment_target has added the
+        # column (an older database): no bill was chosen yet, so oldest first.
+        payment = conn.execute("SELECT tenant_id, NULL AS target_charge_id FROM payments WHERE id = ?",
+                               (payment_id,)).fetchone()
     tenant_id = payment['tenant_id'] if payment else None
     target = payment['target_charge_id'] if payment else None
     charges = conn.execute("""
@@ -2273,3 +2279,63 @@ def migrate_add_property_sender():
         if 'sms_sender_id' not in {r['name'] for r in conn.execute("PRAGMA table_info(properties)")}:
             conn.execute("ALTER TABLE properties ADD COLUMN sms_sender_id TEXT")
         print("Migration complete: property SMS sender ready.")
+
+
+def _payment_ref_sql(row='NEW'):
+    """The M-Pesa code a payment row stands for: its own, else its bank line's, else its claim's,
+    else (M-Pesa prompt / paybill) the receipt kept in assignment_reason. Upper-case, NULL if none."""
+    return f"""COALESCE(
+        NULLIF(UPPER(TRIM({row}.mpesa_ref)), ''),
+        (SELECT NULLIF(UPPER(TRIM(bt.mpesa_ref)), '') FROM bank_transactions bt WHERE bt.id = {row}.bank_txn_id),
+        (SELECT NULLIF(UPPER(TRIM(pc.mpesa_ref)), '') FROM payment_claims pc WHERE pc.id = {row}.claim_id),
+        CASE WHEN {row}.source = 'daraja' THEN NULLIF(UPPER(TRIM({row}.assignment_reason)), '') END)"""
+
+
+def migrate_add_payment_ref():
+    """One M-Pesa code, one payment (src/reconciliation/evidence.py). Idempotent.
+
+    payments.mpesa_ref — the code, stamped on insert and back-filled for existing rows.
+    trg_payments_one_per_ref — refuses a second payment for a code already booked in the same
+      organisation (abort message DUPLICATE_MPESA_REF; app.py turns it into a plain message).
+      Existing duplicates are left as they are: scripts/payment_codes_report.py lists them.
+    trg_payments_ref_stamp — stamps the code.
+    trg_payments_set_aside_repeats — other unmatched bank lines with the same code (another copy
+      of a statement) are set aside as ignored, with the reason, so nobody matches them again."""
+    ref = _payment_ref_sql('NEW')
+    org_of_new = "(SELECT organization_id FROM properties WHERE id = NEW.property_id)"
+    with get_connection() as conn:
+        if 'mpesa_ref' not in {r['name'] for r in conn.execute("PRAGMA table_info(payments)")}:
+            conn.execute("ALTER TABLE payments ADD COLUMN mpesa_ref TEXT")
+        conn.execute(f"""UPDATE payments SET mpesa_ref = COALESCE(
+                (SELECT NULLIF(UPPER(TRIM(pt.mpesa_ref)), '') FROM payment_transactions pt
+                  WHERE pt.payment_id = payments.id AND pt.processing_status = 'completed' LIMIT 1),
+                {_payment_ref_sql('payments')})
+            WHERE mpesa_ref IS NULL""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_mpesa_ref ON payments(mpesa_ref)")
+        conn.execute("DROP TRIGGER IF EXISTS trg_payments_one_per_ref")
+        conn.execute(f"""
+            CREATE TRIGGER trg_payments_one_per_ref BEFORE INSERT ON payments
+            WHEN {ref} IS NOT NULL AND EXISTS (
+                SELECT 1 FROM payments px JOIN properties pp ON pp.id = px.property_id
+                WHERE px.mpesa_ref = {ref} AND pp.organization_id IS {org_of_new})
+            BEGIN SELECT RAISE(ABORT, 'DUPLICATE_MPESA_REF'); END""")
+        conn.execute("DROP TRIGGER IF EXISTS trg_payments_ref_stamp")
+        conn.execute(f"""
+            CREATE TRIGGER trg_payments_ref_stamp AFTER INSERT ON payments
+            WHEN NEW.mpesa_ref IS NULL AND {ref} IS NOT NULL
+            BEGIN UPDATE payments SET mpesa_ref = {ref} WHERE id = NEW.id; END""")
+        conn.execute("DROP TRIGGER IF EXISTS trg_payments_set_aside_repeats")
+        conn.execute(f"""
+            CREATE TRIGGER trg_payments_set_aside_repeats AFTER INSERT ON payments
+            WHEN {ref} IS NOT NULL
+            BEGIN
+                UPDATE bank_transactions
+                   SET ignored = 1, ignored_at = CURRENT_TIMESTAMP,
+                       ignored_reason = 'Already recorded: payment ' || NEW.id || ' has the same M-Pesa code'
+                 WHERE txn_type = 'PAYBILL_CREDIT' AND UPPER(TRIM(mpesa_ref)) = {ref}
+                   AND id IS NOT NEW.bank_txn_id AND COALESCE(ignored, 0) = 0
+                   AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.bank_txn_id = bank_transactions.id)
+                   AND statement_id IN (SELECT bs.id FROM bank_statements bs
+                                        WHERE bs.org_id IS {org_of_new} OR bs.property_id = NEW.property_id);
+            END""")
+        print("Migration complete: one payment per M-Pesa code.")

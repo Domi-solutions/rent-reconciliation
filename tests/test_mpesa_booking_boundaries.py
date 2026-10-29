@@ -41,7 +41,7 @@ class MpesaBookingBoundaries(unittest.TestCase):
                                    statement_id TEXT, amount REAL, payment_date TEXT,
                                    assignment_type TEXT, assignment_reason TEXT,
                                    assigned_by TEXT, source TEXT, created_at TEXT,
-                                   target_charge_id TEXT);
+                                   target_charge_id TEXT, mpesa_ref TEXT);
             CREATE TABLE rent_charges (id TEXT PRIMARY KEY, unit_id TEXT, tenant_id TEXT,
                                        amount REAL, period TEXT, charge_type TEXT, created_at TEXT);
             CREATE TABLE payment_allocations (id TEXT PRIMARY KEY, payment_id TEXT,

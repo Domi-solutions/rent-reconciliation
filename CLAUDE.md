@@ -106,6 +106,7 @@ src/messaging/staff_chat.py    # management ↔ caretaker chat (one per caretake
 src/messaging/threads.py       # tenant ↔ management conversations + photos: start_conversation, add_message, thread, list_for_staff, awaiting_count
 src/reconciliation/matcher.py  # enrich_with_suggestions() — 3-tier unit suggestion
 src/reconciliation/state_machine.py  # payment lifecycle
+src/reconciliation/evidence.py      # one M-Pesa code, one payment: booked(), settle_statement(), resolve_claim()
 src/reconciliation/tenant_ledger.py  # per-tenant ledger review: unattributed rows, cross-tenant allocations, reallocate_unit()
 scripts/tenant_ledger_report.py      # run against a prod copy before deploy; --execute redoes crossed allocations
 src/reports/follow_up.py             # behind_list(): who is behind — OVERDUE only (due date passed), per tenant, months = overdue ÷ (rent+service); admin /arrears (sidebar "Follow up") + caretaker /arrears + caretaker dashboard. Reported-unmatched claims shown beside, never netted.
@@ -184,6 +185,7 @@ Full schema in `.agent/schema.yaml`. Rules that have tripped agents:
 - `expenses` / `expense_receipts` (`migrate_add_expenses`) — money out per property. Caretaker submits (`submitted`, optional `reimburse_caretaker`) → admin approves (`approved`) or rejects → marks `paid` (method + reference). Admin entries are `paid` or `approved`. Never edited or deleted: `void` with a reason. Cash book = payments − paid expenses − paid owner payouts. Receipts (PDF/photo, HEIC ok) in `<db dir>/expense_receipts/`, served only via ownership-checked routes. **No management fee is applied in the system** (owner wallet shows none) until fees come from contracts.
 - `tenant_balances` VIEW — one row per tenant (any status, departed included). Use for a tenant's own balance. `unit_balances` VIEW — the unit's current active tenant's balance, read from `tenant_balances`; same columns as before.
 - **"Pay this bill"** (`migrate_add_payment_target`): `target_charge_id` on `payment_transactions` (M-Pesa prompt started for one bill), `payment_claims` (pasted code for one bill) and `payments`. `allocate_payment` settles the target first (only if it is the paying tenant's own charge on that unit), the rest oldest first — the payer appropriates. Set from the tenant's Pay page `?bill=<charge_id>` (`_chosen_bill()` validates); "Make a payment" and all other paths stay oldest-first. Tests: `tests/test_pay_this_bill.py`.
+- **One M-Pesa code, one payment** (`src/reconciliation/evidence.py`, `migrate_add_payment_ref`): `payments.mpesa_ref` is stamped on insert (own value, else bank line's, else claim's, else the Daraja receipt in `assignment_reason`). Trigger `trg_payments_one_per_ref` refuses a second payment for a code already booked in the organisation (`DUPLICATE_MPESA_REF`; app.py's error handler shows "already recorded" instead of a 500); `trg_payments_set_aside_repeats` sets other unmatched copies of that bank line aside (ignored, with the reason). Later evidence attaches instead of booking: `evidence.settle_statement` (start of `verify_payments`, which every upload goes to) links a bank line to an M-Pesa payment of the same code and amount, or sets aside a repeat copy; `evidence.resolve_claim` answers a pasted code from the recorded payment (tenant/caretaker/admin report, `verify_payments` pending + flagged) — on another tenant's account it is held `on_other_account`, never "not found"; `mpesa.book()` marks a callback `duplicate` when the code was recorded from the bank or by staff. `quick_verify_ref` checks recorded payments first. Existing duplicates (one on live: UBS9G7T7M6, 6F, KES 19,000) are listed by `scripts/payment_codes_report.py` for a person to decide. Tests: `tests/test_one_code_one_payment.py`.
 - `allocate_payment` settles only the paying tenant's own charges (`rc.tenant_id IS payment.tenant_id`). Allocations made before this could cross tenants; `scripts/tenant_ledger_report.py` lists them and `--execute` redoes them per unit (snapshot first). Editing `move_in_date` no longer moves debt between people — re-pointing rows is an explicit rebuild.
 - `bank_transactions` — has index `idx_bank_txn_date` on `(txn_date)` added by `migrate_add_bank_txn_date_index` to avoid strftime full-table scans on period queries.
 
@@ -316,7 +318,7 @@ from src.database.db import migrate_add_charge_type  # etc.
 # Use CREATE TABLE IF NOT EXISTS and ALTER TABLE ADD COLUMN — never drop/recreate
 ```
 
-Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_property_sender`.
+Migration call order: append-only, never reorder. See `app.py` startup for full list. Latest: `migrate_add_payment_ref`.
 
 ---
 

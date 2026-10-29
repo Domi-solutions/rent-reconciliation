@@ -301,6 +301,17 @@ def book(txn_id, base_url=None):
                     WHERE id = ?
                 """, (dup['payment_id'], txn['id']))
                 return None
+            # …or was already recorded another way (a bank statement line, or staff): one code, one payment.
+            from src.reconciliation.evidence import booked
+            recorded = booked(conn, txn['mpesa_ref'], txn['org_id'] if 'org_id' in txn.keys() else None)
+            if recorded:
+                conn.execute("""
+                    UPDATE payment_transactions SET processing_status = 'duplicate', payment_id = ?,
+                           error_detail = 'same M-Pesa code already recorded (bank statement or staff)',
+                           processed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (recorded['id'], txn['id']))
+                return None
 
         tenant = conn.execute("SELECT * FROM tenants WHERE id = ?", (txn['tenant_id'],)).fetchone() \
             if txn['tenant_id'] else None

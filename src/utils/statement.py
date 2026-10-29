@@ -43,6 +43,20 @@ def quick_verify_ref(conn, text, unit_id, org_id):
             return {'status': 'parse_error',
                     'message': parsed.get('error', 'Could not extract a reference code from the input')}
 
+    # Already recorded — by M-Pesa, a bank line (any copy) or staff? One code, one payment.
+    from src.reconciliation.evidence import booked
+    recorded = booked(conn, ref, org_id)
+    if recorded:
+        return {
+            'status':             'already_this_unit' if recorded['unit_id'] == unit_id else 'already_other_unit',
+            'ref':                ref,
+            'amount':             float(recorded['amount'] or 0),
+            'date':               str(recorded['payment_date'] or ''),
+            'sender':             recorded['tenant_name'] or '',
+            'statement_filename': 'M-Pesa' if recorded['source'] == 'daraja' else 'recorded payment',
+            'assigned_unit':      recorded['unit_number'],
+        }
+
     # Look up in bank_transactions (org-scoped)
     txn = conn.execute("""
         SELECT bt.id, bt.mpesa_ref, bt.amount, bt.txn_date, bt.sender_name,
