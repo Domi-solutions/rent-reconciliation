@@ -1,5 +1,5 @@
 /* Colours, type and shape: static/theme.css (the one place they are decided). */
-@import url('theme.css');
+/* theme.css is linked by each page just before this file (an @import here made the browser fetch the two one after the other). */
 
 /* === BASE === */
 body {

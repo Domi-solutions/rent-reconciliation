@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <div class="page-title">Activity</div>
-    <div class="page-meta">{{ activity_list|length }} entr{{ 'y' if activity_list|length == 1 else 'ies' }}{% if filter_action or from_date or to_date %} — filtered{% endif %}</div>
+    <div class="page-meta">Newest first, 100 to a page{% if filter_action or from_date or to_date %} — filtered{% endif %}</div>
   </div>
   {% if filter_action or from_date or to_date %}
   <a href="{{ url_for('activity') }}" class="btn btn-sm btn-outline-secondary">Clear filters</a>
@@ -60,6 +60,14 @@
     </div>
   </a>
   {% endfor %}
+  {% if page > 1 or has_older %}
+  <div class="d-flex justify-content-between align-items-center" style="padding:14px 4px;font-size:14px">
+    {% set args = request.args.to_dict() %}
+    <span>{% if page > 1 %}<a href="{{ url_for('activity', **dict(args, page=page - 1)) }}">← Newer</a>{% endif %}</span>
+    <span style="color:var(--ink-2)">Page {{ page }}</span>
+    <span>{% if has_older %}<a href="{{ url_for('activity', **dict(args, page=page + 1)) }}">Older →</a>{% endif %}</span>
+  </div>
+  {% endif %}
   {% else %}
   <div class="empty-state">
     <div class="empty-state-title">No activity found</div>

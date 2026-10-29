@@ -101,5 +101,25 @@ class Speed(unittest.TestCase):
         self.assertEqual(len(background.call_args.args[0]), 1)
 
 
+    def test_activity_is_a_page_at_a_time(self):
+        with self.connection() as conn:
+            conn.executemany("INSERT INTO audit_log (action, entity_type, entity_id, details, user_id) VALUES (?, ?, ?, ?, ?)",
+                             [('test_entry', 'x', str(i), f'entry {i}', 'test') for i in range(150)])
+        first = self.admin.get('/activity').get_data(as_text=True)
+        self.assertIn('Older', first)
+        second = self.admin.get('/activity?page=2').get_data(as_text=True)
+        self.assertIn('Newer', second)
+
+    def test_payments_show_one_month_with_the_payer(self):
+        page = self.admin.get('/review?tab=confirmed').get_data(as_text=True)
+        self.assertIn('name="month"', page)
+        with self.connection() as conn:
+            months = [r[0] for r in conn.execute("""SELECT DISTINCT substr(payment_date, 1, 7) FROM payments
+                                                    WHERE payment_date != '' ORDER BY 1 DESC""")]
+            older = months[-1]
+            n_older = conn.execute("SELECT COUNT(*) FROM payments WHERE payment_date LIKE ?", (older + '%',)).fetchone()[0]
+        page = self.admin.get(f'/review?tab=confirmed&month={older}').get_data(as_text=True)
+        self.assertEqual(page.count('class="data-row"'), n_older)
+
 if __name__ == '__main__':
     unittest.main()

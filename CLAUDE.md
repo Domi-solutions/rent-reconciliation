@@ -514,7 +514,7 @@ Fly CLI at `/Users/lincksmorara/.fly/bin/flyctl` — not in PATH by default. Sin
 - `src/utils/web_speed.py`: `url_for('static', …)` adds `?v=<static files version>` → cached a year; untagged files (CSS `@import`s) revalidate; text responses >1 KB are gzip-compressed.
 - `migrate_speed_indexes`: indexes for hot paths and `tenant_balances`/`unit_balances` defined with per-tenant correlated sums (never `MATERIALIZE` the whole database). A query about one property must not aggregate other properties' rows (`follow_up.behind_list` shows the pattern).
 - `get_connection()` sets WAL once per database file and `synchronous=NORMAL`. The admin context processor (badge counts) is skipped for tenant/caretaker/owner/platform pages.
-- Scale triggers: Postgres when more than one machine / zero-downtime deploys are needed, "database is locked" shows in logs, or sustained >30–50 req/s. Still to do: paginate `/review`, `/units`, `/activity`; move PDF/vision parsing off the request.
+- Scale triggers: Postgres when more than one machine / zero-downtime deploys are needed, "database is locked" shows in logs, or sustained >30–50 req/s. `/review` Confirmed shows one month at a time (`?month=YYYY-MM`, default newest; the payer is `payments.tenant_id`, not the unit's current tenant); `/activity` is 100 a page (`?page=`). CSS is linked directly in every document root (theme.css before style.css, chat.css before interface.css) — no `@import` chains. Not done: `/units` stays one page (gzip makes it ~10x smaller); scanned-PDF parsing still runs in the request (8 threads keep it from blocking others; 120 s timeout).
 
 ---
 

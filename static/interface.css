@@ -1,4 +1,4 @@
-@import url('chat.css');
+/* chat.css is linked by each page just before this file (an @import here made the browser fetch the two one after the other). */
 
 /* Shared interface finish. Loaded after page styles by every document shell.
    Colours and type tokens live in theme.css; page CSS owns its layout. */

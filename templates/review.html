@@ -38,6 +38,19 @@
 <div class="surface-card">
   <div style="padding: 20px;">
     {% if tab == 'confirmed' %}
+    {% if confirmed_months %}
+    {# One month at a time, newest first — pick another month to see it. #}
+    <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <input type="hidden" name="tab" value="confirmed">
+      <label for="confirmed-month" style="font-size:13px;font-weight:600">Month</label>
+      <select id="confirmed-month" name="month" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+        {% for m in confirmed_months %}
+        <option value="{{ m.month }}" {{ 'selected' if m.month == confirmed_month }}>{{ m.month|period_label }} — {{ m.n }} payment{{ 's' if m.n != 1 }}, KES {{ '{:,.0f}'.format(m.total or 0) }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-sm btn-outline-secondary">Show</button></noscript>
+    </form>
+    {% endif %}
     {% if confirmed %}
     {% for r in confirmed %}
     {% set has_mismatch = r.claimed_amount and r.claimed_amount != r.amount and (r.claimed_amount - r.amount)|abs > 1 %}

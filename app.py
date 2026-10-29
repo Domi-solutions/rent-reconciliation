@@ -4801,22 +4801,28 @@ def activity():
         if filter_action:
             conditions.append("action = ?")
             params.append(filter_action)
+        # Plain comparisons on timestamp so the index is used (date(timestamp) is not).
         if from_date:
-            conditions.append("date(timestamp) >= ?")
+            conditions.append("timestamp >= ?")
             params.append(from_date)
         if to_date:
-            conditions.append("date(timestamp) <= ?")
+            conditions.append("timestamp < date(?, '+1 day')")
             params.append(to_date)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        activity_list = conn.execute(
-            f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT 500",
-            params
+        page = max(1, request.args.get('page', 1, type=int) or 1)
+        per_page = 100                                  # a page at a time; "Older" for more
+        rows = conn.execute(
+            f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            (*params, per_page + 1, (page - 1) * per_page)
         ).fetchall()
+        activity_list, has_older = rows[:per_page], len(rows) > per_page
         action_types = [r[0] for r in conn.execute(
             "SELECT DISTINCT action FROM audit_log ORDER BY action"
         ).fetchall()]
     return render_template(
         'activity.html',
+        page=page,
+        has_older=has_older,
         activity_list=activity_list,
         filter_action=filter_action or None,
         from_date=from_date or None,
@@ -5189,7 +5195,20 @@ def review():
         reversals = []
         parse_errors_list = []
 
+        confirmed_months, confirmed_month = [], None
         if tab == 'confirmed':
+            # One month at a time (newest first): the page stays small however long the history.
+            confirmed_months = conn.execute("""
+                SELECT substr(payment_date, 1, 7) AS month, COUNT(*) AS n, SUM(amount) AS total
+                FROM payments WHERE property_id = ? AND payment_date IS NOT NULL AND payment_date != ''
+                GROUP BY month ORDER BY month DESC
+            """, (property_id,)).fetchall()
+            _months = [m['month'] for m in confirmed_months]
+            confirmed_month = request.args.get('month') if request.args.get('month') in _months else (
+                _months[0] if _months else None)
+            _y, _m = (int(confirmed_month[:4]), int(confirmed_month[5:7])) if confirmed_month else (0, 0)
+            _start = f"{confirmed_month}-01" if confirmed_month else '0000-00-00'
+            _end = (f"{_y + 1}-01-01" if _m == 12 else f"{_y}-{_m + 1:02d}-01") if confirmed_month else '9999-99-99'
             confirmed = conn.execute("""
                 SELECT p.id, p.amount, p.payment_date, p.assignment_type, p.assignment_reason,
                        p.source, p.notes, p.notes_updated_at,
@@ -5201,13 +5220,13 @@ def review():
                        dt.name AS departed_tenant_name
                 FROM payments p
                 JOIN units u ON p.unit_id = u.id
-                LEFT JOIN tenants t ON t.unit_id = u.id AND t.status = 'active'
+                LEFT JOIN tenants t ON t.id = p.tenant_id          -- who paid, not who lives there now
                 LEFT JOIN bank_transactions bt ON p.bank_txn_id = bt.id
                 LEFT JOIN payment_claims pc ON pc.id = p.claim_id
                 LEFT JOIN tenants dt ON dt.id = pc.departed_tenant_id
-                WHERE p.property_id = ?
+                WHERE p.property_id = ? AND p.payment_date >= ? AND p.payment_date < ?
                 ORDER BY p.payment_date DESC, p.id
-            """, (property_id,)).fetchall()
+            """, (property_id, _start, _end)).fetchall()
 
         ignored_txns = []
         if tab == 'ignored':
@@ -5370,6 +5389,8 @@ def review():
         property=property_row,
         tab=tab,
         confirmed=confirmed,
+        confirmed_months=confirmed_months,
+        confirmed_month=confirmed_month,
         unreported=unreported,
         unreported_single=unreported_single,
         unreported_groups=unreported_groups,
